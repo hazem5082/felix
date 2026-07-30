@@ -28,30 +28,22 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
       <AnimatePresence>
         {phase !== "hidden" && (
           <motion.div
-            className="fixed inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden bg-[#07080a]"
-            exit={{ opacity: 0, scale: 1.03, filter: "blur(12px)" }}
+            className="fixed inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden bg-[#060709]"
+            exit={{ opacity: 0, scale: 1.02, filter: "blur(10px)" }}
             transition={{ duration: EXIT_MS / 1000, ease: [0.4, 0, 0.2, 1] }}
           >
-            {/* Ambient liquid glass floating backdrop glow orbs */}
-            <motion.div
-              className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-indigo-600/20 blur-[100px]"
-              animate={{ scale: [1, 1.25, 1], x: [0, 30, 0], y: [0, 40, 0] }}
-              transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-cyan-600/20 blur-[100px]"
-              animate={{ scale: [1, 1.3, 1], x: [0, -40, 0], y: [0, -30, 0] }}
-              transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="pointer-events-none absolute top-1/2 left-1/2 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-600/15 blur-[120px]"
-              animate={{ scale: [0.9, 1.1, 0.9] }}
-              transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+            {/* Single centered white light source in the background */}
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  "radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 40%, transparent 70%)",
+              }}
             />
 
             {/* Subtle starlight noise grid */}
             <div
-              className="pointer-events-none absolute inset-0 opacity-[0.25]"
+              className="pointer-events-none absolute inset-0 opacity-[0.2]"
               style={{
                 backgroundImage:
                   "radial-gradient(1px 1px at 15% 25%, white, transparent)," +
@@ -63,18 +55,15 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
               }}
             />
 
-            {/* Liquid Glass Central Container */}
+            {/* Direct Content Wrapper (No glass card container) */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.94 }}
+              initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="relative flex flex-col items-center gap-8 rounded-3xl border border-white/15 bg-white/[0.03] p-10 sm:p-14 backdrop-blur-2xl shadow-[0_20px_60px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.25)]"
+              className="relative flex flex-col items-center gap-8 z-10"
             >
-              {/* Glass sheen highlight top edge */}
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent rounded-t-3xl" />
-
               <div className="relative">
-                {/* Typed logo reveal */}
+                {/* Typed logo reveal - enlarged */}
                 <motion.div
                   initial={{ clipPath: "inset(0 100% 0 0)" }}
                   animate={{ clipPath: "inset(0 0% 0 0)" }}
@@ -83,22 +72,22 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                   <Image
                     src="/brand/felix-logo.png"
                     alt="FELIX"
-                    width={420}
-                    height={140}
+                    width={560}
+                    height={180}
                     priority
-                    className="h-auto w-[min(60vw,340px)] drop-shadow-[0_0_35px_rgba(180,210,255,0.4)]"
+                    className="h-auto w-[min(80vw,480px)] drop-shadow-[0_0_40px_rgba(255,255,255,0.35)]"
                   />
                 </motion.div>
 
-                {/* Sweeping & Continuously Blinking Caret */}
+                {/* Sweeping & Continuously Blinking White Caret */}
                 <motion.div
-                  className="absolute top-0 bottom-0 w-[3px] rounded-full bg-cyan-300 shadow-[0_0_12px_3px_rgba(56,189,248,0.9)]"
+                  className="absolute top-0 bottom-0 w-[3.5px] rounded-full bg-white shadow-[0_0_16px_4px_rgba(255,255,255,0.95)]"
                   initial={{ left: "0%" }}
                   animate={{ left: "100%" }}
                   transition={{ duration: TYPE_MS / 1000, ease: [0.65, 0, 0.35, 1] }}
                 >
                   <motion.div
-                    className="h-full w-full bg-cyan-200"
+                    className="h-full w-full bg-white"
                     animate={{ opacity: [1, 0, 1] }}
                     transition={{
                       duration: 0.6,
@@ -109,10 +98,10 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                 </motion.div>
               </div>
 
-              {/* Liquid Glass Progress Bar */}
-              <div className="relative h-[3px] w-48 overflow-hidden rounded-full bg-white/10 p-[0.5px] backdrop-blur-md">
+              {/* Sleek White Progress Bar */}
+              <div className="relative h-[2.5px] w-56 overflow-hidden rounded-full bg-white/15">
                 <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-white to-purple-400 shadow-[0_0_10px_rgba(255,255,255,0.8)]"
+                  className="h-full rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)]"
                   initial={{ width: "0%" }}
                   animate={{ width: "100%" }}
                   transition={{ duration: (TYPE_MS + HOLD_MS) / 1000, ease: "linear" }}
@@ -125,3 +114,4 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
     </>
   );
 }
+
