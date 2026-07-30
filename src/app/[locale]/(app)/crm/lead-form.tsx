@@ -28,7 +28,7 @@ export function LeadFormDialog() {
     setError(null);
     startTransition(async () => {
       const res = await createLead(form);
-      if (res.error) { setError(res.error); return; }
+      if ("error" in res) { setError(res.error); return; }
       setOpen(false);
       setForm({ client_name: "", phone_number: "", car_interest: "", address: "", company_name: "", job_title: "", income: "", client_notes: "" });
     });

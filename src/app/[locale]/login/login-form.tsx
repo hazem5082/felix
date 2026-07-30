@@ -40,8 +40,13 @@ export function LoginForm({ locale }: { locale: string }) {
           </div>
 
           {state?.error && (
-            <p className="rounded-lg bg-[var(--color-accent-red-dim)] px-3 py-2 text-xs text-[var(--color-accent-red)]">
-              {t("invalidCredentials")}
+            <p
+              role="alert"
+              className="rounded-lg bg-[var(--color-accent-red-dim)] px-3 py-2 text-xs text-[var(--color-accent-red)]"
+            >
+              {state.error === "throttled"
+                ? `${t("tooManyAttempts")} ${state.message ?? ""}`.trim()
+                : t("invalidCredentials")}
             </p>
           )}
 

@@ -1,8 +1,14 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { getProfile } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { authorize, assertBranch, STAFF_ROLES } from "@/lib/auth";
+import {
+  CreateDealTicketSchema,
+  CreateLeadSchema,
+  LeadCommentSchema,
+  parseInput,
+} from "@/lib/validation";
 
 export async function createLead(input: {
   client_name: string;
@@ -14,26 +20,22 @@ export async function createLead(input: {
   income: string;
   client_notes: string;
 }) {
-  const supabase = await createClient();
-  const profile = await getProfile();
-  if (!profile) return { error: "Not authenticated" };
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return auth.error;
 
+  const parsed = parseInput(CreateLeadSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
   const { error } = await supabase.from("leads").insert({
-    client_name: input.client_name,
-    phone_number: input.phone_number,
-    car_interest: input.car_interest || null,
-    address: input.address || null,
-    company_name: input.company_name || null,
-    job_title: input.job_title || null,
-    income: input.income ? parseFloat(input.income) : null,
-    client_notes: input.client_notes || null,
-    salesperson_id: profile.id,
-    branch_id: profile.branch_id,
+    ...parsed.data,
+    salesperson_id: auth.profile.id,
+    branch_id: auth.profile.branch_id,
     source: "manual",
   });
 
   if (error) return { error: error.message };
-  revalidatePath("/", "layout");
+  revalidatePath("/[locale]/(app)/crm", "page");
   return { ok: true };
 }
 
@@ -42,20 +44,37 @@ export async function addLeadComment(input: {
   body: string;
   contact_method: string;
 }) {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(LeadCommentSchema, {
+    ...input,
+    contact_method: input.contact_method || null,
+  });
+  if (!parsed.ok) return parsed.error;
+
   const supabase = await createClient();
-  const profile = await getProfile();
-  if (!profile) return { error: "Not authenticated" };
+
+  // Confirm the lead is actually visible to this actor before writing to it.
+  // RLS on lead_comments only checked `is_staff()`, so without this a
+  // salesperson could inject notes onto another branch's leads.
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", parsed.data.lead_id)
+    .maybeSingle();
+  if (!lead) return { error: "Unknown lead." };
 
   const { error } = await supabase.from("lead_comments").insert({
-    lead_id: input.lead_id,
-    author_id: profile.id,
-    body: input.body,
-    contact_method: input.contact_method || null,
+    lead_id: parsed.data.lead_id,
+    author_id: auth.profile.id,
+    body: parsed.data.body,
+    contact_method: parsed.data.contact_method,
     contact_time: new Date().toISOString(),
   });
 
   if (error) return { error: error.message };
-  revalidatePath("/", "layout");
+  revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
   return { ok: true };
 }
 
@@ -68,54 +87,84 @@ export async function createDealTicket(input: {
   down_payment: number | null;
   discount_amount: number;
 }) {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(CreateDealTicketSchema, input);
+  if (!parsed.ok) return parsed.error;
+
   const supabase = await createClient();
-  const profile = await getProfile();
-  if (!profile) return { error: "Not authenticated" };
 
   const { data: vehicle } = await supabase
     .from("vehicles")
-    .select("branch_id")
-    .eq("id", input.vehicle_id)
-    .single();
+    .select("id, branch_id, status")
+    .eq("id", parsed.data.vehicle_id)
+    .maybeSingle();
+
+  const v = vehicle as { id: string; branch_id: string; status: string } | null;
+
+  // The original fell back to the caller's own branch when this lookup came
+  // back empty, which quietly stamped another branch's vehicle as ours.
+  if (!v) return { error: "That vehicle is not available to you." };
+
+  const branchError = assertBranch(auth.profile, v.branch_id);
+  if (branchError) return branchError;
+
+  if (v.status !== "in_stock") {
+    return { error: "That vehicle is no longer in stock." };
+  }
 
   const { data, error } = await supabase
     .from("deal_tickets")
     .insert({
-      lead_id: input.lead_id,
-      vehicle_id: input.vehicle_id,
-      branch_id: (vehicle as { branch_id: string } | null)?.branch_id ?? profile.branch_id,
-      salesperson_id: profile.id,
-      agreed_price: input.agreed_price,
-      financing_type: input.financing_type,
-      financing_partner_id: input.financing_partner_id,
-      down_payment: input.down_payment,
-      discount_amount: input.discount_amount,
+      lead_id: parsed.data.lead_id,
+      vehicle_id: parsed.data.vehicle_id,
+      branch_id: v.branch_id,
+      salesperson_id: auth.profile.id,
+      agreed_price: parsed.data.agreed_price,
+      financing_type: parsed.data.financing_type,
+      financing_partner_id: parsed.data.financing_partner_id,
+      down_payment: parsed.data.down_payment,
+      discount_amount: parsed.data.discount_amount,
     })
     .select("id")
     .single();
 
   if (error) return { error: error.message };
-  if (input.lead_id) {
-    await supabase.from("leads").update({ status: "ticket_created" }).eq("id", input.lead_id);
+
+  if (parsed.data.lead_id) {
+    await supabase.from("leads").update({ status: "ticket_created" }).eq("id", parsed.data.lead_id);
   }
-  revalidatePath("/", "layout");
+
+  revalidatePath("/[locale]/(app)/deals", "page");
+  revalidatePath("/[locale]/(app)/crm", "page");
   return { id: (data as { id: string }).id };
 }
 
 export async function fetchActiveVehicles() {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return [];
+
   const supabase = await createClient();
+  // RLS already scopes this to the caller's branch (plus org-wide roles).
   const { data } = await supabase
     .from("vehicles")
     .select("id, year, make, model, trim, purchase_price")
-    .eq("status", "in_stock");
+    .eq("status", "in_stock")
+    .order("created_at", { ascending: false })
+    .limit(500);
   return data ?? [];
 }
 
 export async function fetchActiveFinancingPartners() {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return [];
+
   const supabase = await createClient();
   const { data } = await supabase
     .from("financing_partners")
     .select("id, bank_name, product_name, rate, term_months")
-    .eq("status", "active");
+    .eq("status", "active")
+    .order("bank_name");
   return data ?? [];
 }

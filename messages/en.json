@@ -24,7 +24,18 @@
     "optional": "Optional",
     "language": "Language",
     "amount": "Amount",
-    "note": "Note"
+    "note": "Note",
+    "copied": "Copied",
+    "saved": "Saved"
+  },
+  "errors": {
+    "title": "Something went wrong",
+    "body": "This page could not be loaded. The problem has been logged.",
+    "reference": "Reference",
+    "retry": "Try again",
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "That page does not exist, or you do not have access to it.",
+    "backHome": "Back to dashboard"
   },
   "auth": {
     "signInTitle": "Sign in to FILEX",
@@ -34,6 +45,7 @@
     "signIn": "Sign in",
     "signingIn": "Signing in…",
     "invalidCredentials": "Invalid email or password.",
+    "tooManyAttempts": "Too many sign-in attempts.",
     "noAccount": "Accounts are created by your CEO or manager — contact them for access."
   },
   "roles": {

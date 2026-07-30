@@ -69,7 +69,7 @@ export function DealTicketFormDialog({
         down_payment: downPayment ? parseFloat(downPayment) : null,
         discount_amount: parseFloat(discount || "0"),
       });
-      if (res.error) { setError(res.error); return; }
+      if ("error" in res) { setError(res.error); return; }
       setOpen(false);
       router.push("/deals");
     });

@@ -50,7 +50,7 @@ export function PartnerFormDialog() {
         min_down_payment: minDown,
         contract_file_url: contractUrl,
       });
-      if (res.error) { setError(res.error); return; }
+      if ("error" in res) { setError(res.error); return; }
       setOpen(false);
       setBankName(""); setProductName(""); setRate(""); setTerm(""); setMinDown(""); setContractUrl(null);
     });

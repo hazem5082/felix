@@ -1,36 +1,275 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FILEX
 
-## Getting Started
+Automotive showroom capital, inventory, and deal management.
 
-First, run the development server:
+FILEX runs the money side of a multi-branch car dealership: vehicles are bought
+with pooled equity (the company plus outside investors), carry reconditioning
+expenses and a share of branch overhead, and are sold through an approval-gated
+deal-ticket workflow. When a sale executes, a Postgres "waterfall" computes net
+profit and writes immutable profit-share entries to every holder's ledger.
+
+Bilingual (English / Arabic, RTL-aware) and deployed to Cloudflare Workers.
+
+---
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| Framework | Next.js 16 (App Router, React 19, Server Actions) |
+| Database & auth | Supabase (Postgres, Row Level Security, Supabase Auth) |
+| Object storage | Cloudflare R2 via presigned S3 PUTs |
+| i18n | next-intl — `en`, `ar`, locale-prefixed routes |
+| Styling | Tailwind v4, Radix primitives, framer-motion |
+| Validation | zod v4 (server-side, on every action) |
+| Hosting | Cloudflare Workers via `@opennextjs/cloudflare` |
+
+> **Next.js 16 note.** Middleware is called **Proxy** in 16: the file is
+> `src/proxy.ts` and it exports `proxy`, not `middleware`. It is pinned to the
+> edge runtime because `@opennextjs/cloudflare` rejects Node.js-runtime proxy
+> at build time. Consult `node_modules/next/dist/docs/` before changing
+> anything in this area — this version differs from older Next.js material.
+
+---
+
+## Roles
+
+| Role | Sees | Can do |
+| --- | --- | --- |
+| `ceo` | Everything, org-wide | Everything, including equity allocation, overhead, commission tiers, staff administration |
+| `accountant` | Everything, org-wide | Financing partners, expenses, ledger entries, financing request status |
+| `branch_manager` | Their branch | Vehicle intake, review and approve deal tickets, execute sales, expenses |
+| `sales_exec` | Their own leads and tickets | Create leads and deal tickets, log follow-ups |
+| `investor` | Only their own holdings | Read their portfolio and ledger |
+
+Authorization is enforced **twice**: in the Server Action (role + branch) and
+again in Postgres RLS. Neither is treated as sufficient alone — see
+[Security model](#security-model).
+
+---
+
+## Getting started
+
+### 1. Install
+
+```bash
+npm install
+```
+
+### 2. Configure environment
+
+Create `.env.local` (used by `next dev` and the seed script):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service role key>
+R2_ACCOUNT_ID=<cloudflare account id>
+R2_ACCESS_KEY_ID=<r2 access key>
+R2_SECRET_ACCESS_KEY=<r2 secret>
+R2_BUCKET_NAME=filex
+R2_PUBLIC_URL=https://<bucket>.<account>.r2.dev
+```
+
+Mirror the same values in `.dev.vars` for `wrangler dev`. Both files are
+gitignored and must stay that way — `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS
+completely.
+
+Only the two `NEXT_PUBLIC_*` variables are safe in the browser bundle. Every
+other variable is read exclusively from `server-only` modules.
+
+### 3. Apply migrations
+
+In the Supabase dashboard → SQL Editor, run **in order**:
+
+1. `supabase/migrations/0001_init.sql` — schema, triggers, waterfall, RLS
+2. `supabase/migrations/0002_seed_demo_data.sql` — branches, overhead, a sample lender
+3. `supabase/migrations/0003_security_and_integrity.sql` — **required**, not optional
+
+Every file is idempotent and safe to re-run.
+
+> `0003` is a hard requirement, not a nice-to-have. Without it a user can
+> escalate themselves to CEO by updating their own `profiles` row, a deal
+> ticket can be inserted already approved, and a branch manager can settle
+> another branch's sale. See [Security model](#security-model).
+
+### 4. Create the first CEO
+
+Roles are **never** self-assigned. Insert an invitation, then create the user:
+
+```sql
+insert into staff_invitations (email, full_name, role, branch_id)
+values ('you@example.com', 'Your Name', 'ceo', null);
+```
+
+Then Supabase Dashboard → Authentication → Users → Add User with that email.
+The `handle_new_user` trigger consumes the invitation and assigns the role.
+Anyone who signs up *without* an invitation lands as `sales_exec`.
+
+### 5. Seed demo data (optional)
+
+```bash
+npm run seed
+```
+
+Creates one user per role (password `FilexDemo123!`), four vehicles with
+equity splits, leads, and deal tickets across every status including one
+executed sale so the ledgers are not empty. **Demo credentials only — never
+run this against production.**
+
+### 6. Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest unit tests |
+| `npm run verify` | typecheck + lint + test — run this before pushing |
+| `npm run seed` | Seed demo data |
+| `npm run preview:cf` | Build for Workers and preview with wrangler |
+| `npm run deploy:cf` | Build and deploy to Cloudflare |
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## Security model
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The threat model that matters here: **a Server Action is a public HTTP
+endpoint.** Every exported `"use server"` function can be invoked by any
+authenticated user with hand-crafted arguments, regardless of what the UI
+renders. A `canReview` prop that hides a button is a usability affordance, not
+a control.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+So authorization is layered:
 
-## Deploy on Vercel
+1. **Server Action** — `authorize(roles)` checks the caller's role, then
+   `assertBranch()` checks the record is in scope. Input is parsed with zod
+   before anything is read or written.
+2. **Postgres RLS** — policies scoped by role *and* branch, so a bug in layer 1
+   is not automatically exploitable.
+3. **Triggers** — invariants that must hold no matter which path writes
+   (status transitions, the equity cap table summing to 100%, `is_ceo_override`,
+   sold-vehicle immutability). These also cover direct PostgREST calls that skip
+   the app entirely.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Other properties worth knowing:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Roles cannot be self-assigned.** `handle_new_user` ignores signup metadata
+  and reads `staff_invitations` instead. A trigger blocks any non-CEO from
+  changing `profiles.role` or `profiles.branch_id`, and blocks removing the
+  last CEO.
+- **The audit log is append-only and universal.** Every mutation on the
+  financially significant tables writes a row with before/after snapshots; an
+  `UPDATE`/`DELETE` trigger rejects tampering, including by the CEO.
+- **Rate limiting** on login (per IP *and* per email), the public referral
+  intake, and upload presigning. Counters live in Postgres
+  (`consume_rate_limit`) since this deployment has no KV binding. It fails
+  **open** and logs loudly — a limiter that takes down login during a database
+  hiccup is worse than the abuse it prevents.
+- **Uploads** are presigned per folder with a role allowlist, a signed
+  `Content-Length`, a sanitised object key, and a 15 MB cap. A financing
+  contract can only be activated with a URL this application actually issued.
+- **Security headers** including a CSP scoped to the Supabase, R2 and NHTSA
+  origins are set in `next.config.ts`.
+
+---
+
+## The waterfall
+
+One function, `compute_sale_waterfall()`, is the single source of truth for
+both the preview and the committed sale, so a reviewer cannot see one number
+and book another:
+
+```
+net_profit = agreed_price
+           − purchase_price
+           − direct_expenses          (sum of vehicle_expenses)
+           − overhead                 (branch monthly_opex × months_in_inventory)
+           − discount
+```
+
+`net_profit` is then split by `vehicle_equity_splits.percentage`. Per-share
+rounding residue is pushed onto the CEO line so the shares sum *exactly* to
+`net_profit`. Losses are distributed pro-rata by the same percentages.
+
+The function is `SECURITY DEFINER` with its own scope check, because a
+`sales_exec` cannot read `vehicle_expenses` or `overhead_config` — previously
+those rows silently coalesced to zero and the preview overstated profit.
+
+### Two modelling assumptions to review
+
+1. **Overhead is charged per vehicle at the full branch rate.** A branch
+   holding 20 cars for one month books 20 × its entire monthly opex. If the
+   intent is to apportion overhead across concurrent inventory, that belongs in
+   `compute_sale_waterfall`.
+2. **Commission tiers are cumulative and monthly.** Reaching tier *N* entitles
+   the salesperson to `cumulative_amount(N)` for the calendar month, so a sale
+   pays the difference from the previous tier. With the seeded ladder
+   (`tier_index × 6000`) that is a flat 6,000 per unit; the table can express
+   any accelerating schedule.
+
+---
+
+## Deployment (Cloudflare Workers)
+
+```bash
+npm run preview:cf
+```
+
+```bash
+npm run deploy:cf
+```
+
+Set secrets on the Worker (never in `wrangler.jsonc`):
+
+```bash
+wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+```
+
+`GET /api/health` reports dependency reachability and missing configuration
+(names only, never values) — 200 when healthy, 503 otherwise. Point your uptime
+monitor and deploy gate at it.
+
+---
+
+## Repository layout
+
+```
+src/
+  app/[locale]/
+    (app)/            authenticated shell — ceo, inventory, crm, deals, accountant, investor
+    login/            sign-in
+    refer/            public, unauthenticated referral intake
+  app/api/
+    upload/           R2 presign
+    health/           health check
+  components/         ui primitives, layout, waterfall
+  i18n/               next-intl routing, request config, navigation helpers
+  lib/
+    auth.ts           getProfile, authorize, assertBranch, role sets
+    validation.ts     every zod schema, one place
+    rate-limit.ts     Postgres-backed limiter
+    r2.ts             presigning, folder to role map, URL provenance
+    supabase/         server / client / admin clients, hand-written types
+  proxy.ts            Next 16 Proxy — session refresh + locale routing
+supabase/migrations/  0001 schema, 0002 seed, 0003 hardening
+messages/             en.json, ar.json (kept at identical key sets)
+```
+
+---
+
+## Contributing
+
+Run `npm run verify` before pushing. When changing the schema, add a new
+numbered migration rather than editing an existing one, and keep
+`src/lib/supabase/types.ts` in step — it is hand-written, since this
+environment has no Supabase CLI access to generate it.

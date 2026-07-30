@@ -30,7 +30,7 @@ export function ExpenseFormDialog({ vehicleId, isCeo }: { vehicleId: string; isC
         note,
         is_ceo_override: isCeo && override,
       });
-      if (res.error) {
+      if ("error" in res) {
         setError(res.error);
         return;
       }

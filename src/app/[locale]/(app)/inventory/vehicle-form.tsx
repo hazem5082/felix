@@ -90,7 +90,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
           percentage: parseFloat(s.percentage) || 0,
         })),
       });
-      if (res.error) {
+      if ("error" in res) {
         setError(res.error);
         return;
       }

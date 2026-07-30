@@ -39,14 +39,31 @@ export function TicketPanel({
   });
 
   useEffect(() => {
-    fetchWaterfallPreview(ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount).then(setPreview);
+    // Guard against an out-of-order response overwriting a newer one.
+    let active = true;
+    fetchWaterfallPreview(ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount).then(
+      (result) => {
+        if (active) setPreview(result);
+      }
+    );
+    return () => {
+      active = false;
+    };
   }, [ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount]);
 
   function toggleCheck(key: keyof typeof checklist) {
+    const previous = checklist;
     const next = { ...checklist, [key]: !checklist[key] };
     setChecklist(next);
+    setError(null);
     startTransition(async () => {
-      await updateChecklist(ticket.id, { [key]: next[key] });
+      const res = await updateChecklist(ticket.id, { [key]: next[key] });
+      // The optimistic tick used to stick even when the server refused,
+      // so a reviewer could believe a gate was satisfied when it was not.
+      if (res && "error" in res) {
+        setChecklist(previous);
+        setError(res.error);
+      }
     });
   }
 
@@ -56,7 +73,7 @@ export function TicketPanel({
     setError(null);
     startTransition(async () => {
       const res = await approveTicket(ticket.id);
-      if (res.error) setError(res.error);
+      if ("error" in res) setError(res.error);
     });
   }
 
@@ -64,7 +81,7 @@ export function TicketPanel({
     setError(null);
     startTransition(async () => {
       const res = await rejectTicket(ticket.id, rejectReason);
-      if (res.error) setError(res.error);
+      if ("error" in res) setError(res.error);
     });
   }
 
@@ -72,7 +89,7 @@ export function TicketPanel({
     setError(null);
     startTransition(async () => {
       const res = await executeSale(ticket.id);
-      if (res.error) setError(res.error);
+      if ("error" in res) setError(res.error);
     });
   }
 

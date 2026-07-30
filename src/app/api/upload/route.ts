@@ -1,53 +1,66 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createPresignedUpload, type UploadFolder } from "@/lib/r2";
-
-const ALLOWED_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-]);
-
-const ALLOWED_FOLDERS: UploadFolder[] = [
-  "vehicles",
-  "financing-contracts",
-  "avatars",
-  "financing-requests",
-];
+import { getProfile } from "@/lib/auth";
+import { createPresignedUpload, FOLDER_ROLES } from "@/lib/r2";
+import { PresignSchema } from "@/lib/validation";
+import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const profile = await getProfile();
+  if (!profile) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { fileName, contentType, folder } = body as {
-    fileName?: string;
-    contentType?: string;
-    folder?: string;
-  };
+  // Presigning is cheap for us and expensive for R2 — an unbounded loop from
+  // one stale session could run up storage and egress with nothing able to
+  // notice. Bucket per user rather than per IP: the caller is authenticated.
+  const throttle = await consume(`upload:${profile.id}`, LIMITS.upload);
+  if (!throttle.allowed) {
+    return NextResponse.json(
+      { error: retryMessage(throttle.retryAfter) },
+      { status: 429, headers: { "Retry-After": String(throttle.retryAfter) } }
+    );
+  }
 
-  if (!fileName || !contentType || !folder) {
-    return NextResponse.json({ error: "Missing fileName/contentType/folder" }, { status: 400 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Malformed request body" }, { status: 400 });
   }
-  if (!ALLOWED_TYPES.has(contentType)) {
-    return NextResponse.json({ error: `Unsupported content type: ${contentType}` }, { status: 400 });
+
+  const parsed = PresignSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid upload request" },
+      { status: 400 }
+    );
   }
-  if (!ALLOWED_FOLDERS.includes(folder as UploadFolder)) {
-    return NextResponse.json({ error: `Unsupported folder: ${folder}` }, { status: 400 });
+
+  const { folder, fileName, contentType, size } = parsed.data;
+
+  // Each prefix carries its own authority — a bank contract is not the same
+  // kind of object as a profile picture.
+  if (!FOLDER_ROLES[folder].includes(profile.role)) {
+    return NextResponse.json(
+      { error: "You do not have permission to upload to this location." },
+      { status: 403 }
+    );
+  }
+
+  // PDFs belong to contracts and supporting documents; photo prefixes take
+  // images only.
+  if (contentType === "application/pdf" && folder === "vehicles") {
+    return NextResponse.json({ error: "Vehicle photos must be images" }, { status: 400 });
+  }
+  if (contentType !== "application/pdf" && folder === "financing-contracts") {
+    return NextResponse.json({ error: "Bank contracts must be PDF" }, { status: 400 });
   }
 
   try {
-    const result = await createPresignedUpload(folder as UploadFolder, fileName, contentType);
+    const result = await createPresignedUpload(folder, fileName, contentType, size);
     return NextResponse.json(result);
   } catch (err) {
-    console.error("Presigned upload error", err);
+    console.error("[upload] presign failed", { userId: profile.id, folder, err });
     return NextResponse.json({ error: "Failed to create upload URL" }, { status: 500 });
   }
 }
