@@ -41,8 +41,29 @@ export interface Profile {
   full_name: string;
   role: Role;
   branch_id: string | null;
+  // The licensed showroom this account belongs to. Assigned at signup
+  // from a staff_invitations row and immutable thereafter — see
+  // migration 0004. This is what current_tenant_id() reads, so it is
+  // the authoritative answer to "whose data is this?".
+  //
+  // NOT NULL in the database: a profile without a showroom cannot be
+  // created at all (handle_new_user raises NO_INVITATION). Typed as
+  // nullable only so a row read back before migration 0004 is applied
+  // doesn't lie about its shape.
+  tenant_id: string | null;
   phone: string | null;
   avatar_url: string | null;
+  created_at: string;
+}
+
+export type TenantStatus = "active" | "suspended";
+
+export interface Tenant {
+  id: string;
+  slug: string;
+  name: string;
+  status: TenantStatus;
+  licensed_via: string | null;
   created_at: string;
 }
 

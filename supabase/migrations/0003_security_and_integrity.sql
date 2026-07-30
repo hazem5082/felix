@@ -9,7 +9,18 @@
 -- query and Run. Idempotent — safe to re-run.
 --
 -- The ordering matters: helpers first, then guards, then policies.
+--
+-- Wrapped in a transaction, and not optionally. A probe of the live
+-- database on 2026-07-30 found 0001's tables present but NONE of this
+-- migration's — no staff_invitations, no rate_limit_buckets, no
+-- compute_sale_waterfall. So the security hardening below has never
+-- actually taken effect, while the app has been written as though it
+-- had. Whatever went wrong, running this as one atomic unit means the
+-- next attempt either fully lands or changes nothing, instead of
+-- leaving another partial state that is indistinguishable from success.
 -- ============================================================
+
+begin;
 
 -- pgcrypto must live in `extensions` because generate_contract_serial()
 -- calls extensions.digest() explicitly. On a fresh/self-hosted Postgres
@@ -62,6 +73,36 @@ create or replace function can_read_branch(p_branch_id uuid) returns boolean as 
       or is_accountant_or_above()
       or (p_branch_id is not null and p_branch_id = current_branch_id());
 $$ language sql stable;
+
+-- Two lookups that policies below need across the vehicles <->
+-- vehicle_equity_splits boundary:
+--
+--   vehicles_select       must know "does the caller hold equity in this car?"
+--   equity_splits_select  must know "which branch does this car belong to?"
+--
+-- Written as `exists (select ... from <the other table>)` inside the
+-- policies, those two cross-reference each other, and Postgres expands
+-- policy subqueries at PLAN time — so it detects the cycle and every
+-- query against either table fails outright with "infinite recursion
+-- detected in policy for relation ...". The OR short-circuit does not
+-- save it: planning happens before any row is evaluated, so this breaks
+-- for every role, CEO included, and takes vehicle_expenses down with it
+-- (its policies read vehicles).
+--
+-- SECURITY DEFINER is the fix: the function reads the table directly
+-- without policy expansion, so no cycle can form. Safe here because
+-- neither function returns anything the caller can act on beyond a
+-- boolean and a branch id, and both are already reachable facts for
+-- anyone the surrounding policy admits.
+create or replace function holds_equity_in_vehicle(p_vehicle_id uuid) returns boolean as $$
+  select exists (
+    select 1 from public.vehicle_equity_splits
+     where vehicle_id = p_vehicle_id and holder_id = auth.uid());
+$$ language sql stable security definer set search_path = public, extensions;
+
+create or replace function vehicle_branch(p_vehicle_id uuid) returns uuid as $$
+  select branch_id from public.vehicles where id = p_vehicle_id;
+$$ language sql stable security definer set search_path = public, extensions;
 
 -- ============================================================
 -- 2. IDENTITY — the two total-compromise paths
@@ -939,10 +980,10 @@ create policy "vehicles_select" on vehicles for select to authenticated
     is_ceo()
     or is_accountant_or_above()
     or branch_id = current_branch_id()
-    or exists (
-      select 1 from vehicle_equity_splits ves
-      where ves.vehicle_id = vehicles.id and ves.holder_id = auth.uid()
-    )
+    -- Via a SECURITY DEFINER helper, not a subquery: see the note on
+    -- holds_equity_in_vehicle() for why a subquery here deadlocks the
+    -- planner against equity_splits_select.
+    or holds_equity_in_vehicle(vehicles.id)
   );
 
 -- EQUITY SPLITS — a manager sees their own branch's cap table, not every
@@ -953,9 +994,8 @@ create policy "equity_splits_select" on vehicle_equity_splits for select to auth
     is_ceo()
     or is_accountant_or_above()
     or holder_id = auth.uid()
-    or (is_manager_or_above() and exists (
-      select 1 from vehicles v
-      where v.id = vehicle_equity_splits.vehicle_id and v.branch_id = current_branch_id()))
+    or (is_manager_or_above()
+        and vehicle_branch(vehicle_equity_splits.vehicle_id) = current_branch_id())
   );
 
 -- VEHICLE EXPENSES — scoped to the vehicle's branch on every verb.
@@ -1092,6 +1132,46 @@ create index if not exists idx_vehicles_search on vehicles
   using gin (to_tsvector('simple', coalesce(make,'') || ' ' || coalesce(model,'') || ' ' || coalesce(vin,'')));
 create index if not exists idx_leads_search on leads
   using gin (to_tsvector('simple', coalesce(client_name,'') || ' ' || coalesce(phone_number,'')));
+
+-- ============================================================
+-- Verify the hardening actually landed. Without this, a partial or
+-- silently-failed run looks identical to success from the outside —
+-- which is exactly how the live database ended up on 0001's policies
+-- while the app assumed 0003's.
+-- ============================================================
+do $$
+declare
+  missing text[] := '{}';
+begin
+  if not exists (select 1 from pg_tables
+                  where schemaname='public' and tablename='staff_invitations') then
+    missing := missing || 'table staff_invitations';
+  end if;
+  if not exists (select 1 from pg_tables
+                  where schemaname='public' and tablename='rate_limit_buckets') then
+    missing := missing || 'table rate_limit_buckets';
+  end if;
+  if not exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                  where n.nspname='public' and p.proname='consume_rate_limit') then
+    missing := missing || 'function consume_rate_limit';
+  end if;
+  if not exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                  where n.nspname='public' and p.proname='compute_sale_waterfall') then
+    missing := missing || 'function compute_sale_waterfall';
+  end if;
+  if not exists (select 1 from pg_trigger
+                  where tgname='trg_guard_profile_privileges' and not tgisinternal) then
+    missing := missing || 'trigger trg_guard_profile_privileges';
+  end if;
+
+  if array_length(missing, 1) > 0 then
+    raise exception 'Migration 0003 did not fully apply. Missing: %', array_to_string(missing, ', ');
+  end if;
+
+  raise notice '0003 applied: role escalation closed, rate limiting live, waterfall installed.';
+end $$;
+
+commit;
 
 -- ============================================================
 -- DONE. Re-run anytime — every statement is idempotent.

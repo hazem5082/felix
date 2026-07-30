@@ -3,12 +3,19 @@
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { login } from "./actions";
 import { Panel } from "@/components/ui/panel";
 import { Input, Label } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-export function LoginForm({ locale }: { locale: string }) {
+export function LoginForm({
+  locale,
+  showroomName,
+}: {
+  locale: string;
+  showroomName: string | null;
+}) {
   const t = useTranslations("auth");
   const boundLogin = login.bind(null, locale);
   const [state, formAction, pending] = useActionState(boundLogin, undefined);
@@ -21,11 +28,23 @@ export function LoginForm({ locale }: { locale: string }) {
       className="w-full max-w-sm"
     >
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[#3a3f47] to-[#1c1e22] text-sm font-bold tracking-widest text-white shadow-[0_1px_0_0_rgba(255,255,255,0.1)_inset]">
-          FX
-        </div>
+        <Image
+          src="/brand/felix-logo.png"
+          alt="FELIX"
+          width={420}
+          height={140}
+          className="mx-auto mb-4 h-10 w-auto"
+          priority
+        />
         <h1 className="text-lg font-semibold text-[var(--color-text)]">{t("signInTitle")}</h1>
-        <p className="mt-1 text-xs text-[var(--color-text-muted)]">{t("signInSubtitle")}</p>
+        {/* Which licensed showroom this subdomain belongs to. Makes it
+            obvious at a glance that you're at the right client's door. */}
+        {showroomName ? (
+          <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">{showroomName}</p>
+        ) : (
+          <p className="mt-1 text-xs text-[var(--color-accent-red)]">{t("unknownTenant")}</p>
+        )}
+        <p className="mt-1 text-xs text-[var(--color-text-faint)]">{t("signInSubtitle")}</p>
       </div>
 
       <Panel raised>
@@ -46,7 +65,11 @@ export function LoginForm({ locale }: { locale: string }) {
             >
               {state.error === "throttled"
                 ? `${t("tooManyAttempts")} ${state.message ?? ""}`.trim()
-                : t("invalidCredentials")}
+                : state.error === "wrongTenant"
+                  ? t("wrongTenant")
+                  : state.error === "tenantSuspended"
+                    ? t("tenantSuspended")
+                    : t("invalidCredentials")}
             </p>
           )}
 

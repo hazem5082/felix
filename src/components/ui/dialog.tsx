@@ -25,25 +25,25 @@ export function DialogContent({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xl"
           />
         </DialogPrimitive.Overlay>
         <DialogPrimitive.Content asChild forceMount>
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+            initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            exit={{ opacity: 0, scale: 0.94, y: 16 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              "panel panel-raised fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-6",
+              "panel panel-raised fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-6 border border-white/20 shadow-[0_25px_70px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.25)] rounded-2xl",
               className
             )}
           >
             <div className="mb-4 flex items-center justify-between">
-              <DialogPrimitive.Title className="text-base font-semibold">
+              <DialogPrimitive.Title className="text-base font-semibold text-white tracking-wide">
                 {title}
               </DialogPrimitive.Title>
-              <DialogPrimitive.Close className="rounded-md p-1 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text)]">
+              <DialogPrimitive.Close className="rounded-lg p-1 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white transition-colors">
                 <X size={16} />
               </DialogPrimitive.Close>
             </div>
@@ -54,3 +54,4 @@ export function DialogContent({
     </DialogPrimitive.Portal>
   );
 }
+

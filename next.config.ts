@@ -33,12 +33,15 @@ const connectSrc = [
   .filter(Boolean)
   .join(" ");
 
+const isDev = process.env.NODE_ENV === "development";
+
 const csp = [
   "default-src 'self'",
   // Next injects inline bootstrap scripts and streams RSC payloads inline;
   // 'unsafe-inline' is required until a nonce-based setup is wired through
-  // the adapter. Kept narrow by every other directive here.
-  "script-src 'self' 'unsafe-inline'",
+  // the adapter. 'unsafe-eval' is dev-only: webpack's HMR runtime evals each
+  // module for fast refresh, and the CSP silently kills hydration without it.
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",

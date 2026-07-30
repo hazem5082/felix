@@ -3,6 +3,7 @@
 import { Link, usePathname } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { navForRole } from "./nav-config";
 import type { Role } from "@/lib/supabase/types";
@@ -30,15 +31,12 @@ export function Sidebar({ role }: { role: Role }) {
   const items = navForRole(role);
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-e border-[var(--color-border)] bg-[var(--color-surface)]/60 p-4 md:flex">
-      <div className="mb-6 flex items-center gap-2 px-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border-strong)] bg-gradient-to-b from-[#3a3f47] to-[#1c1e22] text-xs font-bold text-white shadow-[0_1px_0_0_rgba(255,255,255,0.1)_inset]">
-          FX
-        </div>
-        <span className="text-sm font-semibold tracking-wide">FILEX</span>
+    <aside className="hidden w-60 shrink-0 flex-col border-e border-white/10 bg-black/40 backdrop-blur-2xl p-4 md:flex shadow-[4px_0_30px_rgba(0,0,0,0.25)]">
+      <div className="mb-6 flex items-center px-2 pt-1">
+        <Image src="/brand/felix-logo.png" alt="FELIX" width={420} height={140} className="h-7 w-auto drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]" priority />
       </div>
 
-      <nav className="flex flex-col gap-0.5">
+      <nav className="flex flex-col gap-1">
         {items.map((item) => {
           const Icon = ICONS[item.key];
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -47,21 +45,21 @@ export function Sidebar({ role }: { role: Role }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                "relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-200",
                 active
-                  ? "text-[var(--color-text)]"
-                  : "text-[var(--color-text-muted)] hover:bg-white/5 hover:text-[var(--color-text)]"
+                  ? "text-white"
+                  : "text-[var(--color-text-muted)] hover:bg-white/[0.06] hover:text-white"
               )}
             >
               {active && (
                 <motion.span
                   layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-lg bg-white/[0.06] ring-1 ring-inset ring-white/10"
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-white/[0.14] to-white/[0.04] ring-1 ring-inset ring-white/20 shadow-[0_4px_16px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)]"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
                 />
               )}
-              <Icon size={16} className="relative z-10" />
-              <span className="relative z-10">{t(item.key)}</span>
+              <Icon size={17} className="relative z-10" />
+              <span className="relative z-10 tracking-wide">{t(item.key)}</span>
             </Link>
           );
         })}
@@ -69,3 +67,4 @@ export function Sidebar({ role }: { role: Role }) {
     </aside>
   );
 }
+

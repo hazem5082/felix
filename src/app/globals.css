@@ -4,26 +4,27 @@
   --font-sans: var(--font-inter);
   --font-arabic: var(--font-cairo);
 
-  --color-bg: #0a0b0d;
-  --color-surface: #101216;
-  --color-surface-raised: #15181d;
-  --color-border: #22262e;
-  --color-border-strong: #2f343d;
+  --color-bg: #07080a;
+  --color-surface: rgba(16, 18, 22, 0.7);
+  --color-surface-raised: rgba(23, 26, 33, 0.75);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
 
-  --color-text: #f2f3f5;
-  --color-text-muted: #9aa0aa;
-  --color-text-faint: #5c626d;
+  --color-text: #f3f4f6;
+  --color-text-muted: #9da3ae;
+  --color-text-faint: #636b77;
 
   --color-accent-green: #22c55e;
-  --color-accent-green-dim: rgba(34, 197, 94, 0.14);
+  --color-accent-green-dim: rgba(34, 197, 94, 0.16);
   --color-accent-red: #ef4444;
-  --color-accent-red-dim: rgba(239, 68, 68, 0.14);
+  --color-accent-red-dim: rgba(239, 68, 68, 0.16);
   --color-accent-amber: #f5a623;
-  --color-accent-amber-dim: rgba(245, 166, 35, 0.14);
+  --color-accent-amber-dim: rgba(245, 166, 35, 0.16);
   --color-accent-blue: #3b82f6;
-  --color-accent-blue-dim: rgba(59, 130, 246, 0.14);
+  --color-accent-blue-dim: rgba(59, 130, 246, 0.16);
 
-  --shadow-metal: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-metal: 0 8px 32px 0 rgba(0, 0, 0, 0.37), 0 1px 0 0 rgba(255, 255, 255, 0.12) inset;
+  --shadow-glass-hover: 0 14px 40px 0 rgba(0, 0, 0, 0.45), 0 0 20px 0 rgba(255, 255, 255, 0.08), 0 1px 0 0 rgba(255, 255, 255, 0.25) inset;
 }
 
 :root {
@@ -40,8 +41,9 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   background-image:
-    radial-gradient(circle at 15% -10%, rgba(120, 130, 145, 0.08), transparent 40%),
-    radial-gradient(circle at 85% 0%, rgba(80, 90, 105, 0.06), transparent 45%);
+    radial-gradient(ellipse 80% 50% at 15% -10%, rgba(99, 102, 241, 0.12), transparent 50%),
+    radial-gradient(ellipse 70% 45% at 85% 0%, rgba(56, 189, 248, 0.09), transparent 45%),
+    radial-gradient(ellipse 60% 50% at 50% 100%, rgba(168, 85, 247, 0.08), transparent 50%);
   background-attachment: fixed;
 }
 
@@ -56,15 +58,16 @@ body {
   unicode-bidi: isolate;
 }
 
-/* ── Metallic surface treatment ───────────────────────────── */
+/* ── Liquid Glass surface treatment ───────────────────────────── */
 .panel {
   position: relative;
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 40%),
-    var(--color-surface);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 100%), var(--color-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--color-border);
-  border-radius: 0.875rem;
+  border-radius: 1rem;
   box-shadow: var(--shadow-metal);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .panel::before {
@@ -75,10 +78,10 @@ body {
   padding: 1px;
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.14),
-    rgba(255, 255, 255, 0) 30%,
-    rgba(255, 255, 255, 0) 70%,
-    rgba(255, 255, 255, 0.06)
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0) 35%,
+    rgba(255, 255, 255, 0) 65%,
+    rgba(255, 255, 255, 0.08)
   );
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
@@ -88,18 +91,53 @@ body {
   pointer-events: none;
 }
 
+.panel:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: var(--shadow-glass-hover);
+}
+
 .panel-raised {
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 45%),
-    var(--color-surface-raised);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%), var(--color-surface-raised);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 ::selection {
   background: var(--color-accent-blue-dim);
+  color: #ffffff;
 }
 
-/* Scrollbars — keep them quiet and metallic */
+/* Glass shine reactive pulse */
+.glass-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-shine::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 45%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 55%
+  );
+  transform: rotate(30deg) translateY(-100%);
+  transition: transform 0.6s ease-in-out;
+  pointer-events: none;
+}
+
+.glass-shine:hover::after {
+  transform: rotate(30deg) translateY(100%);
+}
+
+/* Scrollbars — keep them quiet and translucent */
 * {
-  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
   scrollbar-width: thin;
 }
+

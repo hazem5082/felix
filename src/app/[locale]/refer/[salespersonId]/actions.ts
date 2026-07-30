@@ -13,7 +13,10 @@ const GENERIC_FAILURE = {
   error: "Something went wrong submitting your info. Please try again.",
 };
 
-export async function submitPublicLead(salespersonId: string, formData: FormData) {
+export async function submitPublicLead(
+  salespersonId: string,
+  formData: FormData
+): Promise<{ error: string } | { ok: true }> {
   const ip = await clientIp();
   const throttle = await consume(`public-lead:${ip}`, LIMITS.publicLead);
   if (!throttle.allowed) {

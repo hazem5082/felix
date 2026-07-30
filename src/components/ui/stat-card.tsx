@@ -60,19 +60,19 @@ export function StatCard({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.25 }}
+      whileHover={{ y: -5, scale: 1.015 }}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
     >
-      <Panel className="h-full">
+      <Panel className="h-full glass-shine">
         <div className="flex items-start justify-between">
-          <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
             {label}
           </span>
-          {icon && <span className="text-[var(--color-text-faint)]">{icon}</span>}
+          {icon && <span className="text-[var(--color-text-faint)] transition-colors hover:text-white">{icon}</span>}
         </div>
-        <div className={cn("mt-2 text-2xl font-semibold tabular-nums", TONE_TEXT[tone])}>
+        <div className={cn("mt-2 text-2xl font-bold tabular-nums tracking-tight", TONE_TEXT[tone])}>
           <CountUp value={value} prefix={prefix} suffix={suffix} />
         </div>
         {hint && <p className="mt-1 text-xs text-[var(--color-text-faint)]">{hint}</p>}
@@ -80,3 +80,4 @@ export function StatCard({
     </motion.div>
   );
 }
+

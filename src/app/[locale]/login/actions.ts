@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "@/i18n/navigation";
 import { defaultRouteForRole } from "@/lib/auth";
 import { clientIp, consume, LIMITS, retryMessage } from "@/lib/rate-limit";
+import { getTenant } from "@/lib/tenant";
 import type { Role } from "@/lib/supabase/types";
 
 export type LoginState = { error?: string; message?: string } | undefined;
@@ -43,9 +44,28 @@ export async function login(
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, tenant_id")
     .eq("id", data.user.id)
     .single();
+
+  // This account belongs to one showroom, and this hostname belongs to
+  // one showroom. If they disagree, end the session here.
+  //
+  // RLS would already return zero rows in that situation, so this is not
+  // the security boundary — it is the difference between "wrong door" and
+  // an eerie, fully-functional app containing no data. Signing out
+  // matters: leaving a valid session cookie on another tenant's
+  // subdomain is a confusing state to debug and to be in.
+  const tenant = await getTenant();
+  if (!tenant || profile?.tenant_id !== tenant.id) {
+    await supabase.auth.signOut();
+    return { error: "wrongTenant" };
+  }
+
+  if (tenant.status === "suspended") {
+    await supabase.auth.signOut();
+    return { error: "tenantSuspended" };
+  }
 
   const role = (profile?.role as Role) || "sales_exec";
   // redirect() throws NEXT_REDIRECT — it must stay outside any try/catch.

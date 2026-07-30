@@ -46,7 +46,10 @@
     "signingIn": "Signing in…",
     "invalidCredentials": "Invalid email or password.",
     "tooManyAttempts": "Too many sign-in attempts.",
-    "noAccount": "Accounts are created by your CEO or manager — contact them for access."
+    "noAccount": "Accounts are created by your CEO or manager — contact them for access.",
+    "wrongTenant": "This account does not belong to this showroom. Check the address you signed in at.",
+    "tenantSuspended": "This showroom’s licence is not active. Contact 508.world.",
+    "unknownTenant": "Unrecognised showroom address."
   },
   "roles": {
     "ceo": "CEO",

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { Panel } from "@/components/ui/panel";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -21,7 +22,7 @@ export function ReferralForm({ salespersonId }: { salespersonId: string }) {
     setError(null);
     startTransition(async () => {
       const res = await submitPublicLead(salespersonId, formData);
-      if (res.error) { setError(res.error); return; }
+      if ("error" in res) { setError(res.error); return; }
       setDone(true);
     });
   }
@@ -38,9 +39,14 @@ export function ReferralForm({ salespersonId }: { salespersonId: string }) {
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
       <div className="mb-5 text-center">
-        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border-strong)] bg-gradient-to-b from-[#3a3f47] to-[#1c1e22] text-sm font-bold tracking-widest text-white">
-          FX
-        </div>
+        <Image
+          src="/brand/felix-logo.png"
+          alt="FELIX"
+          width={420}
+          height={140}
+          className="mx-auto mb-4 h-10 w-auto"
+          priority
+        />
         <h1 className="text-lg font-semibold">{misc("referralHeading")}</h1>
       </div>
       <Panel raised>

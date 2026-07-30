@@ -3,6 +3,7 @@ import { Inter, Cairo } from "next/font/google";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
+import { SplashScreen } from "@/components/layout/splash-screen";
 import "../globals.css";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
@@ -34,7 +35,9 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} dir={dir} suppressHydrationWarning>
       <body className={`${inter.variable} ${cairo.variable} antialiased`}>
-        <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        <NextIntlClientProvider>
+          <SplashScreen>{children}</SplashScreen>
+        </NextIntlClientProvider>
       </body>
     </html>
   );
