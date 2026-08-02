@@ -123,7 +123,7 @@ export function DealTicketFormDialog({
                   </Select>
                   {!partners.length && (
                     <p className="mt-1 text-xs text-[var(--color-accent-amber)]">
-                      No active financing partners yet — see Accountant Hub.
+                      {common("noActivePartners")}
                     </p>
                   )}
                 </div>

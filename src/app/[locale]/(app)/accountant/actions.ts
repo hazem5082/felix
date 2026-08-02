@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authorize, assertBranch, FINANCE_ROLES } from "@/lib/auth";
+import { toUserError } from "@/lib/db-error";
 import {
   CreateFinancingPartnerSchema,
   FinancingRequestStatusSchema,
@@ -47,7 +48,7 @@ export async function createFinancingPartner(input: {
     status: url ? "active" : "pending_upload",
     created_by: auth.profile.id,
   });
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidatePath("/[locale]/(app)/accountant", "page");
   return { ok: true };
@@ -69,7 +70,7 @@ export async function attachContractFile(partnerId: string, url: string) {
     .from("financing_partners")
     .update({ contract_file_url: url, status: "active" })
     .eq("id", id.data);
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidatePath("/[locale]/(app)/accountant", "page");
   return { ok: true };
@@ -103,7 +104,7 @@ export async function updateFinancingRequestStatus(requestId: string, status: st
     .from("financing_requests")
     .update({ status: parsed.data.status })
     .eq("id", parsed.data.requestId);
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidatePath("/[locale]/(app)/accountant", "page");
   return { ok: true };
@@ -124,7 +125,7 @@ export async function upsertOverhead(branchId: string, monthlyOpex: number) {
     monthly_opex_amount: parsed.data.monthlyOpex,
     updated_at: new Date().toISOString(),
   });
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidatePath("/[locale]/(app)/accountant", "page");
   return { ok: true };

@@ -33,7 +33,7 @@ export function PartnerFormDialog() {
       const url = await uploadFile(file, "financing-contracts");
       setContractUrl(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : common("uploadFailed"));
     } finally {
       setUploading(false);
     }

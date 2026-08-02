@@ -28,6 +28,8 @@ export type LedgerType =
   | "opex_offset";
 export type LeadSource = "manual" | "link";
 export type LeadStatus = "pending" | "ticket_created" | "closed";
+export type MeetingStatus = "scheduled" | "cancelled";
+export type MeetingResponse = "pending" | "accepted" | "declined";
 
 export interface Branch {
   id: string;
@@ -53,6 +55,11 @@ export interface Profile {
   tenant_id: string | null;
   phone: string | null;
   avatar_url: string | null;
+  // Contact preferences for the 508.world router Worker's notifications
+  // (meeting invites, 1-hour reminders, FELIX updates) — see migration
+  // 0007. Self-editable; null means "do not send".
+  notification_email: string | null;
+  whatsapp_number: string | null;
   created_at: string;
 }
 
@@ -245,6 +252,45 @@ export interface AuditLogRow {
   entity_id: string | null;
   detail: Record<string, unknown> | null;
   created_at: string;
+}
+
+/**
+ * One attendee as returned by `calendar_meetings()`. Deliberately only
+ * name and role: the RPC exists so a salesperson can see who else is in
+ * the room without being handed the staff directory (see 0006 §5).
+ */
+export interface MeetingAttendee {
+  id: string;
+  full_name: string;
+  role: Role;
+  response: MeetingResponse;
+}
+
+/** A row of `calendar_meetings(from, to)` — not a `meetings` table row. */
+export interface CalendarMeeting {
+  id: string;
+  title: string;
+  agenda: string | null;
+  location: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: MeetingStatus;
+  branch_id: string | null;
+  branch_name: string | null;
+  organizer_id: string;
+  organizer_name: string | null;
+  is_organizer: boolean;
+  /** null when the caller is watching a meeting they were not invited to. */
+  my_response: MeetingResponse | null;
+  attendees: MeetingAttendee[];
+}
+
+/** A row of `calendar_invitable_people()` — who *this* caller may invite. */
+export interface InvitablePerson {
+  id: string;
+  full_name: string;
+  role: Role;
+  branch_id: string | null;
 }
 
 export interface WaterfallPreview {

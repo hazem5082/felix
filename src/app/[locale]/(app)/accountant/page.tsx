@@ -1,15 +1,19 @@
 import { getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/auth";
+import { getProfile, FINANCE_ROLES } from "@/lib/auth";
+import { ReportsLauncher } from "./reports-launcher";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
 import { StatusPill } from "@/components/ui/status-pill";
 import type { FinancingPartner, FinancingRequest, Branch, OverheadConfig, DealTicket, Vehicle } from "@/lib/supabase/types";
 import { PartnerFormDialog } from "./partner-form";
 import { OverheadRow } from "./overhead-row";
+import { RequestStatusControl } from "./request-status";
+import { PartnerContractUpload } from "./partner-contract-upload";
 
 export default async function AccountantPage() {
   const t = await getTranslations("accountant");
+  const tc = await getTranslations("common");
   const supabase = await createClient();
   const profile = await getProfile();
 
@@ -26,9 +30,13 @@ export default async function AccountantPage() {
   const overheadByBranch = new Map(((overheads as OverheadConfig[]) ?? []).map((o) => [o.branch_id, o.monthly_opex_amount]));
   const isCeo = profile?.role === "ceo";
 
+  const isFinance = !!profile && FINANCE_ROLES.includes(profile.role);
+
   return (
     <div className="space-y-6">
       <PanelHeader title={t("title")} />
+
+      {isFinance && <ReportsLauncher />}
 
       <Panel>
         <PanelHeader title={t("financingPartners")} action={<PartnerFormDialog />} />
@@ -38,7 +46,7 @@ export default async function AccountantPage() {
             <Th>{t("productName")}</Th>
             <Th>{t("rate")}</Th>
             <Th>{t("termMonths")}</Th>
-            <Th>Status</Th>
+            <Th>{tc("status")}</Th>
           </THead>
           <TBody>
             {((partners as FinancingPartner[]) ?? []).map((p) => (
@@ -48,10 +56,13 @@ export default async function AccountantPage() {
                 <Td className="num">{p.rate ? `${p.rate}%` : "—"}</Td>
                 <Td className="num">{p.term_months ?? "—"}</Td>
                 <Td>
-                  <StatusPill
-                    label={p.status === "active" ? t("statusActive") : t("statusPendingUpload")}
-                    tone={p.status === "active" ? "green" : "amber"}
-                  />
+                  <div className="flex items-center gap-2">
+                    <StatusPill
+                      label={p.status === "active" ? t("statusActive") : t("statusPendingUpload")}
+                      tone={p.status === "active" ? "green" : "amber"}
+                    />
+                    {p.status !== "active" && isFinance && <PartnerContractUpload partnerId={p.id} />}
+                  </div>
                 </Td>
               </Tr>
             ))}
@@ -64,10 +75,10 @@ export default async function AccountantPage() {
         <PanelHeader title={t("financingRequests")} />
         <Table>
           <THead>
-            <Th>Vehicle</Th>
-            <Th>Partner</Th>
-            <Th>Amount</Th>
-            <Th>Status</Th>
+            <Th>{tc("vehicle")}</Th>
+            <Th>{t("partner")}</Th>
+            <Th>{tc("amount")}</Th>
+            <Th>{tc("status")}</Th>
           </THead>
           <TBody>
             {((requests as (FinancingRequest & { deal_tickets?: DealTicket & { vehicles?: Vehicle }; financing_partners?: FinancingPartner })[]) ?? []).map((r) => (
@@ -75,7 +86,16 @@ export default async function AccountantPage() {
                 <Td>{r.deal_tickets?.vehicles ? `${r.deal_tickets.vehicles.year} ${r.deal_tickets.vehicles.make} ${r.deal_tickets.vehicles.model}` : "—"}</Td>
                 <Td>{r.financing_partners?.bank_name ?? "—"}</Td>
                 <Td className="num">{r.deal_tickets?.agreed_price ? `$${r.deal_tickets.agreed_price.toLocaleString()}` : "—"}</Td>
-                <Td><StatusPill label={r.status.replace(/_/g, " ")} tone={r.status.includes("approved") ? "green" : r.status.includes("rejected") ? "red" : "amber"} /></Td>
+                <Td>
+                  {isFinance ? (
+                    <RequestStatusControl requestId={r.id} status={r.status} />
+                  ) : (
+                    <StatusPill
+                      label={t(`requestStatus_${r.status}`)}
+                      tone={r.status.includes("approved") ? "green" : r.status.includes("rejected") ? "red" : "amber"}
+                    />
+                  )}
+                </Td>
               </Tr>
             ))}
             {!requests?.length && <Tr><Td className="text-center text-[var(--color-text-faint)]">—</Td></Tr>}

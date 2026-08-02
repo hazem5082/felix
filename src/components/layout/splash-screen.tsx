@@ -2,33 +2,70 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 
-const TYPE_MS = 2600; // Decreased speed (longer typing reveal)
-const HOLD_MS = 1400; // Increased hold time
-const EXIT_MS = 750;  // Smooth exit duration
+const TYPE_MS = 1100;
+const HOLD_MS = 350;
+const EXIT_MS = 450;
 
-type Phase = "typing" | "exiting" | "hidden";
+/**
+ * Replayed on every full page load, this splash was the single biggest
+ * "the app is broken" generator in production: a fullscreen z-[999]
+ * overlay WITHOUT pointer-events-none sat over the page for ~5.5s per
+ * navigation, silently eating every click. The page underneath looked
+ * ready — buttons visible, forms rendered — so users clicked, nothing
+ * happened, and every input appeared dead. (Verified live: the same
+ * click that did nothing during the overlay creates a lead once it's
+ * gone.)
+ *
+ * Three rules keep it harmless now:
+ *  1. pointer-events-none, always. It is decoration; it may never
+ *     intercept input, not even for one frame.
+ *  2. Once per browser session. A brand moment on arrival is polish;
+ *     replaying it on every hard navigation is a 5-second toll booth.
+ *  3. Short. The old 4.75s was longer than most page loads.
+ */
+const SEEN_KEY = "felix-splash-seen";
+
+type Phase = "typing" | "hidden";
 
 export function SplashScreen({ children }: { children: React.ReactNode }) {
+  // Server and first client render agree on "typing" (no hydration
+  // mismatch); the effect below hides it immediately when this session
+  // has already seen it.
   const [phase, setPhase] = useState<Phase>("typing");
+  const pathname = usePathname();
+
+  // Print views (contracts, reports) open in a new tab headed straight
+  // for the print dialog — a branding animation there is at best a
+  // flash and at worst ends up ON the printed page.
+  const isPrintRoute = pathname?.includes("/print/") ?? false;
 
   useEffect(() => {
-    const toExit = setTimeout(() => setPhase("exiting"), TYPE_MS + HOLD_MS);
-    const toHidden = setTimeout(() => setPhase("hidden"), TYPE_MS + HOLD_MS + EXIT_MS);
-    return () => {
-      clearTimeout(toExit);
-      clearTimeout(toHidden);
-    };
+    let seen = false;
+    try {
+      seen = sessionStorage.getItem(SEEN_KEY) === "1";
+      sessionStorage.setItem(SEEN_KEY, "1");
+    } catch {
+      // Storage blocked (private mode etc.) — worst case the splash
+      // replays; it can't block anything either way.
+    }
+    if (seen) {
+      setPhase("hidden");
+      return;
+    }
+    const t = setTimeout(() => setPhase("hidden"), TYPE_MS + HOLD_MS);
+    return () => clearTimeout(t);
   }, []);
 
   return (
     <>
       {children}
       <AnimatePresence>
-        {phase !== "hidden" && (
+        {phase !== "hidden" && !isPrintRoute && (
           <motion.div
-            className="fixed inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden bg-[#060709]"
+            className="pointer-events-none fixed inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden bg-[#060709]"
             exit={{ opacity: 0, scale: 1.02, filter: "blur(10px)" }}
             transition={{ duration: EXIT_MS / 1000, ease: [0.4, 0, 0.2, 1] }}
           >
@@ -55,15 +92,14 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
               }}
             />
 
-            {/* Direct Content Wrapper (No glass card container) */}
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="relative flex flex-col items-center gap-8 z-10"
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="relative z-10 flex flex-col items-center gap-8"
             >
               <div className="relative">
-                {/* Typed logo reveal - enlarged */}
+                {/* Typed logo reveal */}
                 <motion.div
                   initial={{ clipPath: "inset(0 100% 0 0)" }}
                   animate={{ clipPath: "inset(0 0% 0 0)" }}
@@ -79,26 +115,16 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                   />
                 </motion.div>
 
-                {/* Sweeping & Continuously Blinking White Caret */}
+                {/* Sweeping caret */}
                 <motion.div
-                  className="absolute top-0 bottom-0 w-[3.5px] rounded-full bg-white shadow-[0_0_16px_4px_rgba(255,255,255,0.95)]"
+                  className="absolute bottom-0 top-0 w-[3.5px] rounded-full bg-white shadow-[0_0_16px_4px_rgba(255,255,255,0.95)]"
                   initial={{ left: "0%" }}
                   animate={{ left: "100%" }}
                   transition={{ duration: TYPE_MS / 1000, ease: [0.65, 0, 0.35, 1] }}
-                >
-                  <motion.div
-                    className="h-full w-full bg-white"
-                    animate={{ opacity: [1, 0, 1] }}
-                    transition={{
-                      duration: 0.6,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                  />
-                </motion.div>
+                />
               </div>
 
-              {/* Sleek White Progress Bar */}
+              {/* Progress bar */}
               <div className="relative h-[2.5px] w-56 overflow-hidden rounded-full bg-white/15">
                 <motion.div
                   className="h-full rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)]"
@@ -114,4 +140,3 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
     </>
   );
 }
-

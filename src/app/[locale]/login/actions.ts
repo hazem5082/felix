@@ -46,7 +46,7 @@ export async function login(
     .from("profiles")
     .select("role, tenant_id")
     .eq("id", data.user.id)
-    .single();
+    .maybeSingle();
 
   // This account belongs to one showroom, and this hostname belongs to
   // one showroom. If they disagree, end the session here.

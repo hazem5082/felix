@@ -189,6 +189,74 @@ export const RejectTicketSchema = z.object({
   reason: text(1000),
 });
 
+// ── Calendar ────────────────────────────────────────────────
+
+/**
+ * An instant off a `datetime-local` input, which submits wall-clock text
+ * with no zone. The client converts to an ISO string before it reaches
+ * here; this only guarantees the server can parse it, and bounds it so a
+ * mistyped year cannot park a meeting in 1970 or 4000.
+ */
+const instant = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((s) => !Number.isNaN(Date.parse(s)), { message: "Not a valid date and time" })
+  .transform((s) => new Date(s).toISOString())
+  .refine(
+    (iso) => {
+      const year = new Date(iso).getUTCFullYear();
+      return year >= 2000 && year <= 2100;
+    },
+    { message: "Date must be between 2000 and 2100" }
+  );
+
+/**
+ * Mirrors the checks inside `create_meeting()` so the form can say what
+ * is wrong inline. The RPC re-checks all of it — this is the friendly
+ * copy, not the enforcement.
+ */
+export const CreateMeetingSchema = z
+  .object({
+    title: text(120),
+    agenda: optionalText(2000),
+    location: optionalText(160),
+    starts_at: instant,
+    ends_at: instant,
+    // Ignored for a branch manager: create_meeting() overwrites it with
+    // their own branch rather than trusting the client.
+    branch_id: Uuid.nullable(),
+    invitee_ids: z
+      .array(Uuid)
+      .min(1, { message: "Invite at least one person" })
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "The same person cannot be invited twice",
+      }),
+  })
+  .refine((m) => Date.parse(m.ends_at) > Date.parse(m.starts_at), {
+    message: "A meeting must end after it starts",
+    path: ["ends_at"],
+  })
+  .refine(
+    (m) => Date.parse(m.ends_at) - Date.parse(m.starts_at) <= 12 * 60 * 60 * 1000,
+    { message: "A meeting may not run longer than 12 hours", path: ["ends_at"] }
+  );
+
+export const MeetingResponseSchema = z.object({
+  meeting_id: Uuid,
+  response: z.enum(["accepted", "declined"]),
+});
+
+export const CancelMeetingSchema = z.object({ meeting_id: Uuid });
+
+/** `?month=YYYY-MM`, falling back to the current month if absent or junk. */
+export const CalendarMonthSchema = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+  .optional()
+  .catch(undefined);
+
 // ── Financing & overhead ────────────────────────────────────
 
 export const CreateFinancingPartnerSchema = z.object({
@@ -335,6 +403,32 @@ export const CommissionTiersSchema = z.object({
       },
       { message: "Each tier must be strictly greater than the one below it" }
     ),
+});
+
+// ── Account (notification contacts & password) ──────────────
+
+/**
+ * "" collapses to null (opt out of that channel); anything else must
+ * look like an address the 508.world router Worker could actually send
+ * to. Mirrors the CHECK constraints in migration 0007 so the form can
+ * say what's wrong before the round trip.
+ */
+export const UpdateNotificationContactsSchema = z.object({
+  notification_email: z
+    .union([z.email().max(254), z.literal("")])
+    .transform((v) => (v ? v : null)),
+  whatsapp_number: z.union([phone, z.literal("")]).transform((v) => (v ? v : null)),
+});
+
+export const ChangePasswordSchema = z.object({
+  current_password: z.string().min(1, { message: "Enter your current password" }),
+  // Supabase's own floor is 6; 10 is this app's choice, and 72 is
+  // bcrypt's hard ceiling — anything past it is silently truncated,
+  // which would make a longer password *less* secure than it looks.
+  new_password: z
+    .string()
+    .min(10, { message: "New password must be at least 10 characters" })
+    .max(72, { message: "New password must be at most 72 characters" }),
 });
 
 // ── List controls ───────────────────────────────────────────

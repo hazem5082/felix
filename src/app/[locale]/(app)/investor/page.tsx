@@ -40,10 +40,10 @@ export default async function InvestorPortalPage() {
         <PanelHeader title={t("fundedVehicles")} />
         <Table>
           <THead>
-            <Th>Vehicle</Th>
+            <Th>{common("vehicle")}</Th>
             <Th>{t("ownership")}</Th>
-            <Th>Invested</Th>
-            <Th>Status</Th>
+            <Th>{common("invested")}</Th>
+            <Th>{common("status")}</Th>
           </THead>
           <TBody>
             {((splits as (VehicleEquitySplit & { vehicles?: Vehicle })[]) ?? []).map((s) => (

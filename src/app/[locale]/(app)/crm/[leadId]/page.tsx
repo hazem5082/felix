@@ -15,10 +15,11 @@ export default async function LeadDetailPage({
   const t = await getTranslations("crm");
   const dealsT = await getTranslations("deals");
   const misc = await getTranslations("misc");
+  const common = await getTranslations("common");
   const supabase = await createClient();
 
   const [{ data: lead }, { data: comments }] = await Promise.all([
-    supabase.from("leads").select("*").eq("id", leadId).single(),
+    supabase.from("leads").select("*").eq("id", leadId).maybeSingle(),
     supabase
       .from("lead_comments")
       .select("*, profiles(full_name)")
@@ -65,7 +66,7 @@ export default async function LeadDetailPage({
                 <p className="mt-1 text-sm text-[var(--color-text)]">{c.body}</p>
               </div>
             ))}
-            {!comments?.length && <p className="text-xs text-[var(--color-text-faint)]">No follow-ups logged yet.</p>}
+            {!comments?.length && <p className="text-xs text-[var(--color-text-faint)]">{common("noFollowUps")}</p>}
           </div>
         </Panel>
       </div>

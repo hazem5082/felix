@@ -68,10 +68,48 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  experimental: {
+    serverActions: {
+      // FELIX is served through the 508.world Worker, which proxies to this
+      // Worker's own origin. Next compares the browser's `Origin` against the
+      // forwarded host as a CSRF defence, and through a proxy those differ:
+      // Origin is `demo-felix.508.world` while x-forwarded-host is
+      // `filex.…workers.dev`. Without this, EVERY Server Action — login
+      // included — dies with "Invalid Server Actions request" and a 500,
+      // while ordinary page loads keep working, which makes it look like an
+      // auth bug rather than a proxy one.
+      //
+      // The Worker also sets X-Forwarded-Host to the public hostname, which
+      // fixes the mismatch at source; this list is the second layer, and is
+      // what keeps direct *.workers.dev access working too.
+      //
+      // `*.508.world` used to be here and has been removed. Next's origin
+      // check is the ONLY CSRF defence on Server Actions, and Supabase's
+      // cookies are SameSite=Lax — which still rides along on a POST from a
+      // sibling subdomain, because that is same-*site*. The wildcard
+      // therefore made every mutating action (updateEmployee,
+      // resetEmployeePassword, executeSale) reachable from any other
+      // 508.world host — a zone shared with separately-deployed products,
+      // each with its own XSS and dangling-CNAME surface.
+      //
+      // Tenant hosts are dynamic (<slug>-felix.508.world) so they cannot be
+      // enumerated here, and a partial-label pattern would NOT work: Next's
+      // matchWildcardDomain only treats `*` as a whole label. They do not
+      // need to be listed — the Worker's X-Forwarded-Host makes origin and
+      // host agree for all proxied traffic, so this list is consulted only
+      // for direct-to-Worker access.
+      // `felix.508.world` was dropped when it became the static product page:
+      // it no longer serves this app, and leaving it allow-listed would let a
+      // compromise of that separately-deployed page reach mutating actions
+      // here with same-site cookies attached.
+      allowedOrigins: ["demo-felix.508.world", "filex.wejdan-arts-studio.workers.dev"],
+    },
+  },
   // A stack trace on a financial system's error page is a reconnaissance gift.
   productionBrowserSourceMaps: false,
   poweredByHeader: false,
   images: {
+    unoptimized: true,
     remotePatterns: [
       { protocol: "https", hostname: "**.r2.dev" },
       { protocol: "https", hostname: "**.r2.cloudflarestorage.com" },

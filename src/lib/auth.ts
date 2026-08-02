@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { getTenant } from "@/lib/tenant";
 import { redirect } from "@/i18n/navigation";
 import type { Profile, Role } from "@/lib/supabase/types";
 import type { ActionError } from "@/lib/validation";
@@ -18,7 +19,7 @@ export const getProfile = cache(async (): Promise<Profile | null> => {
     .from("profiles")
     .select("*")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
   return (data as Profile) ?? null;
 });
@@ -41,6 +42,54 @@ export async function requireRole(locale: string, allowed: Role[]): Promise<Prof
     throw new Error("unreachable");
   }
   return profile;
+}
+
+/**
+ * The licence gate, for authenticated pages that do NOT render inside
+ * the `(app)` layout — print documents, and anything else added later
+ * outside that route group.
+ *
+ * The layout's check was the only enforcement of "this session belongs
+ * to this host's showroom, and that showroom's licence is active". Any
+ * page outside it inherited none of it, so a suspended showroom's staff
+ * could still pull the full P&L, cap table and ledger from the print
+ * routes with a cookie issued before suspension. Session refresh is
+ * independent of `tenants.status`, so that would have continued
+ * indefinitely.
+ */
+export async function requireActiveTenant(
+  locale: string,
+  allowed?: Role[]
+): Promise<Profile> {
+  const [profile, tenant] = await Promise.all([getProfile(), getTenant()]);
+
+  if (
+    !profile ||
+    !tenant ||
+    tenant.id !== profile.tenant_id ||
+    tenant.status === "suspended"
+  ) {
+    redirect({ href: "/login", locale });
+    throw new Error("unreachable");
+  }
+
+  if (allowed && !allowed.includes(profile.role)) {
+    redirect({ href: defaultRouteForRole(profile.role), locale });
+    throw new Error("unreachable");
+  }
+
+  return profile;
+}
+
+/** Non-redirecting equivalent, for route handlers. */
+export async function authorizeActiveTenant(allowed: Role[]): Promise<Authorized> {
+  const [profile, tenant] = await Promise.all([getProfile(), getTenant()]);
+  if (!profile) return { ok: false, error: UNAUTHENTICATED };
+  if (!tenant || tenant.id !== profile.tenant_id || tenant.status === "suspended") {
+    return { ok: false, error: DENIED };
+  }
+  if (!allowed.includes(profile.role)) return { ok: false, error: DENIED };
+  return { ok: true, profile };
 }
 
 // ── Action guards (non-redirecting) ─────────────────────────

@@ -27,7 +27,18 @@ const supabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-const PASSWORD = "FilexDemo123!";
+// Never a literal. This file is in the repository, and the accounts it
+// creates are real sign-ins on a real showroom — a password committed
+// here is a published credential for whoever the seed last ran against.
+const PASSWORD = process.env.SEED_PASSWORD;
+if (!PASSWORD || PASSWORD.length < 12) {
+  console.error(
+    "SEED_PASSWORD is not set (or is shorter than 12 characters).\n" +
+      "Set it in .env.local before seeding, e.g.\n" +
+      "  SEED_PASSWORD=<a strong passphrase>\n"
+  );
+  process.exit(1);
+}
 
 function arg(name, fallback) {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -396,22 +407,85 @@ async function submitTicket(fields) {
  * it, which also means the demo data is produced by exactly the code the
  * application runs.
  */
-async function reviewAs(work) {
-  const ceo = createClient(
+async function signedInAs(accountKey, work) {
+  const client = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
-  const { error } = await ceo.auth.signInWithPassword({
-    email: emailFor("ceo"),
+  const { error } = await client.auth.signInWithPassword({
+    email: emailFor(accountKey),
     password: PASSWORD,
   });
-  if (error) throw new Error(`could not sign in as ${emailFor("ceo")}: ${error.message}`);
+  if (error) throw new Error(`could not sign in as ${emailFor(accountKey)}: ${error.message}`);
   try {
-    return await work(ceo);
+    return await work(client);
   } finally {
-    await ceo.auth.signOut();
+    await client.auth.signOut();
   }
+}
+
+const reviewAs = (work) => signedInAs("ceo", work);
+
+/**
+ * Two meetings, created the same way the app creates them.
+ *
+ * create_meeting() is SECURITY DEFINER and reads the caller's role from
+ * auth.uid(), so — like reviewing a deal ticket — the service-role key
+ * cannot do this at all. Seeding through the RPC while signed in means
+ * the demo data is proof the permission rule works rather than data that
+ * merely looks like it: the manager's huddle below would be rejected if
+ * it named anyone but their own branch's sales staff.
+ */
+async function seedMeetings(ids) {
+  const { count } = await supabase
+    .from("meetings")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", TENANT_ID);
+  if (count) {
+    console.log(`· ${count} meeting(s) already present — leaving the calendar alone`);
+    return;
+  }
+
+  // Next Monday, so the demo calendar always has something ahead of it.
+  const monday = new Date();
+  monday.setDate(monday.getDate() + ((8 - monday.getDay()) % 7 || 7));
+  const at = (day, hour, minutes = 0) => {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + day);
+    d.setHours(hour, minutes, 0, 0);
+    return d.toISOString();
+  };
+
+  await signedInAs("ceo", async (ceo) => {
+    const { error } = await ceo.rpc("create_meeting", {
+      p_title: "Monthly performance review",
+      p_agenda: "Inventory ageing, margin by branch, and the approval backlog.",
+      p_location: "Head office boardroom",
+      p_starts_at: at(0, 9),
+      p_ends_at: at(0, 10, 30),
+      p_branch_id: null, // showroom-wide: only a CEO can do this
+      p_invitees: [ids.manager, ids.accountant, ids.sales].filter(Boolean),
+    });
+    if (error) throw new Error(`create_meeting (ceo): ${error.message}`);
+  });
+
+  await signedInAs("manager", async (manager) => {
+    const { error } = await manager.rpc("create_meeting", {
+      p_title: "Sales huddle",
+      p_agenda: "Pipeline walk-through and this week's test drives.",
+      p_location: "Downtown showroom floor",
+      p_starts_at: at(1, 8, 30),
+      p_ends_at: at(1, 9),
+      // Sent deliberately wrong: a branch manager's meeting is pinned to
+      // their own branch server-side whatever the client asks for.
+      p_branch_id: null,
+      p_invitees: [ids.sales].filter(Boolean),
+    });
+    if (error) throw new Error(`create_meeting (manager): ${error.message}`);
+  });
+
+  console.log("✓ seeded 2 meetings through create_meeting()");
 }
 
 async function main() {
@@ -546,13 +620,15 @@ async function main() {
     });
   }
 
+  await seedMeetings(ids);
+
   console.log(`\n— ${NAME} (${SLUG}) — all accounts use password: ${PASSWORD} —`);
   for (const a of ACCOUNTS) {
     console.log(`  ${a.role.padEnd(15)} ${emailFor(a.key)}`);
   }
   console.log(
     SLUG === "felix"
-      ? "\nSign in at: https://felix.508.world/en/login"
+      ? "\nSign in at: https://demo-felix.508.world/en/login"
       : `\nSign in at: https://${SLUG}-felix.508.world/en/login`
   );
   console.log("Referral link: /en/refer/" + salesId);

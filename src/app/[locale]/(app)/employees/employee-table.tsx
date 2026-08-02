@@ -1,0 +1,245 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useTranslations } from "next-intl";
+import { KeyRound, Pencil } from "lucide-react";
+import { Panel } from "@/components/ui/panel";
+import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
+import { StatusPill, type SemanticTone } from "@/components/ui/status-pill";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input, Label, Select } from "@/components/ui/input";
+import type { Branch, Role } from "@/lib/supabase/types";
+import { resetEmployeePassword, updateEmployee } from "./actions";
+import { CredentialsNote } from "./credentials-note";
+
+export interface EmployeeRow {
+  id: string;
+  full_name: string;
+  role: Role;
+  branch_id: string | null;
+  branch_name: string | null;
+  phone: string | null;
+  email: string | null;
+  created_at: string;
+  is_me: boolean;
+}
+
+const ROLE_TONE: Record<Role, SemanticTone> = {
+  ceo: "blue",
+  branch_manager: "green",
+  accountant: "amber",
+  sales_exec: "neutral",
+  investor: "red",
+};
+
+const ROLES: Role[] = ["sales_exec", "branch_manager", "accountant", "investor", "ceo"];
+const ORG_WIDE: Role[] = ["ceo", "investor"];
+
+export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branches: Branch[] }) {
+  const t = useTranslations("employees");
+  const roles = useTranslations("roles");
+  const common = useTranslations("common");
+  const [pending, startTransition] = useTransition();
+
+  const [creds, setCreds] = useState<{ email: string; password: string; name: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EmployeeRow | null>(null);
+  const [editForm, setEditForm] = useState({ full_name: "", role: "sales_exec" as Role, branch_id: "", phone: "" });
+
+  function beginEdit(row: EmployeeRow) {
+    setEditing(row);
+    setEditForm({
+      full_name: row.full_name,
+      role: row.role,
+      branch_id: row.branch_id ?? "",
+      phone: row.phone ?? "",
+    });
+    setError(null);
+  }
+
+  function reset(row: EmployeeRow) {
+    if (!window.confirm(t("confirmReset", { name: row.full_name }))) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await resetEmployeePassword({ profile_id: row.id });
+      if ("error" in res) {
+        setError(res.error);
+        return;
+      }
+      setCreds({ email: res.email, password: res.temporary_password, name: row.full_name });
+    });
+  }
+
+  function saveEdit() {
+    if (!editing) return;
+    setError(null);
+    const needsBranch = !ORG_WIDE.includes(editForm.role);
+    startTransition(async () => {
+      const res = await updateEmployee({
+        id: editing.id,
+        full_name: editForm.full_name,
+        role: editForm.role,
+        branch_id: needsBranch ? editForm.branch_id || null : null,
+        phone: editForm.phone,
+      });
+      if (res && "error" in res) {
+        setError(res.error);
+        return;
+      }
+      setEditing(null);
+    });
+  }
+
+  const needsBranch = !ORG_WIDE.includes(editForm.role);
+
+  return (
+    <>
+      <Panel>
+        <Table>
+          <THead>
+            <Th>{t("fullName")}</Th>
+            <Th>{t("email")}</Th>
+            <Th>{t("role")}</Th>
+            <Th>{t("branch")}</Th>
+            <Th>{t("phone")}</Th>
+            <Th>{common("actions")}</Th>
+          </THead>
+          <TBody>
+            {rows.map((r) => (
+              <Tr key={r.id}>
+                <Td>
+                  {r.full_name}
+                  {r.is_me && (
+                    <span className="ms-2 text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
+                      {t("you")}
+                    </span>
+                  )}
+                </Td>
+                <Td className="text-[var(--color-text-muted)]">
+                  <span dir="ltr">{r.email ?? "—"}</span>
+                </Td>
+                <Td>
+                  <StatusPill label={roles(r.role)} tone={ROLE_TONE[r.role]} />
+                </Td>
+                <Td className="text-[var(--color-text-muted)]">{r.branch_name ?? "—"}</Td>
+                <Td className="num text-[var(--color-text-muted)]">
+                  <span dir="ltr">{r.phone ?? "—"}</span>
+                </Td>
+                <Td>
+                  <div className="flex gap-1.5">
+                    <Button variant="outline" size="sm" onClick={() => beginEdit(r)} disabled={pending}>
+                      <Pencil size={12} />
+                      {common("edit")}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => reset(r)} disabled={pending}>
+                      <KeyRound size={12} />
+                      {t("resetPassword")}
+                    </Button>
+                  </div>
+                </Td>
+              </Tr>
+            ))}
+            {!rows.length && (
+              <Tr>
+                <Td className="text-center text-[var(--color-text-faint)]">—</Td>
+              </Tr>
+            )}
+          </TBody>
+        </Table>
+        {error && !editing && <p className="mt-3 text-xs text-[var(--color-accent-red)]">{error}</p>}
+      </Panel>
+
+      {/* One-time credentials after a reset */}
+      <Dialog open={!!creds} onOpenChange={(next) => !next && setCreds(null)}>
+        {creds && (
+          <DialogContent title={t("passwordResetFor", { name: creds.name })}>
+            <CredentialsNote email={creds.email} password={creds.password} />
+            <div className="mt-5 flex justify-end">
+              <Button variant="primary" onClick={() => setCreds(null)}>
+                {common("close")}
+              </Button>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+
+      {/* Edit role / branch / contact */}
+      <Dialog open={!!editing} onOpenChange={(next) => !next && setEditing(null)}>
+        {editing && (
+          <DialogContent title={t("editEmployee", { name: editing.full_name })}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label>{t("fullName")}</Label>
+                <Input
+                  value={editForm.full_name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, full_name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>{t("role")}</Label>
+                <Select
+                  value={editForm.role}
+                  onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value as Role }))}
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {roles(r)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Label>{needsBranch ? t("branch") : t("phone")}</Label>
+                {needsBranch ? (
+                  <Select
+                    value={editForm.branch_id}
+                    onChange={(e) => setEditForm((f) => ({ ...f, branch_id: e.target.value }))}
+                  >
+                    <option value="">{t("selectBranch")}</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    dir="ltr"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                  />
+                )}
+              </div>
+              {needsBranch && (
+                <div className="col-span-2">
+                  <Label>{t("phone")}</Label>
+                  <Input
+                    dir="ltr"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+              )}
+            </div>
+
+            {error && <p className="mt-3 text-xs text-[var(--color-accent-red)]">{error}</p>}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setEditing(null)}>
+                {common("cancel")}
+              </Button>
+              <Button
+                variant="accent"
+                onClick={saveEdit}
+                disabled={pending || !editForm.full_name.trim() || (needsBranch && !editForm.branch_id)}
+              >
+                {common("save")}
+              </Button>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+    </>
+  );
+}

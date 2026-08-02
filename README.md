@@ -108,14 +108,21 @@ Anyone who signs up *without* an invitation lands as `sales_exec`.
 
 ### 5. Seed demo data (optional)
 
+Set a password for the seeded accounts first — the script refuses to run
+without one, so that no credential is ever committed to this repository:
+
 ```bash
-npm run seed
+SEED_PASSWORD='<a strong passphrase>' npm run seed
 ```
 
-Creates one user per role (password `FilexDemo123!`), four vehicles with
+Creates one user per role (all sharing that password), four vehicles with
 equity splits, leads, and deal tickets across every status including one
-executed sale so the ledgers are not empty. **Demo credentials only — never
-run this against production.**
+executed sale so the ledgers are not empty, plus two calendar meetings.
+
+**Demo data only — never run this against a live showroom.** The accounts
+it creates are real sign-ins with real privileges: if you seed a tenant
+that later goes to a customer, rotate every password from the Employees
+tab before handing it over.
 
 ### 6. Run
 

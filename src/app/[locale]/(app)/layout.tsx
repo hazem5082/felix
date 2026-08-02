@@ -2,6 +2,7 @@ import { getProfile } from "@/lib/auth";
 import { redirect } from "@/i18n/navigation";
 import { getTenant } from "@/lib/tenant";
 import { Sidebar } from "@/components/layout/sidebar";
+import { MobileNav } from "@/components/layout/mobile-nav";
 import { Topbar } from "@/components/layout/topbar";
 
 export default async function AppLayout({
@@ -32,8 +33,10 @@ export default async function AppLayout({
       <Sidebar role={profile!.role} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar profile={profile!} showroomName={tenant!.name} />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        {/* pb-24 on mobile so the bottom tab bar never covers content. */}
+        <main className="flex-1 overflow-y-auto p-6 pb-24 md:pb-6">{children}</main>
       </div>
+      <MobileNav role={profile!.role} />
     </div>
   );
 }

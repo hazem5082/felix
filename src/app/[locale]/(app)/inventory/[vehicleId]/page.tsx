@@ -30,7 +30,7 @@ export default async function VehicleDetailPage({
 
   const [{ data: vehicle }, { data: splits }, { data: expenses }, { data: branch }] =
     await Promise.all([
-      supabase.from("vehicles").select("*").eq("id", vehicleId).single(),
+      supabase.from("vehicles").select("*").eq("id", vehicleId).maybeSingle(),
       supabase
         .from("vehicle_equity_splits")
         .select("*, investors(id, profiles(full_name))")
@@ -40,14 +40,14 @@ export default async function VehicleDetailPage({
         .select("*")
         .eq("vehicle_id", vehicleId)
         .order("created_at", { ascending: false }),
-      supabase.from("vehicles").select("branch_id").eq("id", vehicleId).single(),
+      supabase.from("vehicles").select("branch_id").eq("id", vehicleId).maybeSingle(),
     ]);
 
   if (!vehicle) notFound();
 
   const v = vehicle as Vehicle;
   const { data: branchRow } = branch
-    ? await supabase.from("branches").select("*").eq("id", (branch as { branch_id: string }).branch_id).single()
+    ? await supabase.from("branches").select("*").eq("id", (branch as { branch_id: string }).branch_id).maybeSingle()
     : { data: null };
 
   const canManageExpenses = profile && ["ceo", "accountant", "branch_manager"].includes(profile.role);
@@ -68,7 +68,10 @@ export default async function VehicleDetailPage({
               </span>
             </Link>
           ) : (
-            <StatusPill label={t("statusSold")} tone={vehicleStatusTone(v.status)} />
+            <StatusPill
+            label={v.status === "reserved" ? t("statusReserved") : t("statusSold")}
+            tone={vehicleStatusTone(v.status)}
+          />
           )
         }
       />

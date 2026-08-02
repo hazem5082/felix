@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { authorize, assertBranch, REVIEWER_ROLES } from "@/lib/auth";
 import { ChecklistSchema, RejectTicketSchema, Uuid, parseInput } from "@/lib/validation";
 import type { WaterfallPreview } from "@/lib/supabase/types";
+import { toUserError } from "@/lib/db-error";
 
 // Every export here is a public HTTP endpoint. The `canReview` prop that
 // hides these controls in the UI does nothing for a hand-crafted POST, so
@@ -60,7 +61,7 @@ export async function updateChecklist(
 
   const supabase = await createClient();
   const { error } = await supabase.from("deal_tickets").update(parsed.data).eq("id", id.data);
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidateDeals();
   return { ok: true };
@@ -91,7 +92,7 @@ export async function approveTicket(ticketId: string) {
     .update({ status: "approved" })
     .eq("id", id.data)
     .eq("status", "submitted");
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidateDeals();
   return { ok: true };
@@ -115,7 +116,7 @@ export async function rejectTicket(ticketId: string, reason: string) {
     .from("deal_tickets")
     .update({ status: "rejected", rejection_reason: parsed.data.reason })
     .eq("id", parsed.data.ticketId);
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidateDeals();
   return { ok: true };
@@ -142,7 +143,7 @@ export async function executeSale(ticketId: string) {
   const { data, error } = await supabase.rpc("execute_vehicle_sale", {
     p_deal_ticket_id: id.data,
   });
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidateDeals();
   revalidatePath("/[locale]/(app)/inventory", "page");

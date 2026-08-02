@@ -14,6 +14,10 @@ import {
   FileCheck2,
   Calculator,
   Wallet,
+  CalendarDays,
+  UserCog,
+  LifeBuoy,
+  UserCircle2,
 } from "lucide-react";
 
 const ICONS = {
@@ -23,6 +27,10 @@ const ICONS = {
   deals: FileCheck2,
   accountant: Calculator,
   investor: Wallet,
+  calendar: CalendarDays,
+  employees: UserCog,
+  support: LifeBuoy,
+  account: UserCircle2,
 };
 
 export function Sidebar({ role }: { role: Role }) {

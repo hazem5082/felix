@@ -15,6 +15,7 @@ export default async function TicketDetailPage({
 }) {
   const { ticketId } = await params;
   const t = await getTranslations("deals");
+  const common = await getTranslations("common");
   const supabase = await createClient();
   const profile = await getProfile();
 
@@ -22,7 +23,7 @@ export default async function TicketDetailPage({
     .from("deal_tickets")
     .select("*, vehicles(*), financing_partners(bank_name, product_name, rate)")
     .eq("id", ticketId)
-    .single();
+    .maybeSingle();
 
   if (!ticket) notFound();
   const dt = ticket as DealTicket & { vehicles?: Vehicle };
@@ -46,7 +47,7 @@ export default async function TicketDetailPage({
   return (
     <div className="space-y-6">
       <PanelHeader
-        title={dt.vehicles ? `${dt.vehicles.year} ${dt.vehicles.make} ${dt.vehicles.model}` : "Deal Ticket"}
+        title={dt.vehicles ? `${dt.vehicles.year} ${dt.vehicles.make} ${dt.vehicles.model}`  : common("dealTicket")}
         subtitle={`$${dt.agreed_price.toLocaleString()} · ${dt.financing_type === "cash" ? t("cash") : t("installments")}`}
         action={
           <StatusPill

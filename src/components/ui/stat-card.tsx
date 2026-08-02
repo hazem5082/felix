@@ -1,11 +1,26 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { animate, motion, useMotionValue, useTransform } from "framer-motion";
+import { animate, motion, useMotionValue } from "framer-motion";
 import { Panel } from "./panel";
 import { cn } from "@/lib/utils";
 import type { SemanticTone } from "./status-pill";
 
+/**
+ * Counts up to `value` on mount.
+ *
+ * The real number is rendered into the markup, not a placeholder. An earlier
+ * version rendered a literal `0` and relied on an animation callback to
+ * imperatively write the true figure in — so any failure of that callback
+ * left the card reading "$0" with no error anywhere, presenting a wrong
+ * financial figure as though it were real. On the deployed Worker that is
+ * exactly what happened: every StatCard sat at $0 indefinitely while the
+ * tables beside them, rendered server-side, showed the correct amounts.
+ *
+ * Now the animation is strictly an enhancement: if it never runs, never
+ * fires, or is torn down mid-count, the correct value is already on screen
+ * and the cleanup restores it.
+ */
 function CountUp({
   value,
   prefix = "",
@@ -16,21 +31,37 @@ function CountUp({
   suffix?: string;
 }) {
   const motionValue = useMotionValue(0);
-  const rounded = useTransform(motionValue, (v) => Math.round(v).toLocaleString());
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const controls = animate(motionValue, value, { duration: 0.9, ease: [0.16, 1, 0.3, 1] });
-    return controls.stop;
-  }, [value, motionValue]);
+    const node = ref.current;
+    if (!node) return;
 
-  useEffect(() => {
-    return rounded.on("change", (v) => {
-      if (ref.current) ref.current.textContent = `${prefix}${v}${suffix}`;
+    const format = (v: number) => `${prefix}${Math.round(v).toLocaleString()}${suffix}`;
+
+    // Subscribe before starting the animation. The previous version started
+    // it in an earlier effect and subscribed in a later one, so any frame
+    // emitted in between was lost.
+    const unsubscribe = motionValue.on("change", (v) => {
+      node.textContent = format(v);
     });
-  }, [rounded, prefix, suffix]);
 
-  return <span ref={ref} className="num">{prefix}0{suffix}</span>;
+    motionValue.set(0);
+    const controls = animate(motionValue, value, { duration: 0.9, ease: [0.16, 1, 0.3, 1] });
+
+    return () => {
+      controls.stop();
+      unsubscribe();
+      // Never leave a half-counted figure on screen.
+      node.textContent = format(value);
+    };
+  }, [value, prefix, suffix, motionValue]);
+
+  return (
+    <span ref={ref} className="num">
+      {`${prefix}${value.toLocaleString()}${suffix}`}
+    </span>
+  );
 }
 
 const TONE_TEXT: Record<SemanticTone, string> = {

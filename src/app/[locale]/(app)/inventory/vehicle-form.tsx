@@ -61,7 +61,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
       const urls = await Promise.all(files.map((f) => uploadFile(f, "vehicles")));
       setPhotos((p) => [...p, ...urls]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : common("uploadFailed"));
     } finally {
       setUploading(false);
     }

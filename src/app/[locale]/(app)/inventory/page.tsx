@@ -37,7 +37,7 @@ export default async function InventoryPage() {
             <Th>{t("vin")}</Th>
             <Th>{t("purchasePrice")}</Th>
             <Th>{t("branch")}</Th>
-            <Th>Status</Th>
+            <Th>{common("status")}</Th>
           </THead>
           <TBody>
             {((vehicles as Vehicle[]) ?? []).map((v) => (

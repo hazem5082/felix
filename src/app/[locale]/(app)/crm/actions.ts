@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authorize, assertBranch, STAFF_ROLES } from "@/lib/auth";
+import { toUserError } from "@/lib/db-error";
 import {
   CreateDealTicketSchema,
   CreateLeadSchema,
@@ -34,7 +35,7 @@ export async function createLead(input: {
     source: "manual",
   });
 
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
   revalidatePath("/[locale]/(app)/crm", "page");
   return { ok: true };
 }
@@ -73,7 +74,7 @@ export async function addLeadComment(input: {
     contact_time: new Date().toISOString(),
   });
 
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
   revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
   return { ok: true };
 }
@@ -130,7 +131,30 @@ export async function createDealTicket(input: {
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
+
+  const ticketId = (data as { id: string }).id;
+
+  // An installments deal has to reach the bank. The schema modelled this
+  // from the start — financing_requests exists, with RLS letting the
+  // salesperson open one and the accountant move it through review —
+  // but nothing ever inserted the row, so the Accountant Hub's
+  // "Financing Requests" table could never show anything and the whole
+  // bank-approval workflow was a dead end.
+  //
+  // Deliberately not fatal: the ticket is already created and is the
+  // record that matters. A failure here is logged and the accountant
+  // can still work from the ticket itself.
+  if (parsed.data.financing_type === "installments" && parsed.data.financing_partner_id) {
+    const { error: reqError } = await supabase.from("financing_requests").insert({
+      deal_ticket_id: ticketId,
+      financing_partner_id: parsed.data.financing_partner_id,
+      status: "submitted",
+    });
+    if (reqError) {
+      console.error("[crm] financing request not opened", reqError.message);
+    }
+  }
 
   if (parsed.data.lead_id) {
     await supabase.from("leads").update({ status: "ticket_created" }).eq("id", parsed.data.lead_id);
@@ -138,7 +162,8 @@ export async function createDealTicket(input: {
 
   revalidatePath("/[locale]/(app)/deals", "page");
   revalidatePath("/[locale]/(app)/crm", "page");
-  return { id: (data as { id: string }).id };
+  revalidatePath("/[locale]/(app)/accountant", "page");
+  return { id: ticketId };
 }
 
 export async function fetchActiveVehicles() {

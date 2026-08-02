@@ -4,21 +4,36 @@
 // cases are covered in tenant-host.test.ts rather than left to
 // inspection.
 
-// The showroom that owns the original demo data, reached at the bare
-// felix.508.world with no client subdomain in front of it.
+// The showroom that owns the original demo data, reached at
+// demo-felix.508.world. The bare felix.508.world now serves the static
+// FELIX product page from the marketing site, not this app.
 export const FLAGSHIP_SLUG = "felix";
 
 /**
  * Extracts the client slug from a hostname.
  *
  *   clientb-felix.508.world -> "clientb"
- *   felix.508.world         -> "felix"   (the flagship itself)
+ *   demo-felix.508.world    -> "felix"   (the flagship demo)
+ *   felix.508.world         -> "felix"   (harmless legacy — see below)
  *   localhost:3000          -> "felix"   (dev convenience)
  *   clientb.localhost:3000  -> "clientb" (dev: exercise a real tenant)
  *
- * Falls back to the flagship for hosts with no tenant in them (the
- * *.workers.dev deployment URL, previews) so a direct visit still
- * renders instead of erroring.
+ * Topology: felix.508.world is the FELIX product-showroom page, served
+ * statically by the 508.world Worker out of the marketing site's export —
+ * that Worker no longer proxies it here. The flagship demo app answers at
+ * demo-felix.508.world, licensed clients at <slug>-felix.508.world. The
+ * `demo-felix` label must be recognised BEFORE the generic `<slug>-felix`
+ * extraction, which would otherwise read it as tenant "demo" — a showroom
+ * that does not exist — and 404. The bare `felix` label keeps resolving to
+ * the flagship: no app traffic arrives for it anymore, and refusing it
+ * would only break direct workers.dev-style smoke visits.
+ *
+ * An unrecognised hostname returns null, NOT the flagship. A typo'd or
+ * unmapped subdomain used to fall through to `felix` — which is a real
+ * showroom holding real data — so any wrong hostname served a genuine
+ * tenant's login page. `getTenant()` turns null into "no showroom",
+ * which the app answers with a 404. Deployment URLs and localhost are
+ * the two deliberate exceptions below.
  *
  * Why `<slug>-felix` and not `<slug>.felix`
  * -----------------------------------------
@@ -51,14 +66,23 @@ export function slugFromHost(host: string | null): string | null {
     return labels.length > 1 ? labels[0] : FLAGSHIP_SLUG;
   }
 
+  // The deploy URL has no tenant in it and is used for smoke-testing the
+  // Worker directly, so it keeps resolving to the flagship.
+  if (hostname.endsWith(".workers.dev")) return FLAGSHIP_SLUG;
+
   // Only the leftmost label is considered, so a deeper hostname cannot
   // smuggle a different tenant in ahead of the real one.
   const first = labels[0];
 
   if (first === FLAGSHIP_SLUG) return FLAGSHIP_SLUG;
 
+  // The flagship demo's own host. Checked before the generic suffix match
+  // below, which would extract "demo" — not a showroom that exists.
+  if (first === "demo-felix") return FLAGSHIP_SLUG;
+
   const suffixed = first.match(/^([a-z0-9]+)-felix$/);
   if (suffixed) return suffixed[1];
 
-  return FLAGSHIP_SLUG;
+  // Anything else is not a showroom we serve.
+  return null;
 }

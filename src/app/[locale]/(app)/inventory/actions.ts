@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authorize, assertBranch, INTAKE_ROLES, EXPENSE_ROLES } from "@/lib/auth";
 import { AddExpenseSchema, CreateVehicleSchema, parseInput } from "@/lib/validation";
+import { toUserError } from "@/lib/db-error";
 
 export interface EquitySplitInput {
   holder_type: "ceo" | "investor";
@@ -53,7 +54,7 @@ export async function createVehicle(input: {
     p_splits: parsed.data.splits,
   });
 
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
   revalidatePath("/[locale]/(app)/inventory", "page");
   return { id: data as string };
 }
@@ -104,7 +105,7 @@ export async function addExpense(input: {
     created_by: auth.profile.id,
     is_ceo_override: isCeoOverride,
   });
-  if (error) return { error: error.message };
+  if (error) return toUserError(error);
 
   revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
   return { ok: true };
