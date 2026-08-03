@@ -8,6 +8,15 @@
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
 	},
+	// Where meeting notifications and uncaught-error reports are sent —
+	// the 508.world router Worker owns the whole email pipeline. A plain
+	// var, not a secret: it is a public hostname, and keeping it here
+	// means a deploy can never lose it. Its companion NOTIFY_SECRET is a
+	// real secret (`wrangler secret put NOTIFY_SECRET`) and must match
+	// the value set on the router Worker.
+	"vars": {
+		"NOTIFY_URL": "https://partners.508.world"
+	},
 	// Workers Logs: persisted invocation logs, unsampled. The email error
 	// reports (src/instrumentation.ts) carry the headline; these logs are
 	// where the surrounding requests get read when an email arrives.
