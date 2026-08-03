@@ -14,6 +14,23 @@
 	// means a deploy can never lose it. Its companion NOTIFY_SECRET is a
 	// real secret (`wrangler secret put NOTIFY_SECRET`) and must match
 	// the value set on the router Worker.
+	//
+	// "Must match" is not decoration: these drifted apart once and every
+	// error report was silently rejected with 403 for as long as they did.
+	// Nothing surfaces that — instrumentation.ts is fail-silent by design,
+	// so a mismatch looks exactly like an application that never errors.
+	// When rotating, set BOTH Workers in the same operation:
+	//
+	//   printf '%s' "$SECRET" | wrangler secret put NOTIFY_SECRET --name 508world-subdomain-router
+	//   printf '%s' "$SECRET" | wrangler secret put NOTIFY_SECRET --name filex
+	//
+	// then REDEPLOY this Worker. Observed: after the secret was rotated,
+	// this side kept presenting the old value until a redeploy — plain
+	// propagation delay may explain it, but the redeploy is deterministic
+	// and costs a minute, so do not skip it and then trust a 403.
+	//
+	// To verify end to end, throw from a temporary route and watch the
+	// router's tail for `reportError: sent`. A 202 is the success signal.
 	"vars": {
 		"NOTIFY_URL": "https://partners.508.world"
 	},
