@@ -423,6 +423,8 @@
     "notificationEmailPlaceholder": "you@example.com",
     "whatsappNumber": "WhatsApp number",
     "whatsappNumberPlaceholder": "+20 10 1234 5678",
-    "whatsappHelper": "Include country code, e.g. +20…"
+    "whatsappHelper": "Include country code, e.g. +20…",
+    "whatsappTrialBadge": "Trial feature",
+    "whatsappTrialNote": "WhatsApp notifications run on a self-hosted gateway and are not guaranteed to be available at all times. Email is the reliable channel — if a notification matters, keep an address above."
   }
 }

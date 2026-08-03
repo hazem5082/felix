@@ -163,7 +163,15 @@ function NotificationsPanel({
           />
         </div>
         <div>
-          <Label>{t("whatsappNumber")}</Label>
+          <div className="flex items-center gap-2">
+            <Label>{t("whatsappNumber")}</Label>
+            {/* The badge sits on the label, not under the field: someone
+                deciding whether to type their number should see the caveat
+                before they do, not after. */}
+            <span className="mb-1 rounded-full bg-[var(--color-accent-amber-dim)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-accent-amber)]">
+              {t("whatsappTrialBadge")}
+            </span>
+          </div>
           <Input
             type="tel"
             placeholder={t("whatsappNumberPlaceholder")}
@@ -171,6 +179,7 @@ function NotificationsPanel({
             onChange={(e) => setWhatsapp(e.target.value)}
           />
           <p className="mt-1 text-xs text-[var(--color-text-faint)]">{t("whatsappHelper")}</p>
+          <p className="mt-1 text-xs text-[var(--color-accent-amber)]">{t("whatsappTrialNote")}</p>
         </div>
       </div>
       {error && <p className="mt-2 text-xs text-[var(--color-accent-red)]">{error}</p>}

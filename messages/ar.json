@@ -423,6 +423,8 @@
     "notificationEmailPlaceholder": "you@example.com",
     "whatsappNumber": "رقم واتساب",
     "whatsappNumberPlaceholder": "+20 10 1234 5678",
-    "whatsappHelper": "أضف رمز الدولة، مثل ‎+20…"
+    "whatsappHelper": "أضف رمز الدولة، مثل ‎+20…",
+    "whatsappTrialBadge": "ميزة تجريبية",
+    "whatsappTrialNote": "تعمل إشعارات واتساب عبر خادم ذاتي الاستضافة، وقد لا تكون متاحة طوال الوقت. يظل البريد الإلكتروني هو القناة الموثوقة — إذا كان الإشعار مهمًا، فاحتفظ بعنوان بريد أعلاه."
   }
 }
