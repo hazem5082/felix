@@ -9,9 +9,24 @@ import "../globals.css";
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const cairo = Cairo({ variable: "--font-cairo", subsets: ["arabic", "latin"] });
 
+const TITLE = "FELIX — Showroom Capital & Deal Management";
+const DESCRIPTION = "Automotive showroom capital & deal management";
+
 export const metadata: Metadata = {
-  title: "FILEX — Showroom Capital & Deal Management",
-  description: "Automotive showroom capital, inventory, and deal management system.",
+  title: TITLE,
+  description: DESCRIPTION,
+  metadataBase: new URL("https://demo-felix.508.world"),
+  openGraph: {
+    siteName: "FELIX",
+    type: "website",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export function generateStaticParams() {

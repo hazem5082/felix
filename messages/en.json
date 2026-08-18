@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "FILEX",
+    "appName": "FELIX",
     "save": "Save",
     "cancel": "Cancel",
     "submit": "Submit",
@@ -44,7 +44,7 @@
     "backHome": "Back to dashboard"
   },
   "auth": {
-    "signInTitle": "Sign in to FILEX",
+    "signInTitle": "Sign in to FELIX",
     "signInSubtitle": "Automotive showroom capital & deal management",
     "email": "Email",
     "password": "Password",
@@ -61,14 +61,14 @@
   "demo": {
     "badge": "Demo mode",
     "hint": "Switch persona — no password needed",
-    "loginHint": "Or step straight in as one of the demo team:",
+    "loginHint": "Step straight in as one of the demo team:",
     "switching": "Switching…",
     "denied": "That demo persona is not available.",
     "failed": "Could not switch persona. Please try again.",
     "throttled": "Too many persona switches.",
     "wrongTenant": "That demo account does not belong to this showroom.",
     "offTitle": "This demo is currently off",
-    "offBody": "The FILEX demo is paused for maintenance. Please check back shortly.",
+    "offBody": "The FELIX demo is paused for maintenance. Please check back shortly.",
     "personas": {
       "ceo": "CEO",
       "manager": "Branch Manager",

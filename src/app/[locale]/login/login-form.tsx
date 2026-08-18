@@ -28,6 +28,14 @@ export function LoginForm({
   const boundLogin = login.bind(null, locale);
   const [state, formAction, pending] = useActionState(boundLogin, undefined);
 
+  // Non-null only on the flagship demo with the demo switched on (see the
+  // prop doc above). There the persona panel IS the sign-in flow — the
+  // password form never renders — rather than a shortcut sitting beneath
+  // it. Every licensed showroom takes the `else` branch exactly as before.
+  // (Re-derived as its own variable, rather than reused as a boolean flag,
+  // so the ternary below narrows `activeDemoPersonas` to non-null.)
+  const activeDemoPersonas = demoPersonas && demoPersonas.length > 0 ? demoPersonas : null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -55,54 +63,58 @@ export function LoginForm({
         <p className="mt-1 text-xs text-[var(--color-text-faint)]">{t("signInSubtitle")}</p>
       </div>
 
-      <Panel raised>
-        <form action={formAction} className="space-y-4">
-          <div>
-            <Label htmlFor="email">{t("email")}</Label>
-            <Input id="email" name="email" type="email" required autoComplete="email" />
-          </div>
-          <div>
-            <Label htmlFor="password">{t("password")}</Label>
-            <Input id="password" name="password" type="password" required autoComplete="current-password" />
-          </div>
-
-          {state?.error && (
-            <p
-              role="alert"
-              className="rounded-lg bg-[var(--color-accent-red-dim)] px-3 py-2 text-xs text-[var(--color-accent-red)]"
-            >
-              {state.error === "throttled"
-                ? `${t("tooManyAttempts")} ${state.message ?? ""}`.trim()
-                : state.error === "wrongTenant"
-                  ? t("wrongTenant")
-                  : state.error === "tenantSuspended"
-                    ? t("tenantSuspended")
-                    : state.error === "demoOff"
-                      ? t("demoOff")
-                      : t("invalidCredentials")}
-            </p>
-          )}
-
-          <Button type="submit" variant="accent" className="w-full" disabled={pending}>
-            {pending ? t("signingIn") : t("signIn")}
-          </Button>
-        </form>
-      </Panel>
-
-      {/* Demo shortcuts sit UNDER the form rather than replacing it: the
-          password path has to keep working on the demo host too, since
-          that is what the seeded accounts are for and what 508.world staff
-          use. Absent for every licensed showroom. */}
-      {demoPersonas && demoPersonas.length > 0 && (
+      {activeDemoPersonas ? (
+        // The flagship demo, switched on: the persona panel IS the sign-in
+        // flow, not a shortcut under it. The password form never renders
+        // here — a prospect should never be shown a field there's no
+        // password to fill in. Password login stays functional at the
+        // server-action level (see ./actions.ts) for every non-flagship
+        // tenant; on this host it's simply not on the page.
         <DemoSwitcher
           locale={locale}
-          personas={demoPersonas}
+          personas={activeDemoPersonas}
           currentKey={null}
           variant="login"
         />
-      )}
+      ) : (
+        <>
+          <Panel raised>
+            <form action={formAction} className="space-y-4">
+              <div>
+                <Label htmlFor="email">{t("email")}</Label>
+                <Input id="email" name="email" type="email" required autoComplete="email" />
+              </div>
+              <div>
+                <Label htmlFor="password">{t("password")}</Label>
+                <Input id="password" name="password" type="password" required autoComplete="current-password" />
+              </div>
 
-      <p className="mt-4 text-center text-xs text-[var(--color-text-faint)]">{t("noAccount")}</p>
+              {state?.error && (
+                <p
+                  role="alert"
+                  className="rounded-lg bg-[var(--color-accent-red-dim)] px-3 py-2 text-xs text-[var(--color-accent-red)]"
+                >
+                  {state.error === "throttled"
+                    ? `${t("tooManyAttempts")} ${state.message ?? ""}`.trim()
+                    : state.error === "wrongTenant"
+                      ? t("wrongTenant")
+                      : state.error === "tenantSuspended"
+                        ? t("tenantSuspended")
+                        : state.error === "demoOff"
+                          ? t("demoOff")
+                          : t("invalidCredentials")}
+                </p>
+              )}
+
+              <Button type="submit" variant="accent" className="w-full" disabled={pending}>
+                {pending ? t("signingIn") : t("signIn")}
+              </Button>
+            </form>
+          </Panel>
+
+          <p className="mt-4 text-center text-xs text-[var(--color-text-faint)]">{t("noAccount")}</p>
+        </>
+      )}
     </motion.div>
   );
 }
