@@ -37,37 +37,39 @@ export async function createEmployee(input: {
 
   const supabase = await createClient();
 
-  // The branch must be one of ours. RLS would let the invitation insert
-  // name a foreign branch id (branches are checked by FK, not policy),
-  // so resolve it through the CEO's own session first.
-  if (staff.branch_id) {
-    const { data: branch } = await supabase
-      .from("branches")
-      .select("id")
-      .eq("id", staff.branch_id)
-      .maybeSingle();
-    if (!branch) return { error: "Unknown branch." };
-  }
-
   // Invitation first: handle_new_user() reads it to decide the new
-  // account's role, branch and tenant. Inserted through the CEO's own
-  // session so tenant_id defaults to their showroom and the CEO-only
-  // policy applies — the service role plays no part in deciding *what*
-  // the new account becomes.
-  const { error: inviteError } = await supabase.from("staff_invitations").insert({
-    email: staff.email.toLowerCase(),
-    full_name: staff.full_name,
-    role: staff.role,
-    branch_id: staff.branch_id,
-    invited_by: auth.profile.id,
+  // account's role, branch and tenant.
+  //
+  // Called as an RPC rather than an INSERT because the table moved to the
+  // `platform` schema in 0008, which no tenant role can write. The CEO
+  // check that used to be RLS (0003's staff_invitations_ceo) now lives
+  // inside platform.invite_staff(): it re-derives the caller's showroom
+  // from auth.uid() and re-checks is_ceo() in that showroom's own schema.
+  // So this stays database-enforced rather than resting on the
+  // authorize(["ceo"]) above — whoever can write an invitation can mint a
+  // CEO, and that decision must not be the app's alone.
+  //
+  // The branch pre-check that used to sit here is gone for the same
+  // reason: invite_staff validates the branch inside the tenant schema,
+  // where a foreign showroom's branch id simply does not exist.
+  // invited_by is set from auth.uid() by the function, not passed.
+  const { error: inviteError } = await supabase.rpc("invite_staff", {
+    p_email: staff.email.toLowerCase(),
+    p_full_name: staff.full_name,
+    p_role: staff.role,
+    p_branch_id: staff.branch_id,
   });
 
   if (inviteError) {
-    // The PK is the email address, globally. A conflict means this email
-    // was already invited — possibly by another showroom, whose row is
-    // invisible to us. Same message either way; do not leak which.
-    if (inviteError.code === "23505") {
+    // invite_staff collapses a unique violation into one message on
+    // purpose: the pending-email index is global, so a raw conflict would
+    // tell this showroom that another one has a pending invitation for
+    // the address.
+    if (/unavailable/i.test(inviteError.message)) {
       return { error: "That email address has already been invited or registered." };
+    }
+    if (/Unknown branch/i.test(inviteError.message)) {
+      return { error: "Unknown branch." };
     }
     return { error: inviteError.message };
   }
@@ -84,7 +86,7 @@ export async function createEmployee(input: {
   if (createError || !created?.user) {
     // Leave no half-created state: an unaccepted invitation with no
     // account behind it would block this email forever.
-    await supabase.from("staff_invitations").delete().eq("email", staff.email.toLowerCase());
+    await supabase.rpc("revoke_invitation", { p_email: staff.email.toLowerCase() });
     const already = /already (been )?registered|already exists/i.test(createError?.message ?? "");
     return {
       error: already

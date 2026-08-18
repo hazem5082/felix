@@ -26,6 +26,8 @@ export type Tenant = {
   slug: string;
   name: string;
   status: "active" | "suspended";
+  /** t_<slug>. The schema this showroom's tables actually live in. */
+  schema_name: string;
 };
 
 /**
@@ -47,10 +49,12 @@ export const getTenant = cache(async (): Promise<Tenant | null> => {
   const slug = h.get("x-felix-tenant")?.trim().toLowerCase() || slugFromHost(h.get("host"));
   if (!slug || !/^[a-z0-9]+$/.test(slug)) return null;
 
-  const admin = createAdminClient();
+  // The registry moved to the `platform` schema in 0008. It is not the
+  // default schema and no tenant role can reach it — only service_role.
+  const admin = createAdminClient("platform");
   const { data } = await admin
     .from("tenants")
-    .select("id, slug, name, status")
+    .select("id, slug, name, status, schema_name")
     .eq("slug", slug)
     .maybeSingle();
 

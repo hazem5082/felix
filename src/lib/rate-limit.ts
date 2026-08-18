@@ -22,6 +22,13 @@ export const LIMITS = {
   publicLead: { limit: 5, windowSeconds: 10 * 60 },
   /** Presigned upload URLs per user. */
   upload: { limit: 60, windowSeconds: 10 * 60 },
+  /**
+   * Passwordless persona switches on the flagship demo, per IP. Roomy
+   * enough that someone clicking through all six personas twice never
+   * notices it, tight enough that the endpoint cannot be used to mint
+   * sessions in bulk — each call costs a GoTrue generateLink + verifyOtp.
+   */
+  demoSwitch: { limit: 30, windowSeconds: 60 },
 } as const;
 
 /**
@@ -45,7 +52,10 @@ export async function consume(
   { limit, windowSeconds }: { limit: number; windowSeconds: number }
 ): Promise<RateLimitResult> {
   try {
-    const admin = createAdminClient();
+    // Buckets and the function both live in `platform` since 0008/0011 —
+    // throttling is deployment-wide, not per showroom, so a caller cannot
+    // reset their limit by switching subdomains.
+    const admin = createAdminClient("platform");
     const { data, error } = await admin.rpc("consume_rate_limit", {
       p_key: key,
       p_limit: limit,

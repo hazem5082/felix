@@ -1,6 +1,8 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getTenant } from "@/lib/tenant";
+import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
 import { PublicLeadSchema, Uuid } from "@/lib/validation";
 import { clientIp, consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 
@@ -38,7 +40,40 @@ export async function submitPublicLead(
     return { error: "Please fill in your name and phone number correctly." };
   }
 
-  const admin = createAdminClient();
+  // THE ONE PLACE THE HOSTNAME LEGITIMATELY PICKS THE SCHEMA.
+  //
+  // Everywhere else the schema comes from the session's access-token
+  // claim, because the hostname is attacker-supplied (see lib/tenant.ts).
+  // Here there is no session at all — that is the point of the referral
+  // link — so the host is the only signal there is.
+  //
+  // It is safe here in a way it would not be elsewhere. The hostname does
+  // not grant access; it selects which showroom this submission is FOR.
+  // Getting it wrong cannot read anything: the salesperson lookup below
+  // runs in the chosen schema, so an id belonging to a different showroom
+  // simply is not found and the request fails exactly like an unknown
+  // link. The worst a forged Host achieves is offering to create a lead
+  // in a showroom the submitter already had a public link to.
+  const tenant = await getTenant();
+  if (!tenant || tenant.status === "suspended") return GENERIC_FAILURE;
+
+  // The flagship demo's kill switch. The page above already shows a notice
+  // instead of the form, but this action is reachable by direct POST, and
+  // "the demo is off" has to mean no writes into the seed dataset — a
+  // reset that races a stray submission is exactly the mess the switch
+  // exists to prevent.
+  //
+  // Unlike the failures above, this one is not an oracle for anything: the
+  // demo's status is already public to anyone who loads the page, so the
+  // operator's own message is passed straight through. English literals
+  // here match the rest of this file — it has no locale to translate with,
+  // and the translated notice is on the page.
+  const demo = isFlagshipDemo(tenant) ? await getDemoStatus() : null;
+  if (demo && !demo.enabled) {
+    return { error: demo.offMessage ?? "This demo is currently off." };
+  }
+
+  const admin = createAdminClient(tenant.schema_name);
 
   const { data: salesperson } = await admin
     .from("profiles")

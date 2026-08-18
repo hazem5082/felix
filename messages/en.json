@@ -55,7 +55,28 @@
     "noAccount": "Accounts are created by your CEO or manager — contact them for access.",
     "wrongTenant": "This account does not belong to this showroom. Check the address you signed in at.",
     "tenantSuspended": "This showroom’s licence is not active. Contact 508.world.",
-    "unknownTenant": "Unrecognised showroom address."
+    "unknownTenant": "Unrecognised showroom address.",
+    "demoOff": "This demo is currently off. Please check back shortly."
+  },
+  "demo": {
+    "badge": "Demo mode",
+    "hint": "Switch persona — no password needed",
+    "loginHint": "Or step straight in as one of the demo team:",
+    "switching": "Switching…",
+    "denied": "That demo persona is not available.",
+    "failed": "Could not switch persona. Please try again.",
+    "throttled": "Too many persona switches.",
+    "wrongTenant": "That demo account does not belong to this showroom.",
+    "offTitle": "This demo is currently off",
+    "offBody": "The FILEX demo is paused for maintenance. Please check back shortly.",
+    "personas": {
+      "ceo": "CEO",
+      "manager": "Branch Manager",
+      "accountant": "Accountant",
+      "sales": "Sales",
+      "investor1": "Investor 1",
+      "investor2": "Investor 2"
+    }
   },
   "roles": {
     "ceo": "CEO",

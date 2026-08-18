@@ -9,23 +9,58 @@
 // Seed a second showroom to see tenancy actually working: the two datasets
 // are identical in shape and completely invisible to each other.
 //
-// Two things this script must respect, both easy to get wrong:
+// REWRITTEN FOR SCHEMA-PER-TENANT (migrations 0008-0013). Before 0008,
+// every showroom's rows lived in `public.*` behind a `tenant_id` column,
+// and this script wrote there directly. Since 0011 moved live data into
+// t_<slug> schemas and 0010 moved the registry into `platform`, that would
+// silently create a showroom nothing in the app can ever reach — exactly
+// what happened to the `henryautomotive` and `clientb` test tenants this
+// script's own earlier runs left behind, stranded in `public.*` with no
+// `platform.tenants` row and no way to sign in. This version:
+//
+//   * looks up / provisions the tenant through `platform.tenants` and
+//     `platform.provision_tenant()`, the same RPC route.ts calls;
+//   * calls `platform.sync_postgrest_schemas()` right after provisioning,
+//     since provision_tenant() deliberately does not (0010's own comment:
+//     "the caller runs it after COMMIT") — skip this and every insert
+//     below 404s with PGRST106 until someone remembers to run it by hand;
+//   * writes business data through a client pinned to `t_<slug>` instead
+//     of `public`, and drops `tenant_id` from every payload — the tenant
+//     schema tables don't have that column at all; the schema itself is
+//     the boundary now (0011 dropped it on the way in for exactly this
+//     reason);
+//   * writes invitations through `platform.staff_invitations`, whose
+//     primary key is now `(tenant_id, email)` rather than `email` alone.
+//
+// Two things this script must still respect, both easy to get wrong:
 //
 //  1. Roles come from staff_invitations, NOT user_metadata. Migration 0003
 //     made metadata untrusted (anyone with the anon key could otherwise
 //     sign up as CEO), so an invitation row has to exist *before* the auth
 //     user is created — that is what handle_new_user() reads.
-//  2. Every insert must carry tenant_id explicitly. The column defaults to
-//     current_tenant_id(), which is NULL under the service-role key
-//     because there is no authenticated user, so relying on the default
-//     here fails the NOT NULL constraint.
+//  2. auth.users is global across FELIX, A-Star and Calendar (one GoTrue
+//     instance — see calander/RUNBOOK.md and A-Star's HANDOFF.md). Emails
+//     this script creates must not collide with a real account on another
+//     product; emailFor() namespaces every address under *.filex.demo,
+//     which resolves nowhere and cannot collide with anything real.
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
+const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Auth admin calls (createUser, listUsers) go through GoTrue's REST API,
+// not PostgREST, so they are not schema-scoped — this client is fine for
+// those regardless of which schema it was built with.
+const supabase = createClient(URL, SERVICE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+// The tenant registry — platform.tenants, platform.provision_tenant(),
+// platform.staff_invitations. Never business data.
+const platformDb = createClient(URL, SERVICE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+  db: { schema: "platform" },
+});
 
 // Never a literal. This file is in the repository, and the accounts it
 // creates are real sign-ins on a real showroom — a password committed
@@ -47,21 +82,25 @@ function arg(name, fallback) {
 
 const SLUG = arg("slug", "felix").toLowerCase();
 const NAME = arg("name", SLUG === "felix" ? "FELIX Flagship Showroom" : `${SLUG} Motors`);
+const SCHEMA = `t_${SLUG}`;
 
 if (!/^[a-z0-9]+$/.test(SLUG)) {
   console.error(`✗ --slug must be lowercase letters and digits only (got "${SLUG}")`);
   process.exit(1);
 }
 
-// auth.users.email is globally unique, so demo accounts can't reuse the
-// same addresses across showrooms. The flagship keeps its original
-// addresses so existing bookmarks and notes stay valid.
+// auth.users.email is globally unique across every 508.world product, so
+// demo accounts can't reuse the same addresses across showrooms — or
+// collide with a real A-Star/Calendar account. .filex.demo resolves
+// nowhere and is namespaced under this script's own product, so it can't
+// collide with anything real on the shared GoTrue instance.
 const emailFor = (role) => (SLUG === "felix" ? `${role}@filex.demo` : `${role}@${SLUG}.filex.demo`);
 
 let TENANT_ID;
+let tenantDb; // built once the schema is known to exist
 
 async function ensureTenant() {
-  const { data: existing } = await supabase
+  const { data: existing } = await platformDb
     .from("tenants")
     .select("id, name")
     .eq("slug", SLUG)
@@ -72,9 +111,10 @@ async function ensureTenant() {
     return existing.id;
   }
 
-  // Same entry point the real licensing flow uses, so seeding exercises
-  // the production provisioning path rather than a parallel one.
-  const { data, error } = await supabase.rpc("provision_tenant", {
+  // Same entry point the real licensing flow uses (platform.provision_tenant,
+  // called by /api/provision), so seeding exercises the production
+  // provisioning path rather than a parallel one.
+  const { data, error } = await platformDb.rpc("provision_tenant", {
     p_slug: SLUG,
     p_name: NAME,
     p_ceo_email: emailFor("ceo"),
@@ -83,15 +123,19 @@ async function ensureTenant() {
     p_licensed_via: "seed-demo",
   });
   if (error) throw error;
-  console.log(`✓ provisioned tenant "${SLUG}"`);
+  console.log(`✓ provisioned tenant "${SLUG}" (schema ${data.schema_name})`);
+
+  // provision_tenant() deliberately does not call this itself — see the
+  // header. Without it, every query below against t_<slug> 404s.
+  const { error: syncError } = await platformDb.rpc("sync_postgrest_schemas");
+  if (syncError) throw new Error(`sync_postgrest_schemas after provisioning: ${syncError.message}`);
+  console.log("✓ exposed schema to PostgREST");
+
   return data.tenant.id;
 }
 
 async function upsertBranches() {
-  const { data: existing } = await supabase
-    .from("branches")
-    .select("*")
-    .eq("tenant_id", TENANT_ID);
+  const { data: existing } = await tenantDb.from("branches").select("*");
   if (existing?.length >= 2) return existing;
 
   const want = [
@@ -100,49 +144,38 @@ async function upsertBranches() {
   ].filter((b) => !existing?.some((e) => e.name === b.name));
 
   if (want.length) {
-    const { error } = await supabase
-      .from("branches")
-      .insert(want.map((b) => ({ ...b, tenant_id: TENANT_ID })));
+    const { error } = await tenantDb.from("branches").insert(want);
     if (error) throw error;
   }
 
-  const { data } = await supabase.from("branches").select("*").eq("tenant_id", TENANT_ID);
+  const { data } = await tenantDb.from("branches").select("*");
   return data;
 }
 
 async function upsertOverhead(branches) {
   for (const b of branches) {
-    await supabase
+    await tenantDb
       .from("overhead_config")
-      .upsert({ tenant_id: TENANT_ID, branch_id: b.id, monthly_opex_amount: 3000 });
+      .upsert({ branch_id: b.id, monthly_opex_amount: 3000 }, { onConflict: "branch_id" });
   }
 }
 
 async function upsertCommissionTiers() {
-  const { data } = await supabase
-    .from("commission_tiers")
-    .select("tier_index")
-    .eq("tenant_id", TENANT_ID);
+  const { data } = await tenantDb.from("commission_tiers").select("tier_index");
   if (data?.length) return;
   const rows = Array.from({ length: 10 }, (_, i) => ({
-    tenant_id: TENANT_ID,
     tier_index: i + 1,
     cumulative_amount: (i + 1) * 6000,
   }));
-  await supabase.from("commission_tiers").insert(rows);
+  await tenantDb.from("commission_tiers").insert(rows);
 }
 
 async function upsertFinancingPartner() {
-  const { data } = await supabase
-    .from("financing_partners")
-    .select("id")
-    .eq("tenant_id", TENANT_ID)
-    .limit(1);
+  const { data } = await tenantDb.from("financing_partners").select("id").limit(1);
   if (data?.length) return data[0].id;
-  const { data: created, error } = await supabase
+  const { data: created, error } = await tenantDb
     .from("financing_partners")
     .insert({
-      tenant_id: TENANT_ID,
       bank_name: "First National Bank",
       product_name: "Standard Auto Loan",
       rate: 7.5,
@@ -184,11 +217,11 @@ async function listUsersPage(page, perPage) {
   // Raw fetch rather than supabase-js: it collapses a failure into an empty
   // AuthRetryableFetchError, which hides exactly the detail needed below.
   const res = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?page=${page}&per_page=${perPage}`,
+    `${URL}/auth/v1/admin/users?page=${page}&per_page=${perPage}`,
     {
       headers: {
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
       },
     }
   );
@@ -244,7 +277,7 @@ let EXISTING_USERS;
 async function createUser(key, dbRole, fullName, branchId) {
   const email = emailFor(key);
 
-  const { error: invError } = await supabase.from("staff_invitations").upsert(
+  const { error: invError } = await platformDb.from("staff_invitations").upsert(
     {
       tenant_id: TENANT_ID,
       email,
@@ -252,8 +285,9 @@ async function createUser(key, dbRole, fullName, branchId) {
       role: dbRole,
       branch_id: branchId ?? null,
       accepted_at: null,
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     },
-    { onConflict: "email" }
+    { onConflict: "tenant_id,email" }
   );
   if (invError) {
     console.error(`✗ invitation for ${email} failed:`, invError.message);
@@ -272,9 +306,9 @@ async function createUser(key, dbRole, fullName, branchId) {
     // so is_ceo() is false here. Sending an unchanged value would trip the
     // guard for no reason; sending a genuinely changed one is refused, and
     // that refusal is correct rather than a bug to work around.
-    const { data: current } = await supabase
+    const { data: current } = await tenantDb
       .from("profiles")
-      .select("full_name, role, branch_id, tenant_id")
+      .select("full_name, role, branch_id")
       .eq("id", already)
       .maybeSingle();
 
@@ -282,7 +316,6 @@ async function createUser(key, dbRole, fullName, branchId) {
       full_name: fullName,
       role: dbRole,
       branch_id: branchId ?? null,
-      tenant_id: TENANT_ID,
     };
     const diff = Object.fromEntries(
       Object.entries(desired).filter(([k, v]) => (current?.[k] ?? null) !== v)
@@ -291,13 +324,13 @@ async function createUser(key, dbRole, fullName, branchId) {
     if (Object.keys(diff).length === 0) {
       console.log(`↷ ${email} already correct (${dbRole})`);
     } else {
-      const { error: fixErr } = await supabase.from("profiles").update(diff).eq("id", already);
+      const { error: fixErr } = await tenantDb.from("profiles").update(diff).eq("id", already);
       if (fixErr) {
         console.error(`✗ ${email}: could not apply ${Object.keys(diff).join(", ")} — ${fixErr.message}`);
         if (/PRIVILEGE_LOCKED|TENANT_LOCKED/.test(fixErr.message)) {
           console.error(
             `   The database guards role/branch/tenant changes. Run this as the CEO, or in the SQL editor:\n` +
-            `   update profiles set ${Object.entries(diff)
+            `   update ${SCHEMA}.profiles set ${Object.entries(diff)
               .map(([k, v]) => `${k} = ${v === null ? "null" : `'${v}'`}`)
               .join(", ")} where id = '${already}';`
           );
@@ -308,7 +341,7 @@ async function createUser(key, dbRole, fullName, branchId) {
     }
 
     if (dbRole === "investor") {
-      await supabase.from("investors").upsert({ id: already, tenant_id: TENANT_ID });
+      await tenantDb.from("investors").upsert({ id: already });
     }
     return already;
   }
@@ -329,17 +362,15 @@ async function createUser(key, dbRole, fullName, branchId) {
 }
 
 async function insertVehicle(branchId, createdBy, vin, year, make, model, trim, purchasePrice) {
-  const { data: existing } = await supabase
+  const { data: existing } = await tenantDb
     .from("vehicles")
     .select("id")
-    .eq("tenant_id", TENANT_ID)
     .eq("vin", vin)
     .maybeSingle();
   if (existing) return existing.id;
-  const { data, error } = await supabase
+  const { data, error } = await tenantDb
     .from("vehicles")
     .insert({
-      tenant_id: TENANT_ID,
       branch_id: branchId,
       vin,
       year,
@@ -356,7 +387,7 @@ async function insertVehicle(branchId, createdBy, vin, year, make, model, trim, 
 }
 
 async function insertSplits(vehicleId, splits) {
-  const { data: existing } = await supabase
+  const { data: existing } = await tenantDb
     .from("vehicle_equity_splits")
     .select("id")
     .eq("vehicle_id", vehicleId);
@@ -375,17 +406,17 @@ async function insertSplits(vehicleId, splits) {
     }
   }
 
-  const { error } = await supabase
+  const { error } = await tenantDb
     .from("vehicle_equity_splits")
-    .insert(splits.map((s) => ({ tenant_id: TENANT_ID, vehicle_id: vehicleId, ...s })));
+    .insert(splits.map((s) => ({ vehicle_id: vehicleId, ...s })));
   if (error) throw error;
 }
 
 /** Creates a deal ticket in the only state the database will accept a new one in. */
 async function submitTicket(fields) {
-  const { data, error } = await supabase
+  const { data, error } = await tenantDb
     .from("deal_tickets")
-    .insert({ tenant_id: TENANT_ID, ...fields })
+    .insert(fields)
     .select("id")
     .single();
   if (error) throw new Error(`submitting deal ticket: ${error.message}`);
@@ -399,20 +430,22 @@ async function submitTicket(fields) {
  * key: guard_deal_ticket_status() requires is_manager_or_above(), which
  * reads the caller's profile via auth.uid(), and the service-role key has
  * no authenticated user at all. execute_vehicle_sale() refuses for the same
- * reason, and additionally needs current_tenant_id().
+ * reason.
  *
  * That is the schema working as intended — approving a sale is a
  * privileged act that must be attributable to a person. So the seed signs
  * in as the CEO and goes through the real path rather than reaching around
  * it, which also means the demo data is produced by exactly the code the
- * application runs.
+ * application runs. Pinned to t_<slug> directly (rather than decoding the
+ * JWT's felix_tenant claim the way src/lib/supabase/server.ts does) because
+ * this script already knows the schema — it is the one thing it exists to
+ * provision.
  */
 async function signedInAs(accountKey, work) {
-  const client = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  const client = createClient(URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    db: { schema: SCHEMA },
+  });
   const { error } = await client.auth.signInWithPassword({
     email: emailFor(accountKey),
     password: PASSWORD,
@@ -438,10 +471,9 @@ const reviewAs = (work) => signedInAs("ceo", work);
  * it named anyone but their own branch's sales staff.
  */
 async function seedMeetings(ids) {
-  const { count } = await supabase
+  const { count } = await tenantDb
     .from("meetings")
-    .select("id", { count: "exact", head: true })
-    .eq("tenant_id", TENANT_ID);
+    .select("id", { count: "exact", head: true });
   if (count) {
     console.log(`· ${count} meeting(s) already present — leaving the calendar alone`);
     return;
@@ -490,6 +522,11 @@ async function seedMeetings(ids) {
 
 async function main() {
   TENANT_ID = await ensureTenant();
+  tenantDb = createClient(URL, SERVICE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    db: { schema: SCHEMA },
+  });
+
   EXISTING_USERS = await loadExistingUsers();
   console.log(`· ${EXISTING_USERS.size} existing auth user(s) in the project`);
 
@@ -512,13 +549,9 @@ async function main() {
 
   // handle_new_user() already created these rows; this only adds the note.
   if (investor1Id)
-    await supabase
-      .from("investors")
-      .upsert({ id: investor1Id, tenant_id: TENANT_ID, notes: "Seed investor #1" });
+    await tenantDb.from("investors").upsert({ id: investor1Id, notes: "Seed investor #1" });
   if (investor2Id)
-    await supabase
-      .from("investors")
-      .upsert({ id: investor2Id, tenant_id: TENANT_ID, notes: "Seed investor #2" });
+    await tenantDb.from("investors").upsert({ id: investor2Id, notes: "Seed investor #2" });
 
   // Vehicle 1: sold already (drives the executed deal below) — 60/40 CEO/investor1
   const v1 = await insertVehicle(downtown.id, salesId, vin("fusion"), 2022, "Ford", "Fusion", "SE", 18000);
@@ -547,34 +580,27 @@ async function main() {
   ]);
 
   // A couple of leads
-  const { data: existingLeads } = await supabase
-    .from("leads")
-    .select("id")
-    .eq("tenant_id", TENANT_ID)
-    .limit(1);
+  const { data: existingLeads } = await tenantDb.from("leads").select("id").limit(1);
   let leadId;
   if (!existingLeads?.length) {
-    const { data: lead1 } = await supabase
+    const { data: lead1 } = await tenantDb
       .from("leads")
       .insert({
-        tenant_id: TENANT_ID, branch_id: downtown.id, salesperson_id: salesId,
+        branch_id: downtown.id, salesperson_id: salesId,
         client_name: "Taylor Morgan", phone_number: "5551234567",
         car_interest: "2023 Honda Civic", status: "ticket_created", source: "manual",
       })
       .select("id").single();
     leadId = lead1?.id;
-    await supabase.from("leads").insert({
-      tenant_id: TENANT_ID, branch_id: downtown.id, salesperson_id: salesId,
+    await tenantDb.from("leads").insert({
+      branch_id: downtown.id, salesperson_id: salesId,
       client_name: "Riley Chen", phone_number: "5559876543",
       car_interest: "Looking for a sedan", status: "pending", source: "manual",
     });
   }
 
   // Deal ticket 1: executed (against vehicle 1, cash)
-  const { data: existingTickets } = await supabase
-    .from("deal_tickets")
-    .select("id, status")
-    .eq("tenant_id", TENANT_ID);
+  const { data: existingTickets } = await tenantDb.from("deal_tickets").select("id, status");
   if (!existingTickets?.length) {
     // Tickets are created as plain submitted tickets, then reviewed by the
     // CEO through the ordinary path — see reviewAs() for why the service
@@ -645,8 +671,9 @@ const BASE_VINS = {
   bmw: "4T1BF1FK5EU123459",
 };
 
-// VINs are globally unique in reality and the vehicles table is shared
-// across showrooms, so every tenant past the flagship gets its own set.
+// VINs are globally unique in reality and the vehicles table lives in one
+// tenant's own schema, so a collision only risks the flagship's original
+// four — every other showroom still gets its own set for clarity.
 function vin(key) {
   const base = BASE_VINS[key];
   if (!base) throw new Error(`Unknown vehicle key "${key}"`);
@@ -654,71 +681,5 @@ function vin(key) {
   const tail = SLUG.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6).padEnd(6, "0");
   return base.slice(0, 11) + tail;
 }
-
-/**
- * Reproduces execute_vehicle_sale()'s effects for seed data.
- *
- * Not a shortcut around the waterfall: the numbers come from the same
- * compute_sale_waterfall() function the app uses. Only the *authorization*
- * is skipped, because the seed has no signed-in manager to satisfy it.
- */
-async function settleSaleAsSeed(ticketId, vehicleId, salesId, investorId) {
-  const { data: v } = await supabase
-    .from("vehicles").select("*").eq("id", vehicleId).single();
-  const { data: t } = await supabase
-    .from("deal_tickets").select("*").eq("id", ticketId).single();
-
-  const { data: splits } = await supabase
-    .from("vehicle_equity_splits").select("*").eq("vehicle_id", vehicleId);
-  const { data: expenses } = await supabase
-    .from("vehicle_expenses").select("amount").eq("vehicle_id", vehicleId);
-  const { data: oh } = await supabase
-    .from("overhead_config").select("monthly_opex_amount").eq("branch_id", v.branch_id).maybeSingle();
-
-  const months = Math.max(
-    (Date.now() - new Date(v.created_at).getTime()) / (30 * 86400 * 1000), 0);
-  const totalExpenses = (expenses ?? []).reduce((s, e) => s + Number(e.amount), 0);
-  const overhead = round2(Number(oh?.monthly_opex_amount ?? 0) * months);
-  const netProfit = round2(
-    Number(t.agreed_price) - Number(v.purchase_price) - totalExpenses - overhead - Number(t.discount_amount));
-
-  const rows = (splits ?? []).map((s) => ({
-    tenant_id: TENANT_ID,
-    holder_type: s.holder_type,
-    holder_id: s.holder_type === "ceo" ? null : s.holder_id,
-    type: "sale_profit_share",
-    amount: round2((netProfit * Number(s.percentage)) / 100),
-    ref_deal_ticket_id: ticketId,
-    ref_vehicle_id: vehicleId,
-    note: `Profit share from sale of ${v.year} ${v.make} ${v.model} (VIN ${v.vin ?? "—"})`,
-  }));
-
-  // Push the rounding residual onto the CEO line so shares sum exactly.
-  const allocated = rows.reduce((s, r) => s + r.amount, 0);
-  const ceoRow = rows.find((r) => r.holder_type === "ceo");
-  if (ceoRow) ceoRow.amount = round2(ceoRow.amount + (netProfit - allocated));
-
-  if (rows.length) {
-    const { error } = await supabase.from("ledger_entries").insert(rows);
-    if (error) { console.error("✗ ledger insert failed:", error.message); return; }
-  }
-
-  const now = new Date().toISOString();
-  await supabase.from("vehicles").update({ status: "sold", sold_at: now }).eq("id", vehicleId);
-  await supabase.from("deal_tickets").update({ status: "executed", executed_at: now }).eq("id", ticketId);
-
-  if (netProfit > 0 && salesId) {
-    await supabase.from("ledger_entries").insert({
-      tenant_id: TENANT_ID, holder_type: "sales_exec", holder_id: salesId,
-      type: "commission", amount: 6000, ref_deal_ticket_id: ticketId, ref_vehicle_id: vehicleId,
-      note: `Commission for ${v.year} ${v.make} ${v.model}`,
-    });
-  }
-
-  console.log(`✓ Settled demo sale — net profit ${netProfit}, ${rows.length} ledger rows`);
-  void investorId;
-}
-
-const round2 = (n) => Math.round(n * 100) / 100;
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });

@@ -8,13 +8,21 @@ import { login } from "./actions";
 import { Panel } from "@/components/ui/panel";
 import { Input, Label } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { DemoSwitcher } from "@/components/demo/demo-switcher";
+import type { DemoPersona } from "@/lib/demo-accounts";
 
 export function LoginForm({
   locale,
   showroomName,
+  demoPersonas,
 }: {
   locale: string;
   showroomName: string | null;
+  /**
+   * Null everywhere except the flagship demo with the demo switched on.
+   * When present, the visitor never needs a password at all.
+   */
+  demoPersonas?: DemoPersona[] | null;
 }) {
   const t = useTranslations("auth");
   const boundLogin = login.bind(null, locale);
@@ -69,7 +77,9 @@ export function LoginForm({
                   ? t("wrongTenant")
                   : state.error === "tenantSuspended"
                     ? t("tenantSuspended")
-                    : t("invalidCredentials")}
+                    : state.error === "demoOff"
+                      ? t("demoOff")
+                      : t("invalidCredentials")}
             </p>
           )}
 
@@ -78,6 +88,19 @@ export function LoginForm({
           </Button>
         </form>
       </Panel>
+
+      {/* Demo shortcuts sit UNDER the form rather than replacing it: the
+          password path has to keep working on the demo host too, since
+          that is what the seeded accounts are for and what 508.world staff
+          use. Absent for every licensed showroom. */}
+      {demoPersonas && demoPersonas.length > 0 && (
+        <DemoSwitcher
+          locale={locale}
+          personas={demoPersonas}
+          currentKey={null}
+          variant="login"
+        />
+      )}
 
       <p className="mt-4 text-center text-xs text-[var(--color-text-faint)]">{t("noAccount")}</p>
     </motion.div>

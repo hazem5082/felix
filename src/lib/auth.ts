@@ -1,10 +1,50 @@
 import "server-only";
 import { cache } from "react";
-import { createClient } from "@/lib/supabase/server";
-import { getTenant } from "@/lib/tenant";
+import { createClient, getSessionTenant } from "@/lib/supabase/server";
+import { getTenant, type Tenant } from "@/lib/tenant";
+import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
+import type { TenantClaim } from "@/lib/tenant-claim";
 import { redirect } from "@/i18n/navigation";
 import type { Profile, Role } from "@/lib/supabase/types";
 import type { ActionError } from "@/lib/validation";
+
+/**
+ * Does the showroom this HOST serves match the showroom this SESSION
+ * belongs to?
+ *
+ * Until 0011 this was `tenant.id === profile.tenant_id`. profiles no
+ * longer carries tenant_id — the schema the row lives in IS its tenant —
+ * so the comparison moved to the session's access token claim, which
+ * migration 0010's hook derives from platform.tenant_users.
+ *
+ * Both sides still matter and neither is redundant. The claim says which
+ * showroom the user belongs to; the host says which showroom's front
+ * door they knocked on. A mismatch means someone is signed into showroom
+ * A and browsing showroom B's subdomain — harmless at the database level
+ * (their role has no privilege on B's schema) but it must not render B's
+ * branding around A's data, and it is worth refusing outright.
+ */
+function sameShowroom(tenant: Tenant, claim: TenantClaim): boolean {
+  return tenant.slug === claim.slug && tenant.schema_name === claim.schema;
+}
+
+/**
+ * Has the flagship demo been switched off underneath this request?
+ *
+ * The (app) layout has its own copy of this check, which covers every
+ * page inside that route group. This one exists for the pages that render
+ * OUTSIDE it — the /print contracts and reports — for exactly the reason
+ * requireActiveTenant() exists at all: a guard that lives in a layout
+ * protects only what that layout wraps, and the print routes wrap
+ * themselves.
+ *
+ * Returns false without a single database read for every licensed
+ * showroom, which is the whole point of leading with isFlagshipDemo().
+ */
+async function demoIsOff(tenant: Tenant): Promise<boolean> {
+  if (!isFlagshipDemo(tenant)) return false;
+  return !(await getDemoStatus()).enabled;
+}
 
 // Memoized per-request — safe to call from many Server Components
 // without duplicating the round trip.
@@ -61,14 +101,23 @@ export async function requireActiveTenant(
   locale: string,
   allowed?: Role[]
 ): Promise<Profile> {
-  const [profile, tenant] = await Promise.all([getProfile(), getTenant()]);
+  const [profile, tenant, claim] = await Promise.all([
+    getProfile(),
+    getTenant(),
+    getSessionTenant(),
+  ]);
 
-  if (
-    !profile ||
-    !tenant ||
-    tenant.id !== profile.tenant_id ||
-    tenant.status === "suspended"
-  ) {
+  if (!profile || !tenant || !claim || !sameShowroom(tenant, claim) || tenant.status === "suspended") {
+    redirect({ href: "/login", locale });
+    throw new Error("unreachable");
+  }
+
+  // Sent to /login rather than rendering the notice inline: these pages
+  // are a bare A4 sheet with no shell to put a notice in, and /login is
+  // where the notice lives for unauthenticated visitors anyway. The login
+  // page checks the demo gate before its own signed-in redirect, so this
+  // lands on the notice rather than bouncing onward to a dashboard.
+  if (await demoIsOff(tenant)) {
     redirect({ href: "/login", locale });
     throw new Error("unreachable");
   }
@@ -83,11 +132,19 @@ export async function requireActiveTenant(
 
 /** Non-redirecting equivalent, for route handlers. */
 export async function authorizeActiveTenant(allowed: Role[]): Promise<Authorized> {
-  const [profile, tenant] = await Promise.all([getProfile(), getTenant()]);
+  const [profile, tenant, claim] = await Promise.all([
+    getProfile(),
+    getTenant(),
+    getSessionTenant(),
+  ]);
   if (!profile) return { ok: false, error: UNAUTHENTICATED };
-  if (!tenant || tenant.id !== profile.tenant_id || tenant.status === "suspended") {
+  if (!tenant || !claim || !sameShowroom(tenant, claim) || tenant.status === "suspended") {
     return { ok: false, error: DENIED };
   }
+  // Same gate as the redirecting twin above. Without it, /api/export/ledger
+  // would keep streaming the demo's full ledger as CSV while every page
+  // that reaches it says the demo is off.
+  if (await demoIsOff(tenant)) return { ok: false, error: DENIED };
   if (!allowed.includes(profile.role)) return { ok: false, error: DENIED };
   return { ok: true, profile };
 }

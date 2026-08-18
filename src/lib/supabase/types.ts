@@ -43,16 +43,18 @@ export interface Profile {
   full_name: string;
   role: Role;
   branch_id: string | null;
-  // The licensed showroom this account belongs to. Assigned at signup
-  // from a staff_invitations row and immutable thereafter — see
-  // migration 0004. This is what current_tenant_id() reads, so it is
-  // the authoritative answer to "whose data is this?".
+  // NOTE: there is no tenant_id here any more.
   //
-  // NOT NULL in the database: a profile without a showroom cannot be
-  // created at all (handle_new_user raises NO_INVITATION). Typed as
-  // nullable only so a row read back before migration 0004 is applied
-  // doesn't lie about its shape.
-  tenant_id: string | null;
+  // Migration 0011 moved every showroom's rows into its own schema, so
+  // the schema a profile row lives in IS the answer to "whose data is
+  // this?" — a column recording it would be redundant at best and a
+  // second, drift-prone source of truth at worst. Isolation is enforced
+  // by GRANTs on separate tables rather than by a predicate over a
+  // shared one.
+  //
+  // The session's showroom comes from the `felix_tenant` access-token
+  // claim (see lib/tenant-claim.ts), which migration 0010's hook derives
+  // from platform.tenant_users.
   phone: string | null;
   avatar_url: string | null;
   // Contact preferences for the 508.world router Worker's notifications

@@ -101,11 +101,14 @@ export async function POST(request: Request) {
     return bad(`"${slug}" is a reserved subdomain`, 409);
   }
 
-  const admin = createAdminClient();
+  // provision_tenant lives in the `platform` schema since 0010, and it
+  // now creates the showroom's SCHEMA and ROLE as well as its rows.
+  // Service-role only: provisioning is a licensing action.
+  const admin = createAdminClient("platform");
 
-  // Step 1 — tenant, baseline rows, and the CEO's invitation. Idempotent
-  // on slug, so a retried approval after a network timeout converges
-  // instead of erroring or creating a second showroom.
+  // Step 1 — tenant, schema, role, baseline rows, and the CEO's
+  // invitation. Idempotent on slug, so a retried approval after a network
+  // timeout converges instead of erroring or creating a second showroom.
   const { data: provisioned, error: provisionError } = await admin.rpc("provision_tenant", {
     p_slug: slug,
     p_name: name,
@@ -124,6 +127,24 @@ export async function POST(request: Request) {
     tenant: { id: string; slug: string; name: string; status: string };
     branch_id: string;
   };
+
+  // Step 1b — expose the new schema to PostgREST. provision_tenant()
+  // deliberately does not call this itself (0010: "so a rolled-back
+  // provision never announces a schema that does not exist"), which
+  // means the caller must — and until this line existed, nothing did.
+  // Every showroom provisioned through this route had a schema and role
+  // but was unreachable via the API until someone ran
+  // platform.sync_postgrest_schemas() by hand. Failure here does not fail
+  // provisioning: the tenant and CEO account are already real, and the
+  // next provision/suspend/resume anywhere will self-heal the exposed
+  // list anyway.
+  const { error: syncError } = await admin.rpc("sync_postgrest_schemas");
+  if (syncError) {
+    console.error("[provision] sync_postgrest_schemas failed after provisioning", {
+      slug,
+      error: syncError.message,
+    });
+  }
 
   // Step 2 — the CEO's auth account. Created *after* the invitation row
   // exists, because handle_new_user() reads that row to decide the new
