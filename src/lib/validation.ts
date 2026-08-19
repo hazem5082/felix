@@ -160,6 +160,59 @@ export const LeadCommentSchema = z.object({
   contact_method: z.enum(["phone", "whatsapp", "in_person", "email"]).nullable(),
 });
 
+// ── Lead ↔ vehicle interest ─────────────────────────────────
+
+/**
+ * Links a buyer to a car and records what they will pay for it.
+ *
+ * `vehicle_id` and the `wanted_*` fields are alternatives, not a pair: the
+ * buyer either wants something on the floor or something the showroom does
+ * not have. The refine below mirrors migration 0016's
+ * `lead_vehicle_interests_names_a_car` CHECK, so a row that names no car at
+ * all is refused here with a sentence rather than as a constraint violation.
+ *
+ * `budget_amount` is nullable on purpose and `optionalMoneyString` keeps it
+ * that way: a lead who will not name a number is still worth recording, and
+ * a zero invented to satisfy the form would sit in the CEO's demand report
+ * looking like an offer.
+ */
+export const CreateLeadInterestSchema = z
+  .object({
+    lead_id: Uuid,
+    vehicle_id: z.union([Uuid, z.literal("")]).transform((v) => v || null),
+    wanted_make: optionalText(60),
+    wanted_model: optionalText(60),
+    wanted_year: z
+      .string()
+      .trim()
+      .optional()
+      .nullable()
+      .transform((v) => (v ? Number(v) : null))
+      .refine(
+        (n) => n === null || (Number.isInteger(n) && n >= 1950 && n <= new Date().getFullYear() + 2),
+        { message: "Year must be between 1950 and next year" }
+      ),
+    budget_amount: optionalMoneyString.refine((n) => n === null || n > 0, {
+      message: "A budget must be greater than zero",
+    }),
+    origin: z.enum(["requested", "suggested"]),
+    note: optionalText(500),
+  })
+  .refine((i) => i.vehicle_id !== null || i.wanted_make !== null, {
+    message: "Pick a car from stock, or say which make the buyer is asking for",
+    path: ["wanted_make"],
+  });
+
+/**
+ * The only two fields worth revising after the fact. Everything else about
+ * an interest — which lead, which car, who matched them — is a statement
+ * about a conversation that happened, and is corrected by a new row.
+ */
+export const UpdateLeadInterestSchema = z.object({
+  id: Uuid,
+  status: z.enum(["open", "shown", "declined"]),
+});
+
 // ── Deal tickets ────────────────────────────────────────────
 
 export const CreateDealTicketSchema = z

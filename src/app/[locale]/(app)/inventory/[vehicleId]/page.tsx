@@ -13,6 +13,7 @@ import type {
   VehicleEquitySplit,
   VehicleExpense,
   Branch,
+  LeadVehicleInterest,
 } from "@/lib/supabase/types";
 import { ExpenseFormDialog } from "./expense-form";
 import { colorLabel } from "@/lib/vehicle-color";
@@ -25,25 +26,41 @@ export default async function VehicleDetailPage({
   const { vehicleId } = await params;
   const t = await getTranslations("inventory");
   const dealsT = await getTranslations("deals");
+  const crm = await getTranslations("crm");
+  const interest = await getTranslations("interest");
   const common = await getTranslations("common");
   const colors = await getTranslations("colors");
   const supabase = await createClient();
   const profile = await getProfile();
 
-  const [{ data: vehicle }, { data: splits }, { data: expenses }, { data: branch }] =
-    await Promise.all([
-      supabase.from("vehicles").select("*").eq("id", vehicleId).maybeSingle(),
-      supabase
-        .from("vehicle_equity_splits")
-        .select("*, investors(id, profiles(full_name))")
-        .eq("vehicle_id", vehicleId),
-      supabase
-        .from("vehicle_expenses")
-        .select("*")
-        .eq("vehicle_id", vehicleId)
-        .order("created_at", { ascending: false }),
-      supabase.from("vehicles").select("branch_id").eq("id", vehicleId).maybeSingle(),
-    ]);
+  const [
+    { data: vehicle },
+    { data: splits },
+    { data: expenses },
+    { data: branch },
+    { data: interests },
+  ] = await Promise.all([
+    supabase.from("vehicles").select("*").eq("id", vehicleId).maybeSingle(),
+    supabase
+      .from("vehicle_equity_splits")
+      .select("*, investors(id, profiles(full_name))")
+      .eq("vehicle_id", vehicleId),
+    supabase
+      .from("vehicle_expenses")
+      .select("*")
+      .eq("vehicle_id", vehicleId)
+      .order("created_at", { ascending: false }),
+    supabase.from("vehicles").select("branch_id").eq("id", vehicleId).maybeSingle(),
+    // RLS scopes this to leads the viewer may read, so a sales exec sees
+    // the buyers they are working and a manager sees the branch's. Nobody
+    // gets another salesperson's customer list by opening a car.
+    supabase
+      .from("lead_vehicle_interests")
+      .select("*, leads(id, client_name, phone_number, status)")
+      .eq("vehicle_id", vehicleId)
+      .neq("status", "declined")
+      .order("budget_amount", { ascending: false, nullsFirst: false }),
+  ]);
 
   if (!vehicle) notFound();
 
@@ -56,6 +73,7 @@ export default async function VehicleDetailPage({
   const isCeo = profile?.role === "ceo";
 
   const totalExpenses = ((expenses as VehicleExpense[]) ?? []).reduce((s, e) => s + Number(e.amount), 0);
+  const buyers = (interests as LeadVehicleInterest[]) ?? [];
 
   return (
     <div className="space-y-6">
@@ -136,6 +154,71 @@ export default async function VehicleDetailPage({
           </div>
         </Panel>
       </div>
+
+      <Panel>
+        <PanelHeader title={interest("buyersTitle")} subtitle={interest("buyersSubtitle")} />
+        <Table>
+          <THead>
+            <Th>{crm("clientName")}</Th>
+            <Th>{crm("phone")}</Th>
+            <Th>{interest("budget")}</Th>
+            <Th>{interest("vsCost")}</Th>
+            <Th>{common("status")}</Th>
+          </THead>
+          <TBody>
+            {buyers.map((i) => {
+              const budget = i.budget_amount === null ? null : Number(i.budget_amount);
+              const gap = budget === null ? null : budget - Number(v.purchase_price);
+              return (
+                <Tr key={i.id}>
+                  <Td>
+                    {i.leads ? (
+                      <Link href={`/crm/${i.leads.id}`} className="hover:underline">
+                        {i.leads.client_name}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </Td>
+                  <Td className="num text-[var(--color-text-muted)]">{i.leads?.phone_number ?? "—"}</Td>
+                  <Td className="num">
+                    {budget === null ? (
+                      <span className="text-[var(--color-text-faint)]">{interest("noBudget")}</span>
+                    ) : (
+                      `$${budget.toLocaleString()}`
+                    )}
+                  </Td>
+                  {/* Against acquisition cost, not an asking price: the schema
+                      has no asking price, and cost is the number that decides
+                      whether an offer is worth taking. */}
+                  <Td
+                    className={`num ${
+                      gap === null
+                        ? ""
+                        : gap >= 0
+                          ? "text-[var(--color-accent-green)]"
+                          : "text-[var(--color-accent-red)]"
+                    }`}
+                  >
+                    {gap === null ? "—" : `${gap >= 0 ? "+" : "−"}$${Math.abs(gap).toLocaleString()}`}
+                  </Td>
+                  <Td>
+                    <StatusPill
+                      label={i.status === "shown" ? interest("statusShown") : interest("statusOpen")}
+                      tone={i.status === "shown" ? "blue" : "amber"}
+                    />
+                  </Td>
+                </Tr>
+              );
+            })}
+            {!buyers.length && (
+              <Tr>
+                <Td className="text-center text-[var(--color-text-faint)]">{interest("noBuyers")}</Td>
+              </Tr>
+            )}
+          </TBody>
+        </Table>
+      </Panel>
 
       <Panel>
         <PanelHeader

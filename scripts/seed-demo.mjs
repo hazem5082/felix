@@ -44,6 +44,9 @@
 //     product; emailFor() namespaces every address under *.filex.demo,
 //     which resolves nowhere and cannot collide with anything real.
 import { createClient } from "@supabase/supabase-js";
+// The four cars themselves — VINs and photography — are described in one
+// place, because demo-photos.mjs writes to the same rows this script creates.
+import { vinFor, photosFor, seedPipeline } from "./demo-fixtures.mjs";
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -95,6 +98,17 @@ if (!/^[a-z0-9]+$/.test(SLUG)) {
 // nowhere and is namespaced under this script's own product, so it can't
 // collide with anything real on the shared GoTrue instance.
 const emailFor = (role) => (SLUG === "felix" ? `${role}@filex.demo` : `${role}@${SLUG}.filex.demo`);
+const vin = (key) => vinFor(SLUG, key);
+
+// Photographs are optional: a showroom seeded without R2 configured gets four
+// cars and no pictures rather than no cars at all. demo-photos.mjs can fill
+// them in later against exactly the same rows.
+let PHOTOS = {};
+try {
+  PHOTOS = photosFor(process.env.R2_PUBLIC_URL);
+} catch {
+  console.warn("! R2_PUBLIC_URL is not set — seeding vehicles without photographs.");
+}
 
 let TENANT_ID;
 let tenantDb; // built once the schema is known to exist
@@ -361,23 +375,51 @@ async function createUser(key, dbRole, fullName, branchId) {
   return data.user.id;
 }
 
-async function insertVehicle(branchId, createdBy, vin, year, make, model, trim, purchasePrice) {
+/**
+ * Takes a car in, keyed by its entry in BASE_VINS / PHOTOS rather than by a
+ * literal VIN, so a vehicle's identity and its photography cannot drift apart
+ * at the call site.
+ *
+ * Idempotent on VIN, and re-runnable in a useful way: a showroom seeded before
+ * the photographs existed gets them backfilled, but only into columns that are
+ * still empty. Overwriting unconditionally would delete the photos anyone
+ * demonstrating the intake form had uploaded through the app, which is the one
+ * thing a re-seed must not do.
+ */
+async function insertVehicle(branchId, createdBy, key, year, make, model, trim, purchasePrice) {
+  const gallery = PHOTOS[key] ?? { photos: [], inspection_photos: [] };
   const { data: existing } = await tenantDb
     .from("vehicles")
-    .select("id")
-    .eq("vin", vin)
+    .select("id, photos, inspection_photos")
+    .eq("vin", vin(key))
     .maybeSingle();
-  if (existing) return existing.id;
+
+  if (existing) {
+    const backfill = {};
+    if (!existing.photos?.length && gallery.photos.length) backfill.photos = gallery.photos;
+    if (!existing.inspection_photos?.length && gallery.inspection_photos.length)
+      backfill.inspection_photos = gallery.inspection_photos;
+
+    if (Object.keys(backfill).length) {
+      const { error } = await tenantDb.from("vehicles").update(backfill).eq("id", existing.id);
+      if (error) throw new Error(`backfilling photos on ${key}: ${error.message}`);
+      console.log(`↷ ${year} ${make} ${model} exists — added ${Object.keys(backfill).join(", ")}`);
+    }
+    return existing.id;
+  }
+
   const { data, error } = await tenantDb
     .from("vehicles")
     .insert({
       branch_id: branchId,
-      vin,
+      vin: vin(key),
       year,
       make,
       model,
       trim,
       purchase_price: purchasePrice,
+      photos: gallery.photos,
+      inspection_photos: gallery.inspection_photos,
       created_by: createdBy,
     })
     .select("id")
@@ -554,50 +596,47 @@ async function main() {
     await tenantDb.from("investors").upsert({ id: investor2Id, notes: "Seed investor #2" });
 
   // Vehicle 1: sold already (drives the executed deal below) — 60/40 CEO/investor1
-  const v1 = await insertVehicle(downtown.id, salesId, vin("fusion"), 2022, "Ford", "Fusion", "SE", 18000);
+  const v1 = await insertVehicle(downtown.id, salesId, "fusion", 2022, "Ford", "Fusion", "SE", 18000);
   await insertSplits(v1, [
     { holder_type: "ceo", holder_id: null, amount_invested: 10800, percentage: 60 },
     { holder_type: "investor", holder_id: investor1Id, amount_invested: 7200, percentage: 40 },
   ]);
 
   // Vehicle 2: in stock, 50/50 CEO/investor2
-  const v2 = await insertVehicle(downtown.id, salesId, vin("civic"), 2023, "Honda", "Civic", "Sport", 22000);
+  const v2 = await insertVehicle(downtown.id, salesId, "civic", 2023, "Honda", "Civic", "Sport", 22000);
   await insertSplits(v2, [
     { holder_type: "ceo", holder_id: null, amount_invested: 11000, percentage: 50 },
     { holder_type: "investor", holder_id: investor2Id, amount_invested: 11000, percentage: 50 },
   ]);
 
   // Vehicle 3: in stock at the airport branch, CEO-only funded
-  const v3 = await insertVehicle(airport.id, salesId, vin("camry"), 2024, "Toyota", "Camry", "XSE", 27500);
+  const v3 = await insertVehicle(airport.id, salesId, "camry", 2024, "Toyota", "Camry", "XSE", 27500);
   await insertSplits(v3, [{ holder_type: "ceo", holder_id: null, amount_invested: 27500, percentage: 100 }]);
 
   // Vehicle 4: in stock, three-way split (CEO + 2 investors)
-  const v4 = await insertVehicle(downtown.id, salesId, vin("bmw"), 2023, "BMW", "3 Series", "330i", 34000);
+  const v4 = await insertVehicle(downtown.id, salesId, "bmw", 2023, "BMW", "3 Series", "330i", 34000);
   await insertSplits(v4, [
     { holder_type: "ceo", holder_id: null, amount_invested: 17000, percentage: 50 },
     { holder_type: "investor", holder_id: investor1Id, amount_invested: 10200, percentage: 30 },
     { holder_type: "investor", holder_id: investor2Id, amount_invested: 6800, percentage: 20 },
   ]);
 
-  // A couple of leads
-  const { data: existingLeads } = await tenantDb.from("leads").select("id").limit(1);
-  let leadId;
-  if (!existingLeads?.length) {
-    const { data: lead1 } = await tenantDb
-      .from("leads")
-      .insert({
-        branch_id: downtown.id, salesperson_id: salesId,
-        client_name: "Taylor Morgan", phone_number: "5551234567",
-        car_interest: "2023 Honda Civic", status: "ticket_created", source: "manual",
-      })
-      .select("id").single();
-    leadId = lead1?.id;
-    await tenantDb.from("leads").insert({
-      branch_id: downtown.id, salesperson_id: salesId,
-      client_name: "Riley Chen", phone_number: "5559876543",
-      car_interest: "Looking for a sedan", status: "pending", source: "manual",
-    });
-  }
+  // ── The pipeline ───────────────────────────────────────────
+  // Six buyers and what each of them wants, defined once in
+  // demo-fixtures.mjs so demo-pipeline.mjs can lay down the identical
+  // rows on a showroom that is already trading.
+  const byKey = { fusion: v1, civic: v2, camry: v3, bmw: v4 };
+  const pipeline = await seedPipeline({
+    db: tenantDb,
+    branchId: downtown.id,
+    salespersonId: salesId,
+    vehicleIdFor: (key) => byKey[key] ?? null,
+    log: (line) => console.log(line),
+  });
+  const leadId = pipeline.leads.taylor;
+  console.log(
+    `✓ pipeline: ${pipeline.leadsAdded} lead(s), ${pipeline.interestsAdded} vehicle interest(s) added`
+  );
 
   // Deal ticket 1: executed (against vehicle 1, cash)
   const { data: existingTickets } = await tenantDb.from("deal_tickets").select("id, status");
@@ -658,28 +697,6 @@ async function main() {
       : `\nSign in at: https://${SLUG}-felix.508.world/en/login`
   );
   console.log("Referral link: /en/refer/" + salesId);
-}
-
-// The flagship's four original VINs, verbatim. They are the idempotency key
-// for insertVehicle(), so they must match the rows already in the database
-// exactly — deriving them from a shared suffix silently changed three of the
-// four and seeded duplicate cars instead of matching the existing ones.
-const BASE_VINS = {
-  fusion: "1FADP3F20EL123456",
-  civic: "2HGFC2F59NH123457",
-  camry: "3VWFE21C04M123458",
-  bmw: "4T1BF1FK5EU123459",
-};
-
-// VINs are globally unique in reality and the vehicles table lives in one
-// tenant's own schema, so a collision only risks the flagship's original
-// four — every other showroom still gets its own set for clarity.
-function vin(key) {
-  const base = BASE_VINS[key];
-  if (!base) throw new Error(`Unknown vehicle key "${key}"`);
-  if (SLUG === "felix") return base;
-  const tail = SLUG.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6).padEnd(6, "0");
-  return base.slice(0, 11) + tail;
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });

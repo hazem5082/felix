@@ -149,6 +149,38 @@ export interface Lead {
   profiles?: Profile;
 }
 
+/**
+ * Who put a buyer and a car together. `requested` is demand — the buyer
+ * asked for it. `suggested` is a salesperson matching them to something on
+ * the floor. The CEO's demand report must not add the two together.
+ */
+export type LeadInterestOrigin = "requested" | "suggested";
+export type LeadInterestStatus = "open" | "shown" | "declined";
+
+/**
+ * A buyer's interest in one car, and what they will pay for it.
+ *
+ * `vehicle_id` null means they want something the showroom does not have;
+ * `wanted_*` says what. Migration 0016's CHECK guarantees at least one of
+ * the two is filled in, so a row always names a car.
+ */
+export interface LeadVehicleInterest {
+  id: string;
+  lead_id: string;
+  vehicle_id: string | null;
+  wanted_make: string | null;
+  wanted_model: string | null;
+  wanted_year: number | null;
+  budget_amount: number | null;
+  origin: LeadInterestOrigin;
+  status: LeadInterestStatus;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  vehicles?: Vehicle | null;
+  leads?: Lead | null;
+}
+
 export interface LeadComment {
   id: string;
   lead_id: string;

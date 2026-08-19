@@ -2,8 +2,13 @@ import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, PanelHeader } from "@/components/ui/panel";
-import type { Lead, LeadComment } from "@/lib/supabase/types";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Link } from "@/i18n/navigation";
+import type { Lead, LeadComment, LeadVehicleInterest } from "@/lib/supabase/types";
+import { interestLabel } from "@/lib/demand";
 import { CommentForm } from "./comment-form";
+import { InterestFormDialog } from "./interest-form";
+import { InterestStatusSelect } from "./interest-status";
 import { DealTicketFormDialog } from "../deal-ticket-form";
 
 export default async function LeadDetailPage({
@@ -13,22 +18,29 @@ export default async function LeadDetailPage({
 }) {
   const { leadId } = await params;
   const t = await getTranslations("crm");
+  const interest = await getTranslations("interest");
   const dealsT = await getTranslations("deals");
   const misc = await getTranslations("misc");
   const common = await getTranslations("common");
   const supabase = await createClient();
 
-  const [{ data: lead }, { data: comments }] = await Promise.all([
+  const [{ data: lead }, { data: comments }, { data: interests }] = await Promise.all([
     supabase.from("leads").select("*").eq("id", leadId).maybeSingle(),
     supabase
       .from("lead_comments")
       .select("*, profiles(full_name)")
       .eq("lead_id", leadId)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("lead_vehicle_interests")
+      .select("*, vehicles(id, year, make, model, trim, purchase_price, status)")
+      .eq("lead_id", leadId)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (!lead) notFound();
   const l = lead as Lead;
+  const wants = (interests as LeadVehicleInterest[]) ?? [];
 
   return (
     <div className="space-y-6">
@@ -70,6 +82,55 @@ export default async function LeadDetailPage({
           </div>
         </Panel>
       </div>
+
+      <Panel>
+        <PanelHeader title={interest("title")} action={<InterestFormDialog leadId={l.id} />} />
+        <div className="space-y-2">
+          {wants.map((i) => (
+            <div
+              key={i.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2.5"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  {i.vehicles ? (
+                    <Link href={`/inventory/${i.vehicles.id}`} className="text-sm hover:underline">
+                      {interestLabel(i)}
+                    </Link>
+                  ) : (
+                    <span className="text-sm">{interestLabel(i)}</span>
+                  )}
+                  <StatusPill
+                    label={i.vehicles ? interest("inStock") : interest("notInStock")}
+                    tone={i.vehicles ? "blue" : "amber"}
+                  />
+                  {i.origin === "suggested" && (
+                    <StatusPill label={interest("originSuggestedShort")} tone="neutral" />
+                  )}
+                </div>
+                {i.note && (
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{i.note}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="text-end">
+                  <p className="num text-sm text-[var(--color-text)]">
+                    {i.budget_amount !== null
+                      ? `$${Number(i.budget_amount).toLocaleString()}`
+                      : interest("noBudget")}
+                  </p>
+                  <p className="text-[10px] text-[var(--color-text-faint)]">{interest("budget")}</p>
+                </div>
+                <InterestStatusSelect id={i.id} status={i.status} />
+              </div>
+            </div>
+          ))}
+          {!wants.length && (
+            <p className="text-xs text-[var(--color-text-faint)]">{interest("none")}</p>
+          )}
+        </div>
+      </Panel>
     </div>
   );
 }

@@ -6,8 +6,10 @@ import { authorize, assertBranch, STAFF_ROLES } from "@/lib/auth";
 import { toUserError } from "@/lib/db-error";
 import {
   CreateDealTicketSchema,
+  CreateLeadInterestSchema,
   CreateLeadSchema,
   LeadCommentSchema,
+  UpdateLeadInterestSchema,
   parseInput,
 } from "@/lib/validation";
 
@@ -76,6 +78,107 @@ export async function addLeadComment(input: {
 
   if (error) return toUserError(error);
   revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
+  return { ok: true };
+}
+
+/**
+ * Records that a buyer wants a car, and what they will pay for it.
+ *
+ * Deliberately NOT a deal ticket. A ticket locks the vehicle, opens a
+ * financing request and flips the lead to 'ticket_created'; none of that
+ * should happen because somebody said they liked a car on the forecourt.
+ * This is the cheap, reversible, many-per-lead record that was missing
+ * between "car_interest: looking for a sedan" and a signed contract.
+ */
+export async function addLeadInterest(input: {
+  lead_id: string;
+  vehicle_id: string;
+  wanted_make: string;
+  wanted_model: string;
+  wanted_year: string;
+  budget_amount: string;
+  origin: "requested" | "suggested";
+  note: string;
+}) {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(CreateLeadInterestSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+
+  // Same reasoning as addLeadComment: the insert policy mirrors the lead's
+  // own visibility, but a readable failure beats a bare RLS rejection.
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", parsed.data.lead_id)
+    .maybeSingle();
+  if (!lead) return { error: "Unknown lead." };
+
+  // Confirm the car is one this actor can actually see. No branch
+  // assertion, unlike createDealTicket: a manager noting that a customer
+  // wants a car sitting at another branch is how a transfer starts, and
+  // nothing is reserved or committed by saying so.
+  if (parsed.data.vehicle_id) {
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("id")
+      .eq("id", parsed.data.vehicle_id)
+      .maybeSingle();
+    if (!vehicle) return { error: "That vehicle is not available to you." };
+  }
+
+  const { error } = await supabase.from("lead_vehicle_interests").insert({
+    lead_id: parsed.data.lead_id,
+    vehicle_id: parsed.data.vehicle_id,
+    wanted_make: parsed.data.wanted_make,
+    wanted_model: parsed.data.wanted_model,
+    wanted_year: parsed.data.wanted_year,
+    budget_amount: parsed.data.budget_amount,
+    origin: parsed.data.origin,
+    note: parsed.data.note,
+    created_by: auth.profile.id,
+  });
+
+  if (error) return toUserError(error);
+
+  revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
+  if (parsed.data.vehicle_id) revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
+  revalidatePath("/[locale]/(app)/ceo", "page");
+  return { ok: true };
+}
+
+/**
+ * Moves an interest along. 'declined' is what takes it out of the CEO's
+ * demand report — a buyer who walked away has to be able to leave it,
+ * or the report only ever grows and stops being read.
+ */
+export async function setLeadInterestStatus(input: { id: string; status: string }) {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(UpdateLeadInterestSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("lead_vehicle_interests")
+    .update({ status: parsed.data.status })
+    .eq("id", parsed.data.id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return toUserError(error);
+  // RLS returns zero rows rather than an error when the row belongs to
+  // another salesperson's lead, and an update that changed nothing would
+  // otherwise report success.
+  if (!data) return { error: "That record is not available to you." };
+
+  revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
+  revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
+  revalidatePath("/[locale]/(app)/ceo", "page");
   return { ok: true };
 }
 
