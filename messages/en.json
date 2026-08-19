@@ -233,7 +233,8 @@
     "followUps": "Follow-up History",
     "addComment": "Log Interaction",
     "referralLink": "Your Referral Link",
-    "copyLink": "Copy Link"
+    "copyLink": "Copy Link",
+    "editClient": "Edit client"
   },
   "interest": {
     "title": "Cars this buyer wants",
@@ -264,7 +265,8 @@
     "buyersTitle": "Interested buyers",
     "buyersSubtitle": "Leads linked to this car, best offer first",
     "vsCost": "Against cost",
-    "noBuyers": "Nobody has been linked to this car yet."
+    "noBuyers": "Nobody has been linked to this car yet.",
+    "edit": "Edit this interest"
   },
   "deals": {
     "title": "Deal Approval & Contract Vault",
@@ -485,7 +487,8 @@
     "filterAll": "All",
     "searchVehicles": "Search VIN, make, model…",
     "clearFilters": "Clear filters",
-    "showingCount": "{count} vehicle(s)"
+    "showingCount": "{count} vehicle(s)",
+    "contactTime": "Best time to contact"
   },
   "account": {
     "title": "Account",
@@ -524,5 +527,51 @@
     "orange": "Orange",
     "yellow": "Yellow",
     "burgundy": "Burgundy"
+  },
+  "notes": {
+    "heading": "Note",
+    "headingPlaceholder": "Who they are — e.g. married, three kids",
+    "points": "What they are looking for",
+    "pointsHint": "One requirement per line, so whoever calls them can see each one at a glance.",
+    "pointPlaceholder": "e.g. Lives where the roads are rough — needs an SUV",
+    "addPoint": "Add a point",
+    "removePoint": "Remove this point"
+  },
+  "history": {
+    "title": "Change History",
+    "subtitle": "Every edit to this client and the cars they want",
+    "none": "Nothing has been changed since this client was added.",
+    "action": {
+      "lead": {
+        "insert": "added this client",
+        "update": "edited the client",
+        "delete": "removed the client"
+      },
+      "interest": {
+        "insert": "linked a car",
+        "update": "edited a car interest",
+        "delete": "removed a car interest"
+      }
+    },
+    "fields": {
+      "client_name": "Name",
+      "phone_number": "Phone",
+      "address": "Address",
+      "company_name": "Company",
+      "job_title": "Job title",
+      "income": "Income",
+      "car_interest": "Car interest",
+      "contact_time_preference": "Best time to contact",
+      "client_notes": "Note",
+      "client_note_points": "What they are looking for",
+      "status": "Status",
+      "vehicle_id": "Car",
+      "wanted_make": "Make",
+      "wanted_model": "Model",
+      "wanted_year": "Year",
+      "budget_amount": "Willing to pay",
+      "origin": "Who raised it",
+      "note": "Note"
+    }
   }
 }

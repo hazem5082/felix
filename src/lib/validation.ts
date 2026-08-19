@@ -135,7 +135,37 @@ export const AddExpenseSchema = z.object({
 
 // ── CRM ─────────────────────────────────────────────────────
 
-export const CreateLeadSchema = z.object({
+/**
+ * The bullets under a client's note.
+ *
+ * Blank rows are dropped rather than rejected: the editor renders an
+ * empty input for the next point, so a form submitted with one unfilled
+ * row is the normal case, not a mistake worth a red banner. What is left
+ * is trimmed, deduplicated and capped — twenty requirements is already
+ * past the point where a salesperson reads them before a call, and the
+ * array is stored inline on the lead.
+ */
+const notePoints = z
+  .array(z.string())
+  .max(50)
+  .optional()
+  .nullable()
+  .transform((rows) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const row of rows ?? []) {
+      const point = row.trim().slice(0, 300);
+      if (!point || seen.has(point)) continue;
+      seen.add(point);
+      out.push(point);
+    }
+    return out;
+  })
+  .refine((rows) => rows.length <= 20, {
+    message: "A client can carry at most 20 note points",
+  });
+
+const LeadFieldsSchema = z.object({
   client_name: text(120),
   phone_number: phone,
   car_interest: optionalText(120),
@@ -144,6 +174,29 @@ export const CreateLeadSchema = z.object({
   job_title: optionalText(120),
   income: optionalMoneyString,
   client_notes: optionalText(2000),
+  client_note_points: notePoints,
+});
+
+export const CreateLeadSchema = LeadFieldsSchema;
+
+/**
+ * Correcting a client's details after the fact.
+ *
+ * The same fields as creation plus the id, and deliberately NOT
+ * `status`, `branch_id`, `salesperson_id` or `source`. Those three are
+ * ownership and pipeline state — status is moved by creating a deal
+ * ticket, and reassigning a lead to another branch or salesperson is a
+ * different act with different consequences than fixing a phone number.
+ * Folding them into the contact form would let one accidental submit
+ * move a lead out of the branch that is working it.
+ *
+ * `contact_time_preference` IS here: it arrives on referral leads from
+ * the public form and is a contact detail in the plainest sense — when
+ * this person can actually be reached.
+ */
+export const UpdateLeadSchema = LeadFieldsSchema.extend({
+  id: Uuid,
+  contact_time_preference: optionalText(120),
 });
 
 export const PublicLeadSchema = z.object({
@@ -204,14 +257,66 @@ export const CreateLeadInterestSchema = z
   });
 
 /**
- * The only two fields worth revising after the fact. Everything else about
- * an interest — which lead, which car, who matched them — is a statement
- * about a conversation that happened, and is corrected by a new row.
+ * Status on its own, for the inline control on each interest row.
+ *
+ * Kept separate from the full edit below: this is a one-click move that
+ * must not require the caller to resend the whole row, and a payload
+ * that carried the other fields could silently blank them on a partial
+ * client update.
  */
-export const UpdateLeadInterestSchema = z.object({
+export const UpdateLeadInterestStatusSchema = z.object({
   id: Uuid,
   status: z.enum(["open", "shown", "declined"]),
 });
+
+/**
+ * Revising what a buyer wants.
+ *
+ * Originally only `status` was editable, on the reasoning that an
+ * interest records a conversation and a conversation is corrected by a
+ * new row. That holds for `origin` — who raised the car is a fact about
+ * an event — but not for the rest: a buyer raises their budget, the
+ * salesperson finds they meant the Sport trim rather than the base, or a
+ * car the showroom did not have arrives on the floor and the row should
+ * point at the actual vehicle instead of free text. Forcing a new row
+ * for those double-counts the buyer in the CEO's demand report, which is
+ * the one number this table exists to get right.
+ *
+ * `lead_id` is absent on purpose and its absence is load-bearing: the
+ * table's UPDATE policy carries a WITH CHECK precisely to stop a visible
+ * row being re-pointed at another salesperson's lead, and an action that
+ * accepted the column would be inviting the attempt.
+ *
+ * Same car-or-wanted refinement as creation, mirroring the
+ * `lead_vehicle_interests_names_a_car` CHECK.
+ */
+export const UpdateLeadInterestSchema = z
+  .object({
+    id: Uuid,
+    vehicle_id: z.union([Uuid, z.literal("")]).transform((v) => v || null),
+    wanted_make: optionalText(60),
+    wanted_model: optionalText(60),
+    wanted_year: z
+      .string()
+      .trim()
+      .optional()
+      .nullable()
+      .transform((v) => (v ? Number(v) : null))
+      .refine(
+        (n) => n === null || (Number.isInteger(n) && n >= 1950 && n <= new Date().getFullYear() + 2),
+        { message: "Year must be between 1950 and next year" }
+      ),
+    budget_amount: optionalMoneyString.refine((n) => n === null || n > 0, {
+      message: "A budget must be greater than zero",
+    }),
+    origin: z.enum(["requested", "suggested"]),
+    status: z.enum(["open", "shown", "declined"]),
+    note: optionalText(500),
+  })
+  .refine((i) => i.vehicle_id !== null || i.wanted_make !== null, {
+    message: "Pick a car from stock, or say which make the buyer is asking for",
+    path: ["wanted_make"],
+  });
 
 // ── Deal tickets ────────────────────────────────────────────
 

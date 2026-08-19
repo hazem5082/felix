@@ -10,6 +10,8 @@ import {
   CreateLeadSchema,
   LeadCommentSchema,
   UpdateLeadInterestSchema,
+  UpdateLeadInterestStatusSchema,
+  UpdateLeadSchema,
   parseInput,
 } from "@/lib/validation";
 
@@ -22,6 +24,7 @@ export async function createLead(input: {
   job_title: string;
   income: string;
   client_notes: string;
+  client_note_points: string[];
 }) {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
@@ -39,6 +42,70 @@ export async function createLead(input: {
 
   if (error) return toUserError(error);
   revalidatePath("/[locale]/(app)/crm", "page");
+  return { ok: true };
+}
+
+/**
+ * Corrects a client's details, and their note.
+ *
+ * Anyone who can see a lead can fix it. That is not a new privilege —
+ * `leads_update` has permitted the owning salesperson, the branch's
+ * manager and the CEO since 0001 — it is the first code path that ever
+ * used it. Until now a phone number typed wrong at the counter stayed
+ * wrong, because the only writer was the "Add Lead" dialog.
+ *
+ * The audit trigger on `leads` turns every one of these into a
+ * before/after pair in `audit_log`, which is what the History panel on
+ * the lead page reads. Editing and the record of who edited arrive
+ * together on purpose: the second is what makes the first safe to hand
+ * to everyone.
+ *
+ * No `assertBranch`. The branch check belongs on acts that move money or
+ * stock; visibility is the right gate for correcting a contact detail,
+ * and RLS already IS that gate — the update below simply matches no rows
+ * for a lead the caller cannot see, which the empty-result check turns
+ * into a sentence.
+ */
+export async function updateLead(input: {
+  id: string;
+  client_name: string;
+  phone_number: string;
+  car_interest: string;
+  address: string;
+  company_name: string;
+  job_title: string;
+  income: string;
+  client_notes: string;
+  client_note_points: string[];
+  contact_time_preference: string;
+}) {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(UpdateLeadSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const { id, ...fields } = parsed.data;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("leads")
+    .update(fields)
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return toUserError(error);
+  // RLS returns zero rows rather than an error for a lead belonging to
+  // another salesperson's pipeline, and an update that changed nothing
+  // would otherwise report success.
+  if (!data) return { error: "That client is not available to you." };
+
+  revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
+  revalidatePath("/[locale]/(app)/crm", "page");
+  // buildDemand() falls back to leads.car_interest for leads with no
+  // structured interest, so editing it moves the CEO's demand report.
+  revalidatePath("/[locale]/(app)/ceo", "page");
   return { ok: true };
 }
 
@@ -159,7 +226,7 @@ export async function setLeadInterestStatus(input: { id: string; status: string 
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateLeadInterestSchema, input);
+  const parsed = parseInput(UpdateLeadInterestStatusSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -174,6 +241,71 @@ export async function setLeadInterestStatus(input: { id: string; status: string 
   // RLS returns zero rows rather than an error when the row belongs to
   // another salesperson's lead, and an update that changed nothing would
   // otherwise report success.
+  if (!data) return { error: "That record is not available to you." };
+
+  revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
+  revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
+  revalidatePath("/[locale]/(app)/ceo", "page");
+  return { ok: true };
+}
+
+/**
+ * Revises what a buyer wants — the car, the budget, the note, all of it.
+ *
+ * The alternative was a new row per correction, and it is the wrong one:
+ * `buildDemand()` counts DISTINCT leads per car, so a buyer whose budget
+ * moved from 21,000 to 24,000 would appear as two people wanting the
+ * same Civic the moment the second row landed. One buyer is one row, and
+ * revising it is how it stays that way.
+ *
+ * `lead_id` is never accepted — see UpdateLeadInterestSchema. Everything
+ * else the dialog can set comes through, including a switch between a
+ * car on the floor and a car the showroom does not have: a wanted Hilux
+ * that arrives as stock becomes a linked row rather than a duplicate,
+ * which is exactly the moment the demand report should stop counting it
+ * as unmet.
+ */
+export async function updateLeadInterest(input: {
+  id: string;
+  vehicle_id: string;
+  wanted_make: string;
+  wanted_model: string;
+  wanted_year: string;
+  budget_amount: string;
+  origin: "requested" | "suggested";
+  status: "open" | "shown" | "declined";
+  note: string;
+}) {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(UpdateLeadInterestSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+
+  // Same reasoning as addLeadInterest: no branch assertion, because
+  // nothing is reserved by noting that a customer wants a car sitting at
+  // another branch — but the car must be one this actor can see, or the
+  // row would name a vehicle they cannot read back.
+  if (parsed.data.vehicle_id) {
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("id")
+      .eq("id", parsed.data.vehicle_id)
+      .maybeSingle();
+    if (!vehicle) return { error: "That vehicle is not available to you." };
+  }
+
+  const { id, ...fields } = parsed.data;
+  const { data, error } = await supabase
+    .from("lead_vehicle_interests")
+    .update(fields)
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return toUserError(error);
   if (!data) return { error: "That record is not available to you." };
 
   revalidatePath("/[locale]/(app)/crm/[leadId]", "page");

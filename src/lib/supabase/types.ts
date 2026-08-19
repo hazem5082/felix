@@ -145,6 +145,19 @@ export interface Lead {
   status: LeadStatus;
   contact_time_preference: string | null;
   client_notes: string | null;
+  /**
+   * The bullets under `client_notes`.
+   *
+   * `client_notes` is the heading — who this person is, "married, three
+   * kids". These are the separately-actionable requirements a salesperson
+   * reads before dialling: "bad roads, needs an SUV", "wants seven seats",
+   * "sport mode, German-built". They were previously flattened into the
+   * paragraph above, where nobody could pick one out on a call.
+   *
+   * Never null — migration 0017 declares the column `not null default
+   * '{}'` precisely so no read site needs a coalesce.
+   */
+  client_note_points: string[];
   created_at: string;
   profiles?: Profile;
 }
@@ -288,7 +301,19 @@ export interface AuditLogRow {
   entity_type: string | null;
   entity_id: string | null;
   detail: Record<string, unknown> | null;
+  /**
+   * The whole row as it stood before and after the mutation, captured by
+   * `record_audit()` (migration 0003 §8). Null on the side that does not
+   * exist: an insert has no `before_data`, a delete no `after_data`.
+   *
+   * These are what make the trail readable rather than merely present —
+   * `buildLeadHistory()` diffs the pair to say which field moved and
+   * where it moved to.
+   */
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
   created_at: string;
+  profiles?: { full_name: string } | null;
 }
 
 /**

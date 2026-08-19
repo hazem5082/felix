@@ -6,12 +6,14 @@ import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Plus } from "lucide-react";
+import { NotePointsEditor } from "./note-points-editor";
 import { createLead } from "./actions";
 
 export function LeadFormDialog() {
   const t = useTranslations("crm");
   const common = useTranslations("common");
   const misc = useTranslations("misc");
+  const notes = useTranslations("notes");
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +21,10 @@ export function LeadFormDialog() {
     client_name: "", phone_number: "", car_interest: "", address: "",
     company_name: "", job_title: "", income: "", client_notes: "",
   });
+  // The bullets under the note — "needs seven seats", "bad roads, wants
+  // an SUV". Held apart from `form` because it is a string[], and folding
+  // it in would make the generic `set()` above lie about its value type.
+  const [points, setPoints] = useState<string[]>([]);
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -27,10 +33,11 @@ export function LeadFormDialog() {
   function submit() {
     setError(null);
     startTransition(async () => {
-      const res = await createLead(form);
+      const res = await createLead({ ...form, client_note_points: points });
       if ("error" in res) { setError(res.error); return; }
       setOpen(false);
       setForm({ client_name: "", phone_number: "", car_interest: "", address: "", company_name: "", job_title: "", income: "", client_notes: "" });
+      setPoints([]);
     });
   }
 
@@ -71,8 +78,11 @@ export function LeadFormDialog() {
               <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
             </div>
             <div className="col-span-2">
-              <Label>{misc("notes")}</Label>
-              <Textarea rows={3} value={form.client_notes} onChange={(e) => set("client_notes", e.target.value)} />
+              <Label>{notes("heading")}</Label>
+              <Textarea rows={2} value={form.client_notes} placeholder={notes("headingPlaceholder")} onChange={(e) => set("client_notes", e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <NotePointsEditor points={points} onChange={setPoints} disabled={pending} />
             </div>
           </div>
           {error && <p className="mt-3 text-xs text-[var(--color-accent-red)]">{error}</p>}

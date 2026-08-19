@@ -4,11 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Link } from "@/i18n/navigation";
-import type { Lead, LeadComment, LeadVehicleInterest } from "@/lib/supabase/types";
-import { interestLabel } from "@/lib/demand";
+import type { AuditLogRow, Lead, LeadComment, LeadVehicleInterest, Vehicle } from "@/lib/supabase/types";
+import { interestLabel, vehicleLabel } from "@/lib/demand";
+import { buildLeadHistory, vehicleIdsInHistory } from "@/lib/lead-history";
 import { CommentForm } from "./comment-form";
-import { InterestFormDialog } from "./interest-form";
+import { InterestEditDialog, InterestFormDialog } from "./interest-form";
 import { InterestStatusSelect } from "./interest-status";
+import { LeadEditFormDialog } from "./lead-edit-form";
+import { LeadHistory } from "./lead-history";
+import { NotePointsView } from "../note-points-editor";
 import { DealTicketFormDialog } from "../deal-ticket-form";
 
 export default async function LeadDetailPage({
@@ -22,6 +26,7 @@ export default async function LeadDetailPage({
   const dealsT = await getTranslations("deals");
   const misc = await getTranslations("misc");
   const common = await getTranslations("common");
+  const history = await getTranslations("history");
   const supabase = await createClient();
 
   const [{ data: lead }, { data: comments }, { data: interests }] = await Promise.all([
@@ -42,12 +47,65 @@ export default async function LeadDetailPage({
   const l = lead as Lead;
   const wants = (interests as LeadVehicleInterest[]) ?? [];
 
+  // The trail for this client and every car linked to them. Sequenced
+  // after the queries above rather than beside them because the interest
+  // ids are the filter — audit_log has no lead_id of its own, by design:
+  // it outlives the rows it describes.
+  //
+  // Capped at 60 entries. A client worked for a year accumulates more
+  // than anyone scrolls, and the panel is for "who changed the phone
+  // number last week", not for forensics — the CEO's Audit Trail is
+  // where the unbounded view belongs.
+  //
+  // Returns empty rather than failing for a caller whose role cannot read
+  // the trail. Migration 0017 opens it to any staff member who can see
+  // the lead, but a deployment still on 0016 simply shows no history
+  // instead of erroring the whole page.
+  const { data: auditRows } = await supabase
+    .from("audit_log")
+    .select("*, profiles(full_name)")
+    .in("entity_type", ["leads", "lead_vehicle_interests"])
+    .in("entity_id", [l.id, ...wants.map((i) => i.id)])
+    .order("created_at", { ascending: false })
+    .limit(60);
+
+  const audit = (auditRows as AuditLogRow[]) ?? [];
+
+  // Cars named anywhere in the trail, including ones an interest used to
+  // point at and no longer does — those are exactly the rows the live
+  // interests above cannot name.
+  const historyVehicleIds = vehicleIdsInHistory(audit);
+  const { data: historyVehicles } = historyVehicleIds.length
+    ? await supabase
+        .from("vehicles")
+        .select("id, year, make, model, trim")
+        .in("id", historyVehicleIds)
+    : { data: [] };
+
+  const vehicleLabels = Object.fromEntries(
+    ((historyVehicles as Vehicle[]) ?? []).map((v) => [v.id, vehicleLabel(v)])
+  );
+
+  const entries = buildLeadHistory(audit, vehicleLabels);
+
   return (
     <div className="space-y-6">
       <PanelHeader
         title={l.client_name}
         subtitle={l.phone_number}
-        action={<DealTicketFormDialog leadId={l.id} trigger={<span className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-[var(--color-accent-blue)] px-4 text-sm font-medium text-white hover:brightness-110">{dealsT("newTicket")}</span>} />}
+        action={
+          <div className="flex items-center gap-2">
+            <LeadEditFormDialog lead={l} />
+            <DealTicketFormDialog
+              leadId={l.id}
+              trigger={
+                <span className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-[var(--color-accent-blue)] px-4 text-sm font-medium text-white hover:brightness-110">
+                  {dealsT("newTicket")}
+                </span>
+              }
+            />
+          </div>
+        }
       />
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -59,10 +117,9 @@ export default async function LeadDetailPage({
             <Row label={misc("jobTitle")} value={l.job_title} />
             <Row label={misc("income")} value={l.income ? `$${l.income.toLocaleString()}` : null} />
             <Row label={misc("address")} value={l.address} />
+            <Row label={misc("contactTime")} value={l.contact_time_preference} />
           </dl>
-          {l.client_notes && (
-            <p className="mt-3 rounded-lg bg-white/[0.03] p-3 text-xs text-[var(--color-text-muted)]">{l.client_notes}</p>
-          )}
+          <NotePointsView heading={l.client_notes} points={l.client_note_points ?? []} />
         </Panel>
 
         <Panel className="md:col-span-2">
@@ -113,7 +170,7 @@ export default async function LeadDetailPage({
                 )}
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <div className="text-end">
                   <p className="num text-sm text-[var(--color-text)]">
                     {i.budget_amount !== null
@@ -123,6 +180,7 @@ export default async function LeadDetailPage({
                   <p className="text-[10px] text-[var(--color-text-faint)]">{interest("budget")}</p>
                 </div>
                 <InterestStatusSelect id={i.id} status={i.status} />
+                <InterestEditDialog interest={i} />
               </div>
             </div>
           ))}
@@ -130,6 +188,11 @@ export default async function LeadDetailPage({
             <p className="text-xs text-[var(--color-text-faint)]">{interest("none")}</p>
           )}
         </div>
+      </Panel>
+
+      <Panel>
+        <PanelHeader title={history("title")} subtitle={history("subtitle")} />
+        <LeadHistory entries={entries} />
       </Panel>
     </div>
   );
