@@ -1,26 +1,34 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
  * The manufacturer's badge next to a make name.
  *
  * WHY THERE IS NO LOGO CDN BEHIND THIS. Car marques are registered
- * trademarks. Hot-linking them from a third-party logo API puts a
- * dependency you do not control — and someone else's licence terms — on the
- * inventory screen of a system that prints sale contracts; and vendoring the
- * files would ship trademarked artwork inside the product. Neither is ours to
- * decide, so this component does neither by default.
+ * trademarks. Hot-linking them from a third-party logo API puts a dependency
+ * you do not control — and someone else's licence terms — on the inventory
+ * screen of a system that prints sale contracts; and vendoring the files would
+ * ship trademarked artwork inside the product. Neither is ours to decide, so
+ * this component does neither by default.
  *
  * What it does instead:
  *
- *   1. Tries `/brand-logos/<slug>.svg`. Drop a properly licensed file in
- *      `public/brand-logos/` — `toyota.svg`, `mercedes-benz.svg`, `bmw.svg` —
- *      and it appears here with no code change. Nothing breaks when the file
- *      is absent, which is why the whole set does not have to arrive at once.
+ *   1. Reads `/brand-logos/manifest.json`, a list of the slugs that actually
+ *      have a file, and renders `<img src="/brand-logos/<slug>.svg">` only for
+ *      those. Drop a properly licensed file in `public/brand-logos/`, add its
+ *      slug to the manifest, and it appears here with no code change.
  *   2. Falls back to a monogram in a colour derived from the make's own name,
  *      so all ~400 makes get a stable, distinguishable mark immediately.
+ *
+ * WHY A MANIFEST RATHER THAN "TRY THE IMAGE AND CATCH onError". Because the
+ * folder ships empty, the optimistic version fired a 404 for every make the
+ * user could see — opening the make picker alone produced 400+ failed requests
+ * in the network log and the console, on every deployment that had not yet
+ * added logos. `loading="lazy"` does not help: the rows are inside a scrolling
+ * listbox that is already in the viewport. One fetch of a manifest that says
+ * "nothing here" costs one request and stays quiet.
  *
  * The fallback is deterministic: the same make is the same colour on every
  * screen and every session, which is what makes it scannable in a grid.
@@ -50,14 +58,28 @@ function initials(make: string): string {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
-/**
- * Slugs already known to have no file. The image is server-rendered, so
- * without this every one of the ~400 rows in the make picker would fire its
- * own 404 on first paint, and again on every reopen. One miss per make per
- * session is enough to learn from. Module scope, not state: the answer is a
- * property of the deployment, not of any component instance.
- */
-const missingLogos = new Set<string>();
+// Fetched once per session, shared by every badge on the page.
+let manifest: Set<string> | null = null;
+let manifestInFlight: Promise<Set<string>> | null = null;
+const subscribers = new Set<() => void>();
+
+function loadManifest(): Promise<Set<string>> {
+  if (manifest) return Promise.resolve(manifest);
+  if (manifestInFlight) return manifestInFlight;
+
+  manifestInFlight = fetch("/brand-logos/manifest.json")
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => [])
+    .then((list: unknown) => {
+      manifest = new Set(Array.isArray(list) ? list.filter((s): s is string => typeof s === "string") : []);
+      manifestInFlight = null;
+      // Badges that already rendered their monogram need to hear about it.
+      subscribers.forEach((fn) => fn());
+      return manifest;
+    });
+
+  return manifestInFlight;
+}
 
 export function BrandMark({
   make,
@@ -68,64 +90,60 @@ export function BrandMark({
   size?: number;
   className?: string;
 }) {
-  const slug = brandSlug(make);
-  const [missing, setMissing] = useState(() => missingLogos.has(slug));
-  const imgRef = useRef<HTMLImageElement>(null);
+  const [, bump] = useState(0);
+  const [broken, setBroken] = useState(false);
 
-  // The <img> is server-rendered, so the browser may finish (and fail) the
-  // request before React hydrates and attaches onError — in which case the
-  // handler never fires and a broken-image glyph stays on screen. A complete
-  // image with zero intrinsic width is exactly that case.
   useEffect(() => {
-    const el = imgRef.current;
-    if (el && el.complete && el.naturalWidth === 0) {
-      missingLogos.add(slug);
-      setMissing(true);
-    }
-  }, [slug]);
+    if (manifest) return;
+    const rerender = () => bump((n) => n + 1);
+    subscribers.add(rerender);
+    loadManifest();
+    return () => {
+      subscribers.delete(rerender);
+    };
+  }, []);
 
   if (!make) return null;
 
-  const hue = hueFor(make);
+  const slug = brandSlug(make);
+  const hasLogo = manifest?.has(slug) && !broken;
 
-  if (missing) {
+  if (hasLogo) {
     return (
-      <span
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={`/brand-logos/${slug}.svg`}
+        alt=""
         aria-hidden
-        className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-full font-semibold leading-none",
-          className
-        )}
-        style={{
-          width: size,
-          height: size,
-          fontSize: Math.max(8, size * 0.4),
-          backgroundColor: `hsl(${hue} 55% 22%)`,
-          color: `hsl(${hue} 85% 78%)`,
-          border: `1px solid hsl(${hue} 60% 40% / 0.5)`,
-        }}
-      >
-        {initials(make)}
-      </span>
+        width={size}
+        height={size}
+        // The manifest can still be out of step with the folder — a listed
+        // file that was removed must not leave a broken glyph behind.
+        onError={() => setBroken(true)}
+        className={cn("shrink-0 rounded-full object-contain", className)}
+        style={{ width: size, height: size }}
+      />
     );
   }
 
+  const hue = hueFor(make);
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      ref={imgRef}
-      src={`/brand-logos/${slug}.svg`}
-      alt=""
+    <span
       aria-hidden
-      loading="lazy"
-      width={size}
-      height={size}
-      onError={() => {
-        missingLogos.add(slug);
-        setMissing(true);
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold leading-none",
+        className
+      )}
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(8, size * 0.4),
+        backgroundColor: `hsl(${hue} 55% 22%)`,
+        color: `hsl(${hue} 85% 78%)`,
+        border: `1px solid hsl(${hue} 60% 40% / 0.5)`,
       }}
-      className={cn("shrink-0 rounded-full object-contain", className)}
-      style={{ width: size, height: size }}
-    />
+    >
+      {initials(make)}
+    </span>
   );
 }

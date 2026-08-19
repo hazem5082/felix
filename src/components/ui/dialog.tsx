@@ -19,8 +19,14 @@ export function DialogContent({
 }) {
   return (
     <DialogPrimitive.Portal forceMount>
+      {/* AnimatePresence tracks its direct children BY KEY — that is how it
+          knows which one left and therefore which exit animation to run. Two
+          keyless children collide on the same generated key, which React
+          reports as `Encountered two children with the same key, ""` on every
+          render of every open dialog in the app, and which leaves framer-motion
+          unable to tell the overlay and the panel apart on exit. */}
       <AnimatePresence>
-        <DialogPrimitive.Overlay asChild forceMount>
+        <DialogPrimitive.Overlay key="overlay" asChild forceMount>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -28,7 +34,7 @@ export function DialogContent({
             className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xl"
           />
         </DialogPrimitive.Overlay>
-        <DialogPrimitive.Content asChild forceMount>
+        <DialogPrimitive.Content key="content" asChild forceMount>
           <motion.div
             initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}

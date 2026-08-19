@@ -1,8 +1,20 @@
 # Brand logos (optional)
 
-`BrandMark` (src/components/ui/brand-mark.tsx) looks for `<slug>.svg` in this
-folder and falls back to a coloured monogram when the file is absent. Nothing
-breaks while the folder is empty, so logos can be added a few at a time.
+`BrandMark` (src/components/ui/brand-mark.tsx) renders `<slug>.svg` from this
+folder for every slug listed in `manifest.json`, and a coloured monogram for
+everything else. Nothing breaks while the folder is empty, so logos can be
+added a few at a time.
+
+## Adding one — two steps, both required
+
+1. Drop the file in as `<slug>.svg`.
+2. Add `"<slug>"` to the array in `manifest.json`.
+
+The manifest is not decoration and it is not generated. Without it the
+component would have to probe for each file and take a 404 when it is missing,
+which — with ~400 makes in the picker — meant 400+ failed requests in the
+console on every deployment that had not added logos yet. The manifest is one
+request that answers for all of them.
 
 The slug is the make name lowercased with every run of non-alphanumeric
 characters collapsed to a single `-`:
