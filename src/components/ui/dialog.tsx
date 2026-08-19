@@ -31,15 +31,15 @@ export function DialogContent({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xl"
+            className="fixed inset-0 z-50 bg-black/35"
           />
         </DialogPrimitive.Overlay>
         <DialogPrimitive.Content key="content" asChild forceMount>
           <motion.div
-            initial={{ opacity: 0, scale: 0.94, y: 16 }}
+            initial={{ opacity: 0, scale: 0.97, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 16 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            exit={{ opacity: 0, scale: 0.97, y: 10 }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
               // Positioning lives on THIS element and the panel skin on the
               // child, never together. `.panel` is unlayered CSS carrying
@@ -53,12 +53,12 @@ export function DialogContent({
               className
             )}
           >
-            <div className="panel panel-raised max-h-[85vh] overflow-y-auto p-6 border border-white/20 shadow-[0_25px_70px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.25)] rounded-2xl">
+            <div className="panel panel-raised max-h-[85vh] overflow-y-auto p-6 border border-[var(--color-border)] shadow-[0_20px_50px_rgba(23,26,33,0.18)] rounded-xl">
               <div className="mb-4 flex items-center justify-between">
-                <DialogPrimitive.Title className="text-base font-semibold text-white tracking-wide">
+                <DialogPrimitive.Title className="text-base font-semibold text-[var(--color-text)] tracking-wide">
                   {title}
                 </DialogPrimitive.Title>
-                <DialogPrimitive.Close className="rounded-lg p-1 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white transition-colors">
+                <DialogPrimitive.Close className="rounded-md p-1 text-[var(--color-text-muted)] hover:bg-black/[0.05] hover:text-[var(--color-text)] transition-colors">
                   <X size={16} />
                 </DialogPrimitive.Close>
               </div>

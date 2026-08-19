@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusPill } from "@/components/ui/status-pill";
+import { StageBar } from "@/components/ui/stage-bar";
+import { StatButton } from "@/components/ui/stat-button";
 import { Link } from "@/i18n/navigation";
+import { Car, MessagesSquare, History as HistoryIcon } from "lucide-react";
 import type { AuditLogRow, Lead, LeadComment, LeadVehicleInterest, Vehicle } from "@/lib/supabase/types";
 import { interestLabel, vehicleLabel } from "@/lib/demand";
 import { buildLeadHistory, vehicleIdsInHistory } from "@/lib/lead-history";
@@ -88,6 +91,8 @@ export default async function LeadDetailPage({
 
   const entries = buildLeadHistory(audit, vehicleLabels);
 
+  const commentsList = (comments as (LeadComment & { profiles?: { full_name: string } })[]) ?? [];
+
   return (
     <div className="space-y-6">
       <PanelHeader
@@ -99,7 +104,7 @@ export default async function LeadDetailPage({
             <DealTicketFormDialog
               leadId={l.id}
               trigger={
-                <span className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-[var(--color-accent-blue)] px-4 text-sm font-medium text-white hover:brightness-110">
+                <span className="inline-flex h-9 cursor-pointer items-center rounded-md bg-[var(--color-accent-blue)] px-4 text-sm font-medium text-white hover:brightness-110">
                   {dealsT("newTicket")}
                 </span>
               }
@@ -108,92 +113,112 @@ export default async function LeadDetailPage({
         }
       />
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <Panel>
-          <PanelHeader title={misc("clientInfo")} />
-          <dl className="space-y-1.5 text-sm">
-            <Row label={t("carInterest")} value={l.car_interest} />
-            <Row label={misc("company")} value={l.company_name} />
-            <Row label={misc("jobTitle")} value={l.job_title} />
-            <Row label={misc("income")} value={l.income ? `$${l.income.toLocaleString()}` : null} />
-            <Row label={misc("address")} value={l.address} />
-            <Row label={misc("contactTime")} value={l.contact_time_preference} />
-          </dl>
-          <NotePointsView heading={l.client_notes} points={l.client_note_points ?? []} />
-        </Panel>
-
-        <Panel className="md:col-span-2">
-          <PanelHeader title={t("followUps")} />
-          <CommentForm leadId={l.id} />
-          <div className="mt-4 space-y-3">
-            {((comments as (LeadComment & { profiles?: { full_name: string } })[]) ?? []).map((c) => (
-              <div key={c.id} className="border-b border-[var(--color-border)] pb-3 last:border-0">
-                <div className="flex items-center justify-between text-xs text-[var(--color-text-faint)]">
-                  <span>{c.profiles?.full_name ?? "—"} · {c.contact_method}</span>
-                  <span>{new Date(c.created_at).toLocaleString()}</span>
-                </div>
-                <p className="mt-1 text-sm text-[var(--color-text)]">{c.body}</p>
-              </div>
-            ))}
-            {!comments?.length && <p className="text-xs text-[var(--color-text-faint)]">{common("noFollowUps")}</p>}
-          </div>
-        </Panel>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <StageBar
+          steps={[
+            { key: "pending", label: misc("pendingStatus") },
+            { key: "ticket_created", label: misc("ticketCreated") },
+            { key: "closed", label: misc("closed") },
+          ]}
+          current={l.status}
+        />
+        <div className="flex flex-wrap gap-2">
+          <StatButton count={wants.length} label={interest("title")} href="#interests" icon={<Car size={14} />} />
+          <StatButton count={commentsList.length} label={t("followUps")} href="#followups" icon={<MessagesSquare size={14} />} />
+          <StatButton count={entries.length} label={history("title")} href="#history" icon={<HistoryIcon size={14} />} />
+        </div>
       </div>
 
-      <Panel>
-        <PanelHeader title={interest("title")} action={<InterestFormDialog leadId={l.id} />} />
-        <div className="space-y-2">
-          {wants.map((i) => (
-            <div
-              key={i.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2.5"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  {i.vehicles ? (
-                    <Link href={`/inventory/${i.vehicles.id}`} className="text-sm hover:underline">
-                      {interestLabel(i)}
-                    </Link>
-                  ) : (
-                    <span className="text-sm">{interestLabel(i)}</span>
-                  )}
-                  <StatusPill
-                    label={i.vehicles ? interest("inStock") : interest("notInStock")}
-                    tone={i.vehicles ? "blue" : "amber"}
-                  />
-                  {i.origin === "suggested" && (
-                    <StatusPill label={interest("originSuggestedShort")} tone="neutral" />
-                  )}
-                </div>
-                {i.note && (
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{i.note}</p>
-                )}
-              </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <Panel>
+            <PanelHeader title={misc("clientInfo")} />
+            <dl className="space-y-1.5 text-sm">
+              <Row label={t("carInterest")} value={l.car_interest} />
+              <Row label={misc("company")} value={l.company_name} />
+              <Row label={misc("jobTitle")} value={l.job_title} />
+              <Row label={misc("income")} value={l.income ? `$${l.income.toLocaleString()}` : null} />
+              <Row label={misc("address")} value={l.address} />
+              <Row label={misc("contactTime")} value={l.contact_time_preference} />
+            </dl>
+            <NotePointsView heading={l.client_notes} points={l.client_note_points ?? []} />
+          </Panel>
 
-              <div className="flex items-center gap-3">
-                <div className="text-end">
-                  <p className="num text-sm text-[var(--color-text)]">
-                    {i.budget_amount !== null
-                      ? `$${Number(i.budget_amount).toLocaleString()}`
-                      : interest("noBudget")}
-                  </p>
-                  <p className="text-[10px] text-[var(--color-text-faint)]">{interest("budget")}</p>
+          <Panel id="interests">
+            <PanelHeader title={interest("title")} action={<InterestFormDialog leadId={l.id} />} />
+            <div className="space-y-2">
+              {wants.map((i) => (
+                <div
+                  key={i.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.02] px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {i.vehicles ? (
+                        <Link href={`/inventory/${i.vehicles.id}`} className="text-sm hover:underline">
+                          {interestLabel(i)}
+                        </Link>
+                      ) : (
+                        <span className="text-sm">{interestLabel(i)}</span>
+                      )}
+                      <StatusPill
+                        label={i.vehicles ? interest("inStock") : interest("notInStock")}
+                        tone={i.vehicles ? "blue" : "amber"}
+                      />
+                      {i.origin === "suggested" && (
+                        <StatusPill label={interest("originSuggestedShort")} tone="neutral" />
+                      )}
+                    </div>
+                    {i.note && (
+                      <p className="mt-1 text-xs text-[var(--color-text-muted)]">{i.note}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="text-end">
+                      <p className="num text-sm text-[var(--color-text)]">
+                        {i.budget_amount !== null
+                          ? `$${Number(i.budget_amount).toLocaleString()}`
+                          : interest("noBudget")}
+                      </p>
+                      <p className="text-[10px] text-[var(--color-text-faint)]">{interest("budget")}</p>
+                    </div>
+                    <InterestStatusSelect id={i.id} status={i.status} />
+                    <InterestEditDialog interest={i} />
+                  </div>
                 </div>
-                <InterestStatusSelect id={i.id} status={i.status} />
-                <InterestEditDialog interest={i} />
-              </div>
+              ))}
+              {!wants.length && (
+                <p className="text-xs text-[var(--color-text-faint)]">{interest("none")}</p>
+              )}
             </div>
-          ))}
-          {!wants.length && (
-            <p className="text-xs text-[var(--color-text-faint)]">{interest("none")}</p>
-          )}
+          </Panel>
         </div>
-      </Panel>
 
-      <Panel>
-        <PanelHeader title={history("title")} subtitle={history("subtitle")} />
-        <LeadHistory entries={entries} />
-      </Panel>
+        <div className="space-y-6">
+          <Panel id="followups">
+            <PanelHeader title={t("followUps")} />
+            <CommentForm leadId={l.id} />
+            <div className="mt-4 space-y-3">
+              {commentsList.map((c) => (
+                <div key={c.id} className="border-b border-[var(--color-border)] pb-3 last:border-0">
+                  <div className="flex items-center justify-between text-xs text-[var(--color-text-faint)]">
+                    <span>{c.profiles?.full_name ?? "—"} · {c.contact_method}</span>
+                    <span>{new Date(c.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-[var(--color-text)]">{c.body}</p>
+                </div>
+              ))}
+              {!commentsList.length && <p className="text-xs text-[var(--color-text-faint)]">{common("noFollowUps")}</p>}
+            </div>
+          </Panel>
+
+          <Panel id="history">
+            <PanelHeader title={history("title")} subtitle={history("subtitle")} />
+            <LeadHistory entries={entries} />
+          </Panel>
+        </div>
+      </div>
     </div>
   );
 }

@@ -101,7 +101,7 @@ export default async function VehicleDetailPage({
           <PanelHeader title={t("equitySplit")} />
           <div className="space-y-2">
             {((splits as VehicleEquitySplit[]) ?? []).map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2 text-sm">
+              <div key={s.id} className="flex items-center justify-between rounded-lg bg-black/[0.02] px-3 py-2 text-sm">
                 {s.holder_type === "ceo" ? (
                   <span>{t("ceoShare")}</span>
                 ) : (

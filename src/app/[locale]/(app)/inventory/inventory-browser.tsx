@@ -6,6 +6,8 @@ import { Link } from "@/i18n/navigation";
 import { Select, Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/ui/status-pill";
 import { BrandMark } from "@/components/ui/brand-mark";
+import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
+import { ViewToggle, type ViewMode } from "@/components/ui/view-toggle";
 import { vehicleStatusTone } from "@/lib/status-tone";
 import { colorLabel, colorSwatch } from "@/lib/vehicle-color";
 import { Car, X } from "lucide-react";
@@ -41,6 +43,7 @@ export function InventoryBrowser({
   const misc = useTranslations("misc");
   const colors = useTranslations("colors");
 
+  const [view, setView] = useState<ViewMode>("grid");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
@@ -124,33 +127,36 @@ export function InventoryBrowser({
   return (
     <div className="space-y-4">
       {/* Sold vs in stock — the primary split. */}
-      <div className="flex flex-wrap gap-2">
-        {STATUS_TABS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => {
-              setStatus(s);
-              // A make that only exists among sold cars would otherwise stay
-              // selected and silently empty the in-stock view.
-              setMake("");
-              setModel("");
-              setColor("");
-              setYear("");
-            }}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
-              status === s
-                ? "border-cyan-400/50 bg-cyan-500/15 text-cyan-200"
-                : "border-white/12 bg-white/[0.03] text-[var(--color-text-muted)] hover:border-white/25 hover:text-white"
-            )}
-          >
-            {statusLabel(s)}
-            <span className="num rounded-full bg-black/30 px-1.5 py-0.5 text-[10px] text-white/70">
-              {statusCounts[s] ?? 0}
-            </span>
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {STATUS_TABS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                setStatus(s);
+                // A make that only exists among sold cars would otherwise stay
+                // selected and silently empty the in-stock view.
+                setMake("");
+                setModel("");
+                setColor("");
+                setYear("");
+              }}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md border px-3.5 py-1.5 text-xs font-medium transition-colors",
+                status === s
+                  ? "border-[var(--color-accent)]/40 bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+              )}
+            >
+              {statusLabel(s)}
+              <span className="num rounded-md bg-black/[0.06] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">
+                {statusCounts[s] ?? 0}
+              </span>
+            </button>
+          ))}
+        </div>
+        <ViewToggle value={view} onChange={setView} gridLabel={t("viewGrid")} listLabel={t("viewList")} />
       </div>
 
       {/* Attribute filters */}
@@ -213,7 +219,7 @@ export function InventoryBrowser({
           <button
             type="button"
             onClick={clearFilters}
-            className="inline-flex items-center gap-1 text-[var(--color-text-muted)] hover:text-white"
+            className="inline-flex items-center gap-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
           >
             <X size={12} />
             {misc("clearFilters")}
@@ -225,7 +231,7 @@ export function InventoryBrowser({
         <p className="py-16 text-center text-sm text-[var(--color-text-faint)]">
           {common("noResults")}
         </p>
-      ) : (
+      ) : view === "grid" ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
           {shown.map((v) => (
             <VehicleCard
@@ -242,6 +248,47 @@ export function InventoryBrowser({
             />
           ))}
         </div>
+      ) : (
+        <Table>
+          <THead>
+            <Th>{t("year")}</Th>
+            <Th>{t("make")}</Th>
+            <Th>{t("model")}</Th>
+            <Th>{t("trim")}</Th>
+            <Th>{t("purchasePrice")}</Th>
+            <Th>{common("status")}</Th>
+          </THead>
+          <TBody>
+            {shown.map((v) => (
+              <Tr key={v.id}>
+                <Td className="num">{v.year}</Td>
+                <Td>
+                  <div className="flex items-center gap-1.5">
+                    <BrandMark make={v.make} size={14} />
+                    <Link href={`/inventory/${v.id}`} className="hover:underline">
+                      {v.make}
+                    </Link>
+                  </div>
+                </Td>
+                <Td>{v.model}</Td>
+                <Td className="text-[var(--color-text-muted)]">{v.trim || "—"}</Td>
+                <Td className="num">${v.purchase_price.toLocaleString()}</Td>
+                <Td>
+                  <StatusPill
+                    label={
+                      v.status === "sold"
+                        ? t("statusSold")
+                        : v.status === "reserved"
+                          ? t("statusReserved")
+                          : t("statusInStock")
+                    }
+                    tone={vehicleStatusTone(v.status)}
+                  />
+                </Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
       )}
     </div>
   );
@@ -266,7 +313,7 @@ function VehicleCard({
   return (
     <Link
       href={`/inventory/${v.id}`}
-      className="group relative block aspect-4/3 overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-cyan-400/40 hover:shadow-[0_14px_40px_rgba(0,0,0,0.5)] focus:outline-none focus-visible:border-cyan-400/60"
+      className="group relative block aspect-4/3 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] transition-all duration-200 hover:border-[var(--color-accent)]/40 hover:shadow-[0_14px_32px_rgba(23,26,33,0.18)] focus:outline-none focus-visible:border-[var(--color-accent)]/60"
     >
       <Cover
         src={v.photos?.[0]}

@@ -114,7 +114,7 @@ export function ReportsLauncher() {
             href={href(kind)}
             target="_blank"
             rel="noopener"
-            className="flex items-center gap-2.5 rounded-xl border border-white/15 bg-white/[0.03] px-3.5 py-2.5 text-sm font-medium text-white transition-all hover:border-white/30 hover:bg-white/[0.08]"
+            className="flex items-center gap-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-all hover:border-[var(--color-border-strong)] hover:bg-black/[0.03]"
           >
             <Icon size={15} className="text-[var(--color-text-muted)]" />
             {t(`report_${kind}`)}
@@ -125,7 +125,7 @@ export function ReportsLauncher() {
         <a
           href="/api/export/ledger"
           download
-          className="flex items-center gap-2.5 rounded-xl border border-white/15 bg-white/[0.03] px-3.5 py-2.5 text-sm font-medium text-white transition-all hover:border-white/30 hover:bg-white/[0.08]"
+          className="flex items-center gap-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-all hover:border-[var(--color-border-strong)] hover:bg-black/[0.03]"
         >
           <FileSpreadsheet size={15} className="text-[var(--color-text-muted)]" />
           {t("exportLedger")}

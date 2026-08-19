@@ -138,9 +138,9 @@ export function BrandMark({
         width: size,
         height: size,
         fontSize: Math.max(8, size * 0.4),
-        backgroundColor: `hsl(${hue} 55% 22%)`,
-        color: `hsl(${hue} 85% 78%)`,
-        border: `1px solid hsl(${hue} 60% 40% / 0.5)`,
+        backgroundColor: `hsl(${hue} 70% 94%)`,
+        color: `hsl(${hue} 55% 32%)`,
+        border: `1px solid hsl(${hue} 50% 80%)`,
       }}
     >
       {initials(make)}

@@ -91,17 +91,16 @@ export function StatCard({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -5, scale: 1.015 }}
-      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
     >
-      <Panel className="h-full glass-shine">
+      <Panel className="h-full">
         <div className="flex items-start justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
             {label}
           </span>
-          {icon && <span className="text-[var(--color-text-faint)] transition-colors hover:text-white">{icon}</span>}
+          {icon && <span className="text-[var(--color-text-faint)] transition-colors hover:text-[var(--color-text)]">{icon}</span>}
         </div>
         <div className={cn("mt-2 text-2xl font-bold tabular-nums tracking-tight", TONE_TEXT[tone])}>
           <CountUp value={value} prefix={prefix} suffix={suffix} />

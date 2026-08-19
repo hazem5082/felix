@@ -21,22 +21,22 @@ export default async function SupportPage({
     <div className="space-y-6">
       <PanelHeader title={t("title")} subtitle={t("subtitle")} />
 
-      <Panel className="glass-shine">
+      <Panel>
         <div className="flex flex-col items-center gap-4 py-8 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] ring-1 ring-inset ring-white/15">
-            <LifeBuoy size={26} className="text-white" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-accent-dim)]">
+            <LifeBuoy size={26} className="text-[var(--color-accent)]" />
           </div>
 
-          <p className="max-w-lg text-lg font-semibold text-white">{t("tagline")}</p>
+          <p className="max-w-lg text-lg font-semibold text-[var(--color-text)]">{t("tagline")}</p>
 
-          <p className="num text-2xl font-black tracking-wide text-white" dir="ltr">
+          <p className="num text-2xl font-black tracking-wide text-[var(--color-text)]" dir="ltr">
             {EMERGENCY_PHONE_DISPLAY}
           </p>
 
           <div className="flex flex-wrap justify-center gap-3">
             <a
               href={`tel:${EMERGENCY_PHONE_TEL}`}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-[0_4px_16px_rgba(59,130,246,0.35)] transition-all hover:from-blue-400 hover:to-blue-500"
+              className="inline-flex items-center gap-2 rounded-md bg-[var(--color-accent-blue)] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:brightness-110"
             >
               <Phone size={15} />
               {t("callNow")}
@@ -45,7 +45,7 @@ export default async function SupportPage({
               href={WHATSAPP_URL}
               target="_blank"
               rel="noopener"
-              className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/[0.05] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-black/[0.04]"
             >
               <MessageCircle size={15} />
               {t("whatsapp")}
@@ -60,7 +60,7 @@ export default async function SupportPage({
         <div className="flex items-start gap-3">
           <ShieldCheck size={18} className="mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
           <div>
-            <p className="text-sm font-medium text-white">{t("aboutTitle")}</p>
+            <p className="text-sm font-medium text-[var(--color-text)]">{t("aboutTitle")}</p>
             <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
               {t("aboutBody")}
             </p>

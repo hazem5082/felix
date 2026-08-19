@@ -14,7 +14,7 @@ export function PrintToolbar() {
       <button
         type="button"
         onClick={() => window.print()}
-        className="flex items-center gap-2 rounded-xl bg-black px-4 py-2 text-sm font-medium text-white shadow-lg transition-opacity hover:opacity-80"
+        className="flex items-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-lg transition-opacity hover:opacity-80"
       >
         <Printer size={15} />
         {t("printSave")}
@@ -22,7 +22,7 @@ export function PrintToolbar() {
       <button
         type="button"
         onClick={() => window.close()}
-        className="flex items-center gap-2 rounded-xl border border-black/20 bg-white px-4 py-2 text-sm font-medium text-black shadow-lg transition-colors hover:bg-black/5"
+        className="flex items-center gap-2 rounded-md border border-black/20 bg-white px-4 py-2 text-sm font-medium text-black shadow-lg transition-colors hover:bg-black/5"
       >
         <X size={15} />
         {t("close")}

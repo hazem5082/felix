@@ -15,7 +15,7 @@ export interface NavItem {
     | "account";
 }
 
-const ALL_NAV: NavItem[] = [
+export const ALL_NAV: NavItem[] = [
   { href: "/ceo", key: "ceoDashboard" },
   { href: "/inventory", key: "inventory" },
   { href: "/crm", key: "crm" },

@@ -162,12 +162,12 @@ export function CalendarView({
                 type="button"
                 onClick={() => setSelected(isSelected ? null : key)}
                 className={cn(
-                  "min-h-20 rounded-xl border p-1.5 text-start align-top transition-all duration-200",
+                  "min-h-20 rounded-md border p-1.5 text-start align-top transition-all duration-200",
                   outside
-                    ? "border-white/5 bg-white/[0.01] text-[var(--color-text-faint)]"
-                    : "border-white/10 bg-white/[0.03] text-[var(--color-text)] hover:border-white/25 hover:bg-white/[0.06]",
+                    ? "border-[var(--color-border)] bg-black/[0.01] text-[var(--color-text-faint)]"
+                    : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-border-strong)] hover:bg-black/[0.03]",
                   isSelected &&
-                    "border-cyan-400/60 bg-white/[0.08] ring-4 ring-cyan-500/15"
+                    "border-[var(--color-accent)]/60 bg-[var(--color-accent-dim)] ring-4 ring-[var(--color-accent)]/15"
                 )}
               >
                 <span
@@ -187,7 +187,7 @@ export function CalendarView({
                       className={cn(
                         "truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium",
                         m.status === "cancelled"
-                          ? "bg-white/5 text-[var(--color-text-faint)] line-through"
+                          ? "bg-black/[0.04] text-[var(--color-text-faint)] line-through"
                           : "bg-[var(--color-accent-blue-dim)] text-[var(--color-accent-blue)]"
                       )}
                     >
@@ -289,13 +289,13 @@ function MeetingCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "rounded-xl border border-white/10 bg-white/[0.02] p-4",
+        "rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4",
         cancelled && "opacity-60"
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className={cn("text-sm font-semibold text-white", cancelled && "line-through")}>
+          <p className={cn("text-sm font-semibold text-[var(--color-text)]", cancelled && "line-through")}>
             {meeting.title}
           </p>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -348,12 +348,12 @@ function MeetingCard({
               key={a.id}
               className={cn(
                 "rounded-md px-1.5 py-0.5",
-                a.id === viewerId && "ring-1 ring-inset ring-white/30",
+                a.id === viewerId && "ring-1 ring-inset ring-[var(--color-border-strong)]",
                 a.response === "accepted"
                   ? "bg-[var(--color-accent-green-dim)] text-[var(--color-accent-green)]"
                   : a.response === "declined"
                     ? "bg-[var(--color-accent-red-dim)] text-[var(--color-accent-red)] line-through"
-                    : "bg-white/5 text-[var(--color-text-muted)]"
+                    : "bg-black/[0.04] text-[var(--color-text-muted)]"
               )}
               title={roles(a.role)}
             >

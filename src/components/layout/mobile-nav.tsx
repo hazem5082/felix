@@ -45,7 +45,7 @@ export function MobileNav({ role }: { role: Role }) {
   const items = navForRole(role);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-white/10 bg-black/70 backdrop-blur-2xl md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[var(--color-border)] bg-[var(--color-surface)] md:hidden">
       {items.map((item) => {
         const Icon = ICONS[item.key];
         const active = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -56,10 +56,10 @@ export function MobileNav({ role }: { role: Role }) {
             aria-current={active ? "page" : undefined}
             className={cn(
               "flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2.5 text-[10px] font-medium transition-colors",
-              active ? "text-white" : "text-[var(--color-text-muted)]"
+              active ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)]"
             )}
           >
-            <Icon size={18} className={cn(active && "drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]")} />
+            <Icon size={18} />
             <span className="w-full truncate text-center leading-tight">{t(item.key)}</span>
           </Link>
         );

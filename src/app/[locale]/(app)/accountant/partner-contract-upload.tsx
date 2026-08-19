@@ -47,7 +47,7 @@ export function PartnerContractUpload({ partnerId }: { partnerId: string }) {
         type="button"
         disabled={pending}
         onClick={() => input.current?.click()}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] text-[var(--color-text)] transition-colors hover:bg-black/[0.04] disabled:opacity-50"
       >
         <Upload size={11} />
         {pending ? common("uploading") : t("uploadContract")}

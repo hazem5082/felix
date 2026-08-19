@@ -125,7 +125,7 @@ export default async function CeoDashboardPage() {
           <PanelHeader title={t("investorLedger")} />
           <div className="space-y-2">
             {Array.from(walletBalances.entries()).map(([key, balance]) => (
-              <div key={key} className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2 text-sm">
+              <div key={key} className="flex items-center justify-between rounded-lg bg-black/[0.02] px-3 py-2 text-sm">
                 {key === "ceo" ? <span>{misc("ceoWallet")}</span> : <InvestorChip id={key} name={investorNames.get(key) ?? "Investor"} />}
                 <span className={`num ${balance >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-accent-red)]"}`}>
                   ${balance.toLocaleString(undefined, { maximumFractionDigits: 0 })}

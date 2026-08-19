@@ -31,22 +31,22 @@ export function CredentialsNote({
   }
 
   return (
-    <div className="rounded-xl border border-[var(--color-accent-amber)]/40 bg-[var(--color-accent-amber-dim)] p-4">
+    <div className="rounded-md border border-[var(--color-accent-amber)]/40 bg-[var(--color-accent-amber-dim)] p-4">
       <p className="flex items-center gap-2 text-xs font-semibold text-[var(--color-accent-amber)]">
         <KeyRound size={13} />
         {t("credentialsTitle")}
       </p>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">{t("credentialsOnce")}</p>
 
-      <div className="mt-3 space-y-1.5 rounded-lg bg-black/40 p-3 font-mono text-sm">
-        <p className="select-all text-white">{email}</p>
-        <p className="select-all text-white">{password}</p>
+      <div className="mt-3 space-y-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 font-mono text-sm">
+        <p className="select-all text-[var(--color-text)]">{email}</p>
+        <p className="select-all text-[var(--color-text)]">{password}</p>
       </div>
 
       <button
         type="button"
         onClick={copy}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs text-white transition-colors hover:bg-white/10"
+        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text)] transition-colors hover:bg-black/[0.04]"
       >
         {copied ? <Check size={13} /> : <Copy size={13} />}
         {copied ? t("copied") : t("copyBoth")}

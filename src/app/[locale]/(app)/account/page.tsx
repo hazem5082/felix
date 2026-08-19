@@ -28,15 +28,15 @@ export default async function AccountPage({
         <dl className="grid gap-3 sm:grid-cols-3">
           <div>
             <dt className="text-xs text-[var(--color-text-muted)]">{t("fullName")}</dt>
-            <dd className="mt-0.5 text-sm text-white">{profile.full_name}</dd>
+            <dd className="mt-0.5 text-sm text-[var(--color-text)]">{profile.full_name}</dd>
           </div>
           <div>
             <dt className="text-xs text-[var(--color-text-muted)]">{t("role")}</dt>
-            <dd className="mt-0.5 text-sm text-white">{tRoles(profile.role)}</dd>
+            <dd className="mt-0.5 text-sm text-[var(--color-text)]">{tRoles(profile.role)}</dd>
           </div>
           <div>
             <dt className="text-xs text-[var(--color-text-muted)]">{t("signInEmail")}</dt>
-            <dd className="mt-0.5 text-sm text-white">{user?.email ?? "—"}</dd>
+            <dd className="mt-0.5 text-sm text-[var(--color-text)]">{user?.email ?? "—"}</dd>
           </div>
         </dl>
       </Panel>

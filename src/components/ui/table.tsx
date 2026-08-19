@@ -10,7 +10,7 @@ export function Table({ children, className }: { children: React.ReactNode; clas
 
 export function THead({ children }: { children: React.ReactNode }) {
   return (
-    <thead className="bg-white/[0.03] text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
+    <thead className="bg-black/[0.025] text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
       <tr>{children}</tr>
     </thead>
   );
@@ -36,7 +36,7 @@ export function Tr({
 }) {
   return (
     <tr
-      className={cn("transition-colors hover:bg-white/[0.03]", className)}
+      className={cn("transition-colors hover:bg-black/[0.02]", className)}
       style={toneBar ? { boxShadow: `inset 3px 0 0 0 ${toneBar}` } : undefined}
     >
       {children}

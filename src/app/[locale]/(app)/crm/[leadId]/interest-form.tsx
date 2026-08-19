@@ -350,7 +350,7 @@ export function InterestEditDialog({ interest }: { interest: LeadVehicleInterest
         <button
           type="button"
           aria-label={t("edit")}
-          className="cursor-pointer rounded-lg p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-white/10 hover:text-white"
+          className="cursor-pointer rounded-md p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-black/[0.05] hover:text-[var(--color-text)]"
         >
           <Pencil size={14} />
         </button>

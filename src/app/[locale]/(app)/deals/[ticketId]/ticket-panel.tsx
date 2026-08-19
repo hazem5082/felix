@@ -152,7 +152,7 @@ export function TicketPanel({
               href={`/${locale}/print/contracts/${ticket.id}`}
               target="_blank"
               rel="noopener"
-              className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/10"
+              className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-black/[0.04]"
             >
               <FileText size={13} />
               {t("viewContract")}

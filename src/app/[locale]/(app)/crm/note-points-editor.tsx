@@ -68,7 +68,7 @@ export function NotePointsEditor({
               aria-label={t("removePoint")}
               disabled={disabled}
               onClick={() => remove(index)}
-              className="cursor-pointer rounded-lg p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+              className="cursor-pointer rounded-md p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-black/[0.05] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-40"
             >
               <X size={14} />
             </button>
@@ -109,7 +109,7 @@ export function NotePointsView({
   if (!heading?.trim() && !shown.length) return null;
 
   return (
-    <div className="mt-3 rounded-lg bg-white/[0.03] p-3">
+    <div className="mt-3 rounded-lg bg-black/[0.02] p-3">
       {heading?.trim() && (
         <p className="text-xs font-medium text-[var(--color-text)]">{heading}</p>
       )}

@@ -157,7 +157,7 @@ export function Combobox({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          className="h-9.5 w-full rounded-xl border border-white/15 bg-white/[0.04] backdrop-blur-md ps-3.5 pe-9 text-sm text-white placeholder:text-white/40 outline-none transition-all duration-200 focus:border-cyan-400/60 focus:bg-white/[0.07] focus:ring-4 focus:ring-cyan-500/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)] disabled:opacity-60"
+          className="h-9.5 w-full rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] ps-3.5 pe-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] outline-none transition-colors duration-150 focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 disabled:opacity-60"
         />
         <button
           type="button"
@@ -165,7 +165,7 @@ export function Combobox({
           aria-label="Toggle list"
           disabled={disabled}
           onClick={() => (open ? close() : setOpen(true))}
-          className="absolute inset-y-0 end-0 flex w-9 items-center justify-center text-white/40 hover:text-white/80"
+          className="absolute inset-y-0 end-0 flex w-9 items-center justify-center text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
         >
           <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
         </button>
@@ -176,7 +176,7 @@ export function Combobox({
           ref={listRef}
           id={listId}
           role="listbox"
-          className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-white/15 bg-[#12151b] py-1 shadow-[0_18px_50px_rgba(0,0,0,0.65)]"
+          className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-[0_12px_30px_rgba(23,26,33,0.15)]"
         >
           {matches.length === 0 && (
             <li className="px-3 py-2 text-xs text-[var(--color-text-faint)]">
@@ -196,15 +196,15 @@ export function Combobox({
               }}
               onMouseEnter={() => setActive(i)}
               className={cn(
-                "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-white/90",
-                i === active && "bg-white/10",
-                o.value === value && "text-cyan-300"
+                "flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-[var(--color-text)]",
+                i === active && "bg-black/[0.04]",
+                o.value === value && "text-[var(--color-accent)]"
               )}
             >
               {o.swatch && (
                 <span
                   aria-hidden
-                  className="size-3.5 shrink-0 rounded-full border border-white/25"
+                  className="size-3.5 shrink-0 rounded-full border border-[var(--color-border-strong)]"
                   style={{ backgroundColor: o.swatch }}
                 />
               )}

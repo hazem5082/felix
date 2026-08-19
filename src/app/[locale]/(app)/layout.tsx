@@ -11,6 +11,7 @@ import {
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Topbar } from "@/components/layout/topbar";
+import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { DemoSwitcher } from "@/components/demo/demo-switcher";
 import { DemoOffNotice } from "@/components/demo/demo-off-notice";
 
@@ -83,6 +84,7 @@ export default async function AppLayout({
         <Sidebar role={profile!.role} />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar profile={profile!} showroomName={tenant!.name} />
+          <Breadcrumbs />
           {/* pb-24 on mobile so the bottom tab bar never covers content. */}
           <main className="flex-1 overflow-y-auto p-6 pb-24 md:pb-6">{children}</main>
         </div>

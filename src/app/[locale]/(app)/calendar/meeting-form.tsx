@@ -198,14 +198,14 @@ export function MeetingFormDialog({
                     <button
                       type="button"
                       onClick={() => setInvited(people.map((p) => p.id))}
-                      className="rounded-md px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:bg-white/10 hover:text-white"
+                      className="rounded-md px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:bg-black/[0.05] hover:text-[var(--color-text)]"
                     >
                       {t("selectAll")}
                     </button>
                     <button
                       type="button"
                       onClick={() => setInvited([])}
-                      className="rounded-md px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:bg-white/10 hover:text-white"
+                      className="rounded-md px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] transition-colors hover:bg-black/[0.05] hover:text-[var(--color-text)]"
                     >
                       {t("clearAll")}
                     </button>
@@ -219,7 +219,7 @@ export function MeetingFormDialog({
                 </p>
               )}
 
-              <div className="max-h-52 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <div className="max-h-52 space-y-3 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
                 {grouped.map(([groupRole, members]) => (
                   <div key={groupRole}>
                     <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-faint)]">
@@ -237,8 +237,8 @@ export function MeetingFormDialog({
                             className={cn(
                               "rounded-lg border px-2.5 py-1 text-xs transition-all duration-200",
                               on
-                                ? "border-cyan-400/60 bg-cyan-500/15 text-white"
-                                : "border-white/10 bg-white/[0.03] text-[var(--color-text-muted)] hover:border-white/25 hover:text-white"
+                                ? "border-[var(--color-accent)]/60 bg-[var(--color-accent-dim)] text-[var(--color-accent)]"
+                                : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
                             )}
                           >
                             {p.full_name}

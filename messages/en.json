@@ -1,6 +1,7 @@
 {
   "common": {
     "appName": "FELIX",
+    "details": "Details",
     "save": "Save",
     "cancel": "Cancel",
     "submit": "Submit",
@@ -197,6 +198,8 @@
   "inventory": {
     "title": "Inventory & Asset Lifecycle",
     "addVehicle": "Add Vehicle",
+    "viewGrid": "Grid view",
+    "viewList": "List view",
     "year": "Year",
     "make": "Make",
     "model": "Model",

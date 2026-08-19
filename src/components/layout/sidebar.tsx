@@ -39,9 +39,9 @@ export function Sidebar({ role }: { role: Role }) {
   const items = navForRole(role);
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-e border-white/10 bg-black/40 backdrop-blur-2xl p-4 md:flex shadow-[4px_0_30px_rgba(0,0,0,0.25)]">
+    <aside className="hidden w-60 shrink-0 flex-col border-e border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:flex">
       <div className="mb-6 flex items-center px-2 pt-1">
-        <Image src="/brand/felix-logo.png" alt="FELIX" width={420} height={140} className="h-7 w-auto drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]" priority />
+        <Image src="/brand/felix-logo.png" alt="FELIX" width={420} height={140} className="h-7 w-auto" priority />
       </div>
 
       <nav className="flex flex-col gap-1">
@@ -53,16 +53,16 @@ export function Sidebar({ role }: { role: Role }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-200",
+                "relative flex items-center gap-3 rounded-md px-3.5 py-2.5 text-sm font-medium transition-colors duration-150",
                 active
-                  ? "text-white"
-                  : "text-[var(--color-text-muted)] hover:bg-white/[0.06] hover:text-white"
+                  ? "text-[var(--color-accent)]"
+                  : "text-[var(--color-text-muted)] hover:bg-black/[0.03] hover:text-[var(--color-text)]"
               )}
             >
               {active && (
                 <motion.span
                   layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-white/[0.14] to-white/[0.04] ring-1 ring-inset ring-white/20 shadow-[0_4px_16px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)]"
+                  className="absolute inset-0 rounded-md bg-[var(--color-accent-dim)]"
                   transition={{ type: "spring", stiffness: 380, damping: 30 }}
                 />
               )}
