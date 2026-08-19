@@ -51,6 +51,22 @@ body {
   font-family: var(--font-arabic), var(--font-sans);
 }
 
+/* Native <select> popups are painted by the platform, not by the page. On
+   Windows and Linux Chrome the option list inherits the CONTROL's background
+   — here a near-transparent white over the OS default, i.e. white — while the
+   text stayed `color: white`, so every dropdown read as blank until the row
+   was highlighted. `color-scheme: dark` alone does not cover it: it restyles
+   the scrollbar and the control, not the option rows. Painting the options
+   explicitly is what actually fixes it, and it has to live in global CSS
+   because a Tailwind utility on the <select> does not reach into the popup.
+   macOS renders this list natively and ignores both — it was already legible
+   there, which is why this looked like it worked for some people. */
+select option,
+select optgroup {
+  background-color: #12151b;
+  color: var(--color-text);
+}
+
 /* Numerals always render LTR/Latin, even inside an RTL layout */
 .num {
   font-variant-numeric: tabular-nums;

@@ -92,6 +92,17 @@ export const CreateVehicleSchema = z.object({
   make: text(60),
   model: text(60),
   trim: z.string().trim().max(60),
+  // Free text, not an enum: the picker offers the common colours but a
+  // showroom must still be able to record "Nardo Grey" on intake.
+  color: z.string().trim().max(40),
+  // Modifications are the whole point of this field — aftermarket rims, a
+  // spoiler, body work. It feeds the contract and the sale listing, so it is
+  // roomy but still bounded.
+  description: z.string().trim().max(2000),
+  // Intake condition report. Separate from `photos`, which is the sale
+  // gallery: an inspection set is evidence of what the car looked like on
+  // the day it was taken in, and mixing the two loses that.
+  inspection_photos: z.array(z.url().max(2048)).max(100),
   purchase_price: positiveMoney,
   photos: z.array(z.url().max(2048)).max(24),
   splits: z

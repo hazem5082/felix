@@ -20,6 +20,9 @@ export async function createVehicle(input: {
   make: string;
   model: string;
   trim: string;
+  color: string;
+  description: string;
+  inspection_photos: string[];
   purchase_price: number;
   photos: string[];
   splits: EquitySplitInput[];
@@ -49,6 +52,9 @@ export async function createVehicle(input: {
     p_make: parsed.data.make,
     p_model: parsed.data.model,
     p_trim: parsed.data.trim,
+    p_color: parsed.data.color,
+    p_description: parsed.data.description,
+    p_inspection_photos: parsed.data.inspection_photos,
     p_purchase_price: parsed.data.purchase_price,
     p_photos: parsed.data.photos,
     p_splits: parsed.data.splits,

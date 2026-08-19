@@ -288,7 +288,10 @@
     "ceoOverride": "تجاوز الرئيس التنفيذي",
     "statusInStock": "متوفرة",
     "statusReserved": "محجوزة",
-    "statusSold": "مباعة"
+    "statusSold": "مباعة",
+    "color": "اللون",
+    "description": "الوصف",
+    "inspectionPhotos": "صور الفحص"
   },
   "crm": {
     "title": "العملاء والتفاعل معهم",
@@ -412,7 +415,6 @@
     "totalInvested": "إجمالي الاستثمار",
     "type": "النوع",
     "date": "التاريخ",
-    "customModel": "أو اكتب موديلًا مخصصًا",
     "referralHeading": "أخبرنا عمّا تبحث عنه",
     "fullName": "الاسم الكامل",
     "phoneNumber": "رقم الهاتف",
@@ -423,7 +425,19 @@
     "submitting": "جارٍ الإرسال…",
     "thanksMessage": "شكرًا لك — سنتواصل معك قريبًا.",
     "reserved": "محجوزة",
-    "vinOptional": "اختياري"
+    "vinOptional": "اختياري",
+    "makesOffline": "قائمة الماركات المباشرة غير متاحة — يتم عرض الماركات الشائعة.",
+    "noModelsFound": "لا توجد موديلات لهذه الماركة والسنة. اكتب الموديل أدناه.",
+    "searchOrType": "ابحث أو اكتب…",
+    "noMatches": "لا توجد نتائج — سيتم حفظ ما كتبته",
+    "descriptionPlaceholder": "التعديلات والإضافات وملاحظات الحالة — مثل جنوط معدلة، جناح خلفي، أطقم بودي، إعادة دهان",
+    "selectImages": "اختر صوراً",
+    "selectFolder": "اختر مجلداً",
+    "imagesAttached": "{count} صورة مرفقة",
+    "filterAll": "الكل",
+    "searchVehicles": "ابحث برقم الهيكل أو الماركة أو الموديل…",
+    "clearFilters": "مسح عوامل التصفية",
+    "showingCount": "{count} مركبة"
   },
   "account": {
     "title": "الحساب",
@@ -447,5 +461,20 @@
     "whatsappHelper": "أضف رمز الدولة، مثل ‎+20…",
     "whatsappTrialBadge": "ميزة تجريبية",
     "whatsappTrialNote": "تعمل إشعارات واتساب عبر خادم ذاتي الاستضافة، وقد لا تكون متاحة طوال الوقت. يظل البريد الإلكتروني هو القناة الموثوقة — إذا كان الإشعار مهمًا، فاحتفظ بعنوان بريد أعلاه."
+  },
+  "colors": {
+    "white": "أبيض",
+    "black": "أسود",
+    "silver": "فضي",
+    "gray": "رمادي",
+    "blue": "أزرق",
+    "red": "أحمر",
+    "green": "أخضر",
+    "brown": "بني",
+    "beige": "بيج",
+    "gold": "ذهبي",
+    "orange": "برتقالي",
+    "yellow": "أصفر",
+    "burgundy": "عنابي"
   }
 }

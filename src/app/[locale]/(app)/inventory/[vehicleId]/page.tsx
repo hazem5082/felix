@@ -15,6 +15,7 @@ import type {
   Branch,
 } from "@/lib/supabase/types";
 import { ExpenseFormDialog } from "./expense-form";
+import { colorLabel } from "@/lib/vehicle-color";
 
 export default async function VehicleDetailPage({
   params,
@@ -25,6 +26,7 @@ export default async function VehicleDetailPage({
   const t = await getTranslations("inventory");
   const dealsT = await getTranslations("deals");
   const common = await getTranslations("common");
+  const colors = await getTranslations("colors");
   const supabase = await createClient();
   const profile = await getProfile();
 
@@ -59,7 +61,7 @@ export default async function VehicleDetailPage({
     <div className="space-y-6">
       <PanelHeader
         title={`${v.year} ${v.make} ${v.model} ${v.trim ?? ""}`}
-        subtitle={v.vin ? `VIN ${v.vin}` : undefined}
+        subtitle={[colorLabel(colors, v.color), v.vin ? `VIN ${v.vin}` : null].filter(Boolean).join(" · ") || undefined}
         action={
           v.status === "in_stock" ? (
             <Link href={`/crm?newTicketVehicle=${v.id}`}>
@@ -94,12 +96,33 @@ export default async function VehicleDetailPage({
             ))}
           </div>
 
+          {v.description && (
+            <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+              <p className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t("description")}</p>
+              <p className="whitespace-pre-wrap text-sm text-[var(--color-text)]">{v.description}</p>
+            </div>
+          )}
+
           {v.photos?.length > 0 && (
             <div className="mt-4 flex gap-2 overflow-x-auto">
               {v.photos.map((p) => (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img key={p} src={p} alt="" className="h-24 w-32 shrink-0 rounded-lg object-cover" />
               ))}
+            </div>
+          )}
+
+          {v.inspection_photos?.length > 0 && (
+            <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+              <p className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
+                {t("inspectionPhotos")}
+              </p>
+              <div className="flex gap-2 overflow-x-auto">
+                {v.inspection_photos.map((p) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={p} src={p} alt="" className="h-20 w-28 shrink-0 rounded-lg object-cover" />
+                ))}
+              </div>
             </div>
           )}
         </Panel>

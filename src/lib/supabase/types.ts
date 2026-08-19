@@ -91,6 +91,9 @@ export interface Vehicle {
   make: string;
   model: string;
   trim: string | null;
+  color: string | null;
+  description: string | null;
+  inspection_photos: string[];
   purchase_price: number;
   status: VehicleStatus;
   photos: string[];

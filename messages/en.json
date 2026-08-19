@@ -201,7 +201,10 @@
     "ceoOverride": "CEO Override",
     "statusInStock": "In Stock",
     "statusReserved": "Reserved",
-    "statusSold": "Sold"
+    "statusSold": "Sold",
+    "color": "Color",
+    "description": "Description",
+    "inspectionPhotos": "Inspection Photos"
   },
   "crm": {
     "title": "CRM & Lead Interaction",
@@ -412,7 +415,6 @@
     "totalInvested": "Total Invested",
     "type": "Type",
     "date": "Date",
-    "customModel": "Or type a custom model",
     "referralHeading": "Tell us what you're looking for",
     "fullName": "Full name",
     "phoneNumber": "Phone number",
@@ -423,7 +425,19 @@
     "submitting": "Submitting…",
     "thanksMessage": "Thanks — we'll be in touch shortly.",
     "reserved": "Reserved",
-    "vinOptional": "Optional"
+    "vinOptional": "Optional",
+    "makesOffline": "Live make list unavailable — showing common brands.",
+    "noModelsFound": "No models listed for this make and year. Type one below.",
+    "searchOrType": "Search or type…",
+    "noMatches": "No matches — your text is kept",
+    "descriptionPlaceholder": "Modifications, extras, condition notes — e.g. aftermarket rims, spoiler, body kit, respray",
+    "selectImages": "Select images",
+    "selectFolder": "Select folder",
+    "imagesAttached": "{count} image(s) attached",
+    "filterAll": "All",
+    "searchVehicles": "Search VIN, make, model…",
+    "clearFilters": "Clear filters",
+    "showingCount": "{count} vehicle(s)"
   },
   "account": {
     "title": "Account",
@@ -447,5 +461,20 @@
     "whatsappHelper": "Include country code, e.g. +20…",
     "whatsappTrialBadge": "Trial feature",
     "whatsappTrialNote": "WhatsApp notifications run on a self-hosted gateway and are not guaranteed to be available at all times. Email is the reliable channel — if a notification matters, keep an address above."
+  },
+  "colors": {
+    "white": "White",
+    "black": "Black",
+    "silver": "Silver",
+    "gray": "Gray",
+    "blue": "Blue",
+    "red": "Red",
+    "green": "Green",
+    "brown": "Brown",
+    "beige": "Beige",
+    "gold": "Gold",
+    "orange": "Orange",
+    "yellow": "Yellow",
+    "burgundy": "Burgundy"
   }
 }
