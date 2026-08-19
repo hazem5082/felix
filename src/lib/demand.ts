@@ -43,24 +43,32 @@ export interface DemandRow {
   lowBudget: number | null;
 }
 
+const normalise = (label: string) => label.toLowerCase().replace(/\s+/g, " ").trim();
+
 /**
- * Grouping key. Built from the rendered label rather than from the
- * columns, which is what lets a structured row (make "Honda", model
- * "Civic", year 2023) land in the same bucket as the free text a lead was
- * captured with before this table existed ("2023 Honda Civic").
+ * Drops standalone model years, so a described car groups by what it is
+ * rather than by which year each buyer happened to name.
  *
- * Best-effort by construction: "Civic" and "Honda Civic" are two rows, and
- * no amount of normalising fixes that without a make/model dictionary the
- * showroom has not been asked to maintain. Under-merging is the safe
- * direction — it shows two small numbers instead of inventing one big one.
+ * The report answers "should we source one of these", and two buyers
+ * after a Hilux are two buyers after a Hilux whether one wants a 2022 and
+ * the other a 2024. Keeping the year in the key split exactly that case
+ * into two single-buyer rows — which reads as no demand at all, and is
+ * the opposite of what the row exists to say. The years are not lost:
+ * they stay on each lead's own page, where the buyer's ask belongs.
  */
-const keyOf = (label: string) => label.toLowerCase().replace(/\s+/g, " ").trim();
+const withoutYear = (label: string) =>
+  normalise(label.replace(/\b(?:19|20)\d{2}\b/g, " "));
 
 export function vehicleLabel(v: Pick<Vehicle, "year" | "make" | "model" | "trim">): string {
   return [v.year, v.make, v.model, v.trim].filter(Boolean).join(" ");
 }
 
-/** What an interest row is about, whether or not it names a vehicle. */
+/**
+ * What an interest row is about, whether or not it names a vehicle.
+ *
+ * Carries the year, because on a lead's own page the year is part of what
+ * the buyer asked for. The demand key deliberately drops it.
+ */
 export function interestLabel(i: LeadVehicleInterest): string {
   if (i.vehicles) return vehicleLabel(i.vehicles);
   return [i.wanted_year, i.wanted_make, i.wanted_model].filter(Boolean).join(" ") || "—";
@@ -77,7 +85,7 @@ interface Bucket {
   linked: boolean;
 }
 
-/** Everything the fallback below needs, and nothing the caller must fetch for it. */
+/** Everything the fallback needs, and nothing the caller must fetch for it. */
 export type DemandLead = Pick<Lead, "id" | "car_interest" | "status">;
 
 /**
@@ -91,6 +99,19 @@ export function buildDemand(
   leads: DemandLead[] = []
 ): DemandRow[] {
   const buckets = new Map<string, Bucket>();
+
+  /**
+   * Year-stripped description -> the bucket of a car on the floor that
+   * matches it, so "Honda Civic Sport" written by hand finds the actual
+   * 2023 Honda Civic Sport instead of opening a second row beside it.
+   *
+   * `null` marks the description as ambiguous. Two Civic Sports of
+   * different years are two cars, and a buyer who wrote "Honda Civic
+   * Sport" has not said which — attributing them to whichever was
+   * bucketed first would put a real offer against the wrong vehicle's
+   * cost. Under-merging is the safe direction throughout this file.
+   */
+  const alias = new Map<string, string | null>();
 
   const bucket = (key: string, label: string) => {
     let b = buckets.get(key);
@@ -109,45 +130,65 @@ export function buildDemand(
     return b;
   };
 
-  for (const i of interests) {
-    // A declined interest is not demand. Keeping it would make the report
-    // grow monotonically and never reflect a buyer who walked away, which
-    // is the one thing that makes a demand list stop being read.
-    if (i.status === "declined") continue;
+  const record = (b: Bucket, leadId: string, origin: string, budget: number | null) => {
+    (origin === "suggested" ? b.suggested : b.requested).add(leadId);
+    if (budget !== null) b.budgets.push(Number(budget));
+  };
 
-    const label = interestLabel(i);
-    if (label === "—") continue;
+  // A declined interest is not demand. Keeping it would make the report
+  // grow monotonically and never reflect a buyer who walked away, which is
+  // the one thing that makes a demand list stop being read.
+  const live = interests.filter((i) => i.status !== "declined");
 
-    const b = bucket(keyOf(label), label);
+  // PASS 1 — cars on the floor, keyed by the vehicle itself. Its own
+  // identity, not a description of it: two model years of the same trim
+  // are two cars with two costs and must never share a row.
+  for (const i of live) {
+    if (!i.vehicles) continue;
+    const key = `v:${i.vehicles.id}`;
+    const label = vehicleLabel(i.vehicles);
+    const b = bucket(key, label);
     b.linked = true;
+    b.label = label;
+    b.vehicleId = i.vehicles.id;
+    b.purchasePrice = Number(i.vehicles.purchase_price);
+    record(b, i.lead_id, i.origin, i.budget_amount);
 
-    // A vehicle row wins the label and the price: it is the same car under
-    // whichever name it was first bucketed.
-    if (i.vehicles) {
-      b.vehicleId = i.vehicles.id;
-      b.label = vehicleLabel(i.vehicles);
-      b.purchasePrice = Number(i.vehicles.purchase_price);
-    }
-
-    (i.origin === "suggested" ? b.suggested : b.requested).add(i.lead_id);
-    if (i.budget_amount !== null) b.budgets.push(Number(i.budget_amount));
+    const description = withoutYear(label);
+    alias.set(description, alias.has(description) && alias.get(description) !== key ? null : key);
   }
 
-  // FALLBACK: leads captured before 0016, and every lead taken through the
-  // public referral form, carry their ask as free text in `car_interest`
-  // and nothing else. Dropping them would show an empty report to a
-  // showroom whose pipeline is full.
+  // PASS 2 — cars nobody holds. Grouped by make and model, and folded into
+  // a vehicle's row when one unambiguously matches.
+  for (const i of live) {
+    if (i.vehicles) continue;
+    const label = [i.wanted_make, i.wanted_model].filter(Boolean).join(" ");
+    if (!label) continue;
+    const description = withoutYear(label);
+    const b = bucket(alias.get(description) ?? `w:${description}`, label);
+    b.linked = true;
+    record(b, i.lead_id, i.origin, i.budget_amount);
+  }
+
+  // PASS 3 — the fallback. Leads captured before migration 0016, and every
+  // lead taken through the public referral form, carry their ask as free
+  // text in `car_interest` and nothing else. Dropping them would show an
+  // empty report to a showroom whose pipeline is full.
   //
-  // Only for leads with no structured interest at all — once somebody has
+  // Only for leads with no structured interest at all: once somebody has
   // recorded what a buyer actually wants, the free text is superseded, and
   // counting both would double that buyer.
-  const structured = new Set(interests.map((i) => i.lead_id));
+  const structured = new Set(live.map((i) => i.lead_id));
   for (const l of leads) {
     if (l.status === "closed") continue;
     if (structured.has(l.id)) continue;
     const label = (l.car_interest ?? "").trim();
     if (!label) continue;
-    bucket(keyOf(label), label).requested.add(l.id);
+    const description = withoutYear(label);
+    // Best-effort by construction: "Civic" and "Honda Civic" stay two
+    // rows, and no normalising fixes that without a make/model dictionary
+    // the showroom has not been asked to maintain.
+    bucket(alias.get(description) ?? `w:${description}`, label).requested.add(l.id);
   }
 
   return Array.from(buckets.entries())

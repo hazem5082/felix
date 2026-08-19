@@ -100,6 +100,26 @@ describe("buildDemand", () => {
     expect(row.purchasePrice).toBe(20000);
   });
 
+  it("groups an off-floor want by make and model, ignoring the year", () => {
+    // Two buyers after a Hilux are two buyers after a Hilux. Keying on the
+    // year split them into two single-buyer rows, which reads as no demand.
+    const rows = buildDemand([
+      interest({ lead_id: "a", wanted_make: "Toyota", wanted_model: "Hilux", wanted_year: 2024, budget_amount: 33500 }),
+      interest({ lead_id: "b", wanted_make: "Toyota", wanted_model: "Hilux", wanted_year: 2022, budget_amount: 30000 }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe("Toyota Hilux");
+    expect(rows[0].requestedBy).toBe(2);
+    expect(rows[0].lowBudget).toBe(30000);
+    expect(rows[0].topBudget).toBe(33500);
+  });
+
+  it("still shows the year the buyer asked for on the interest itself", () => {
+    expect(
+      interestLabel(interest({ wanted_make: "Toyota", wanted_model: "Hilux", wanted_year: 2024 }))
+    ).toBe("2024 Toyota Hilux");
+  });
+
   it("keeps a car nobody holds, which is the row the report exists for", () => {
     const [row] = buildDemand([
       interest({ lead_id: "a", wanted_make: "Toyota", wanted_model: "Hilux", budget_amount: 30000 }),
@@ -121,11 +141,37 @@ describe("buildDemand", () => {
           budget_amount: 21000,
         }),
       ],
-      [lead({ id: "b", car_interest: "2023  honda civic" })]
+      [lead({ id: "b", car_interest: "2024  honda civic" })]
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].requestedBy).toBe(2);
     expect(rows[0].quoted).toBe(1);
+  });
+
+  it("never merges two cars on the floor, whatever they are called", () => {
+    // Same trim, two model years, two costs. One row would put a buyer's
+    // offer against the wrong car's acquisition price.
+    const older = { ...civic, id: "veh-civic-22", year: 2022, purchase_price: 17000 } as Vehicle;
+    const rows = buildDemand([
+      interest({ lead_id: "a", vehicle_id: civic.id, vehicles: civic, budget_amount: 22500 }),
+      interest({ lead_id: "b", vehicle_id: older.id, vehicles: older, budget_amount: 17500 }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.purchasePrice).sort()).toEqual([17000, 20000]);
+  });
+
+  it("will not guess which of two same-named cars a free-text ask meant", () => {
+    const older = { ...civic, id: "veh-civic-22", year: 2022, purchase_price: 17000 } as Vehicle;
+    const rows = buildDemand(
+      [
+        interest({ lead_id: "a", vehicle_id: civic.id, vehicles: civic }),
+        interest({ lead_id: "b", vehicle_id: older.id, vehicles: older }),
+      ],
+      [lead({ id: "c", car_interest: "Honda Civic Sport" })]
+    );
+    // Three rows: both cars, plus the ask that could be either.
+    expect(rows).toHaveLength(3);
+    expect(rows.find((r) => !r.linked)?.requestedBy).toBe(1);
   });
 
   it("lets a joined vehicle claim the label and price of a free-text bucket", () => {

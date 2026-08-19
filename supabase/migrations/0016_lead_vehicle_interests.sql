@@ -317,6 +317,54 @@ end
 $mig$;
 
 -- ============================================================
+-- 2f. THE service_role GRANT — guarded separately, on purpose
+--
+-- §6g grants service_role `on ALL TABLES`, and the template executes §1
+-- before §6g, so a table spliced into §1 is already covered there. Stated
+-- explicitly anyway, because §6g's own note refuses to add an ALTER
+-- DEFAULT PRIVILEGES for this role and says "every new tenant table
+-- should have to state its privileges" — and a privilege that holds only
+-- because of where in one file a CREATE happens to sit is not a stated
+-- one.
+--
+-- Its own block with its own guard rather than a sixth substitution in
+-- §2, because §2 skips wholesale once the template carries the table. On
+-- a database where 0016 has already run, that skip would leave the stored
+-- template permanently one line behind this file — which is the drift
+-- every anchor assertion in here exists to prevent.
+-- ============================================================
+do $mig$
+declare
+  v_tpl text := platform.tenant_ddl_template();
+  c_from constant text := $c1$grant select, insert, update on lead_vehicle_interests to {{ROLE}};$c1$;
+  c_to   constant text := $c2$grant select, insert, update on lead_vehicle_interests to {{ROLE}};
+-- seed-demo.mjs and demo-pipeline.mjs both write here with the service
+-- key, and the operator's data-repair path needs DELETE.
+grant select, insert, update, delete on lead_vehicle_interests to service_role;$c2$;
+begin
+  if position('on lead_vehicle_interests to service_role' in v_tpl) > 0 then
+    raise notice '0016: template already grants service_role — skipping.';
+    return;
+  end if;
+
+  if position(c_from in v_tpl) = 0 then
+    raise exception '0016: anchor 2f (tenant grant) is missing — §2 did not run.';
+  end if;
+
+  v_tpl := replace(v_tpl, c_from, c_to);
+
+  execute format(
+    'create or replace function platform.tenant_ddl_template() returns text '
+    'language sql immutable set search_path = pg_catalog '
+    'as $felix_0016f$ select %L::text $felix_0016f$',
+    v_tpl
+  );
+  revoke all on function platform.tenant_ddl_template() from public;
+  raise notice '0016: template now states the service_role grant.';
+end
+$mig$;
+
+-- ============================================================
 -- 3. AMEND EVERY EXISTING TENANT SCHEMA
 --
 -- Unqualified DDL under a per-tenant search_path — the same mechanism
@@ -432,6 +480,20 @@ begin
       r.schema_name, r.role_name
     );
 
+    -- THE ONE 0015 DID NOT HAVE TO THINK ABOUT. §6g grants service_role
+    -- `on ALL TABLES`, which is a one-shot expansion over the tables that
+    -- existed at that moment, and §6g deliberately declined to add an
+    -- ALTER DEFAULT PRIVILEGES that would cover later ones. So a table
+    -- added to a LIVE schema is invisible to the service key until this
+    -- statement runs — which broke the seed scripts, the public referral
+    -- form's client, and the operator's data-repair path all at once,
+    -- with "permission denied" and nothing to say the grant list had a
+    -- hole in it. §4 asserts it now.
+    execute format(
+      'grant select, insert, update, delete on %I.lead_vehicle_interests to service_role',
+      r.schema_name
+    );
+
     -- 0009 §6i left ALTER DEFAULT PRIVILEGES entries that already strip
     -- anon/authenticated from anything created later — but they are keyed
     -- to the role that owns create_tenant_schema(), and §6i's own comment
@@ -526,6 +588,18 @@ begin
       v_bad := v_bad || (r.schema_name || ' (role has no select)');
     end if;
 
+    --     ...and so can the deployment's own client. §6g's grant is an
+    --     `on all tables` snapshot with no default-privileges follow-up,
+    --     so this is the assertion that catches a new tenant table being
+    --     added without one — the failure is a "permission denied" from
+    --     the referral form or a seed script, far from the migration that
+    --     caused it.
+    if not has_table_privilege(
+         'service_role', format('%I.lead_vehicle_interests', r.schema_name),
+         'select, insert, update, delete') then
+      v_bad := v_bad || (r.schema_name || ' (service_role cannot write)');
+    end if;
+
     if has_table_privilege(
          'authenticated', format('%I.lead_vehicle_interests', r.schema_name),
          'select, insert, update, delete, truncate, references, trigger')
@@ -552,7 +626,8 @@ begin
   end if;
 
   if position('create table if not exists lead_vehicle_interests' in platform.tenant_ddl_template()) = 0
-     or position('grant select, insert, update on lead_vehicle_interests' in platform.tenant_ddl_template()) = 0 then
+     or position('grant select, insert, update on lead_vehicle_interests' in platform.tenant_ddl_template()) = 0
+     or position('on lead_vehicle_interests to service_role' in platform.tenant_ddl_template()) = 0 then
     raise exception '0016 VERIFY FAILED: the template does not carry the new table.';
   end if;
 
