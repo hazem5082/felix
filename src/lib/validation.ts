@@ -683,6 +683,16 @@ export const RecordEtaInvoiceSchema = z
     { message: "Record at least the ETA UUID, long ID or a status" }
   );
 
+/**
+ * Submitting the e-invoice through the ETA API (migration 0034).
+ *
+ * Only the ticket: every number on the document is derived server-side
+ * from rows the client cannot influence. That is the whole security
+ * argument for this action — there is no payload to tamper with, so a
+ * hand-crafted POST can at most file the same invoice the UI would have.
+ */
+export const SubmitEtaInvoiceSchema = z.object({ ticketId: Uuid });
+
 // ── Calendar ────────────────────────────────────────────────
 
 /**

@@ -517,6 +517,55 @@ export interface Contract {
   eta_submitted_at: string | null;
 }
 
+/**
+ * One attempt at filing this sale's e-invoice with the Egyptian Tax
+ * Authority (migration 0034).
+ *
+ * 0024 gave `contracts` four slots for the identifiers a human read off
+ * the portal. This is the other half: the queue and the audit of
+ * submissions FELIX made itself, with the document it sent and the
+ * answer it got, so "what exactly did we file, when, by whom, and
+ * against which authority" is answerable years later.
+ *
+ * A contract may have many rows here, but at most one that is not
+ * rejected or failed — see `uniq_eta_submission_live` in 0034.
+ */
+export type EtaSubmissionRowStatus =
+  | "queued"
+  | "submitted"
+  | "accepted"
+  | "rejected"
+  | "failed";
+
+/** Which authority a submission was made against. `mock` files nothing. */
+export type EtaSubmissionMode = "mock" | "preprod" | "production";
+
+export interface EtaSubmission {
+  id: string;
+  contract_id: string;
+  deal_ticket_id: string;
+  status: EtaSubmissionRowStatus;
+  mode: EtaSubmissionMode;
+  /** The exact ETA document that was sent. Null until built. */
+  request_payload: Record<string, unknown> | null;
+  /** The authority's answer, verbatim. */
+  response_payload: Record<string, unknown> | null;
+  eta_submission_id: string | null;
+  eta_uuid: string | null;
+  eta_long_id: string | null;
+  error_detail: string | null;
+  /**
+   * Issue codes from the builder (`EtaWarningCode` in lib/eta/document.ts)
+   * — never null, the column is `not null default '{}'`. "We filed this
+   * with a placeholder product code" lives here.
+   */
+  warnings: string[];
+  attempt: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CommissionTier {
   tier_index: number;
   cumulative_amount: number;
