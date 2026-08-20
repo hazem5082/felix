@@ -7,6 +7,7 @@ import { toUserError } from "@/lib/db-error";
 import {
   CreateFinancingPartnerSchema,
   FinancingRequestStatusSchema,
+  MarkPayoutPaidSchema,
   OverheadSchema,
   Uuid,
   parseInput,
@@ -105,6 +106,62 @@ export async function updateFinancingRequestStatus(requestId: string, status: st
     .update({ status: parsed.data.status })
     .eq("id", parsed.data.requestId);
   if (error) return toUserError(error);
+
+  revalidatePath("/[locale]/(app)/accountant", "page");
+  return { ok: true };
+}
+
+/**
+ * Records that the showroom has paid the owner of a consigned car
+ * (migration 0032).
+ *
+ * FINANCE_ROLES, matching the RLS exactly: consignment_payouts_update is
+ * `is_accountant_or_above()`, which is CEO or accountant. No
+ * assertBranch — paying the consignors is one desk's job for the whole
+ * group, and the policy has no branch predicate to mirror. That is the
+ * same shape as the ledger the accountant already reads org-wide.
+ *
+ * The amounts are deliberately not settable. They were computed inside
+ * execute_vehicle_sale() from a price a manager approved; an accountant
+ * marks a debt paid, they do not re-price it. There is no unpay, either:
+ * the row has no DELETE policy and the tenant role holds no DELETE
+ * privilege, and a payment recorded in error is corrected by a note on
+ * the next one, not by erasure.
+ */
+export async function markPayoutPaid(input: {
+  payout_id: string;
+  settlement_method: "bank_transfer" | "cheque" | "instapay" | "cash";
+  settlement_reference: string | null;
+  note: string | null;
+}) {
+  const auth = await authorize(FINANCE_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(MarkPayoutPaidSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("consignment_payouts")
+    .update({
+      paid_at: new Date().toISOString(),
+      settlement_method: parsed.data.settlement_method,
+      settlement_reference: parsed.data.settlement_reference,
+      note: parsed.data.note,
+    })
+    .eq("id", parsed.data.payout_id)
+    // Marking an already-paid payout paid again would silently rewrite
+    // the date and the reference on a settled debt, which is the one
+    // edit this table must not lose.
+    .is("paid_at", null)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return toUserError(error);
+  // RLS returns zero rows rather than an error for a payout the caller
+  // cannot see, and the `is null` filter above matches nothing for one
+  // already settled. Both deserve a sentence rather than a false success.
+  if (!data) return { error: "That payout is not available, or has already been settled." };
 
   revalidatePath("/[locale]/(app)/accountant", "page");
   return { ok: true };

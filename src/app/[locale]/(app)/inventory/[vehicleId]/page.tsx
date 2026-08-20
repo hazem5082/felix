@@ -81,6 +81,10 @@ export default async function VehicleDetailPage({
   // (0028): sales and marketing see the sticker price and lowest offer.
   const showCost = canSeeCost(profile);
   const canPrice = profile && ["ceo", "branch_manager"].includes(profile.role);
+  // 0032. A consigned car belongs to somebody else: it has no cost, no
+  // cap table, and any money spent on it comes out of the house's
+  // commission rather than a pool everybody shares.
+  const isConsignment = v.acquisition_type === "consignment";
 
   const totalExpenses = ((expenses as VehicleExpense[]) ?? []).reduce((s, e) => s + Number(e.amount), 0);
   const buyers = (interests as LeadVehicleInterest[]) ?? [];
@@ -122,9 +126,45 @@ export default async function VehicleDetailPage({
 
       <div className="grid gap-6 md:grid-cols-3">
         <Panel className="md:col-span-2">
-          {/* The funding structure is confidential to management — for the
-              sales floor this panel opens straight onto the car itself. */}
-          {showCost ? (
+          {/* Three cases, not two, since 0032.
+              A CONSIGNED car has no cap table at all — the showroom did
+              not fund it — so the panel shows who does own it and on
+              what terms. That is management's information for the same
+              reason the equity table is, hence the same showCost gate.
+              A purchased or traded-in car keeps the equity table; the
+              sales floor gets neither and opens straight onto the car. */}
+          {showCost && isConsignment ? (
+            <>
+              <PanelHeader title={t("consignorSection")} subtitle={t("consignmentHint")} />
+              <div className="space-y-2 text-sm">
+                <DetailRow label={t("consignorName")} value={v.consignor_name ?? "—"} />
+                <DetailRow label={t("consignorPhone")} value={v.consignor_phone ?? "—"} />
+                <DetailRow
+                  label={t("consignorNationalId")}
+                  value={v.consignor_national_id ?? "—"}
+                  ltr
+                />
+                <DetailRow
+                  label={t("houseCommission")}
+                  value={
+                    v.consignment_commission_type === "percent"
+                      ? `${v.consignment_commission_value ?? 0}%`
+                      : v.consignment_commission_type === "fixed"
+                        ? formatMoney(Number(v.consignment_commission_value ?? 0), locale)
+                        : "—"
+                  }
+                />
+              </div>
+              {v.consignment_commission_type === null && (
+                // Stock taken in before 0032's intake rule existed. The
+                // sale will pay the consignor everything rather than
+                // invent a fee, and the page has to say so.
+                <p className="mt-3 rounded-lg border border-[var(--color-accent-amber)]/40 bg-[var(--color-accent-amber)]/10 px-3 py-2 text-xs text-[var(--color-accent-amber)]">
+                  {t("consignmentNoTerms")}
+                </p>
+              )}
+            </>
+          ) : showCost ? (
             <>
               <PanelHeader title={t("equitySplit")} />
               <div className="space-y-2">
@@ -221,7 +261,16 @@ export default async function VehicleDetailPage({
             </div>
             {showCost && (
               <>
-                <div className="flex justify-between"><span>{t("purchasePrice")}</span><span className="num">{formatMoney(v.purchase_price, locale)}</span></div>
+                <div className="flex justify-between">
+                  <span>{isConsignment ? t("acquisitionType") : t("purchasePrice")}</span>
+                  <span className="num">
+                    {/* No capital was deployed, so there is no cost to
+                        show — the row says what this car IS instead. */}
+                    {isConsignment
+                      ? t("acquisitionConsignment")
+                      : formatMoney(v.purchase_price, locale)}
+                  </span>
+                </div>
                 <div className="flex justify-between"><span>{t("expenses")}</span><span className="num">{formatMoney(totalExpenses, locale)}</span></div>
               </>
             )}
@@ -253,7 +302,7 @@ export default async function VehicleDetailPage({
             <Th>{crm("clientName")}</Th>
             <Th>{crm("phone")}</Th>
             <Th>{interest("budget")}</Th>
-            <Th>{showCost ? interest("vsCost") : interest("vsAsking")}</Th>
+            <Th>{showCost && !isConsignment ? interest("vsCost") : interest("vsAsking")}</Th>
             <Th>{common("status")}</Th>
           </THead>
           <TBody>
@@ -262,11 +311,16 @@ export default async function VehicleDetailPage({
               // Management reads an offer against cost — the number that
               // decides whether it is worth taking. The sales floor reads
               // it against the sticker price, never the cost (0028).
-              const baseline = showCost
-                ? Number(v.purchase_price)
-                : v.asking_price != null
-                  ? Number(v.asking_price)
-                  : null;
+              //
+              // A CONSIGNED car has no cost (0032), so "vs cost" would
+              // measure every offer against zero and call it all profit.
+              // Everyone reads that one against the sticker.
+              const baseline =
+                showCost && !isConsignment
+                  ? Number(v.purchase_price)
+                  : v.asking_price != null
+                    ? Number(v.asking_price)
+                    : null;
               const gap = budget === null || baseline === null ? null : budget - baseline;
               return (
                 <Tr key={i.id}>
@@ -322,6 +376,18 @@ export default async function VehicleDetailPage({
           title={t("expenses")}
           action={canManageExpenses ? <ExpenseFormDialog vehicleId={v.id} isCeo={!!isCeo} /> : undefined}
         />
+        {/* Reconditioning a consigned car is legitimate and common —
+            nobody sells a dusty car — so expenses stay allowed here.
+            What changes is where the money comes from: there is no
+            shared profit pool on a car the showroom does not own, so
+            every pound spent comes straight out of the commission
+            (0032). Worth saying on the screen where the spending
+            happens, not only in the accounts. */}
+        {isConsignment && (
+          <p className="mb-3 rounded-lg border border-[var(--color-accent-amber)]/40 bg-[var(--color-accent-amber)]/10 px-3 py-2 text-xs text-[var(--color-accent-amber)]">
+            {t("consignmentExpenseHint")}
+          </p>
+        )}
         <Table>
           <THead>
             <Th>{t("category")}</Th>
@@ -352,6 +418,22 @@ export default async function VehicleDetailPage({
         </Table>
       </Panel>
       )}
+    </div>
+  );
+}
+
+/**
+ * One line of the consignor block (0032). `ltr` for the national ID, on
+ * the same reasoning the VIN and the item code carry it: a digit string
+ * read off a card is a Latin technical value even in the Arabic UI.
+ */
+function DetailRow({ label, value, ltr }: { label: string; value: string; ltr?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <span className="text-[var(--color-text-secondary)]">{label}</span>
+      <span className="num font-medium" dir={ltr ? "ltr" : undefined}>
+        {value}
+      </span>
     </div>
   );
 }

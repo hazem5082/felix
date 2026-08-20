@@ -11,6 +11,14 @@ export type Role =
   | "investor";
 
 export type VehicleStatus = "in_stock" | "reserved" | "sold";
+// How the showroom came to have a car (migration 0032). 'purchase' is
+// the default and what every row predating 0032 is. A 'trade_in' row is
+// born only inside execute_vehicle_sale(); a 'consignment' row is
+// somebody else's car, sold for commission, with no cap table on it.
+export type AcquisitionType = "purchase" | "trade_in" | "consignment";
+// What the house keeps on a consigned sale: a flat fee, or a percentage
+// of the price the deal actually settled at.
+export type CommissionType = "fixed" | "percent";
 export type DealStatus = "submitted" | "approved" | "rejected" | "executed";
 export type FinancingType = "cash" | "installments";
 // How the sale actually settled (migration 0023) — distinct from
@@ -201,6 +209,23 @@ export interface Vehicle {
   // for this vehicle class on the ETA portal. Nullable — stock is taken
   // in before the class is registered.
   item_code: string | null;
+  // How the showroom came to have this car (migration 0032). 'purchase'
+  // for every row that predates it — until 0032 there was no other way
+  // to hold one. 'trade_in' rows are minted only inside
+  // execute_vehicle_sale(); 'consignment' rows are taken in at intake.
+  acquisition_type: AcquisitionType;
+  // The consignor, and the terms the house is selling on. All nullable:
+  // a purchase has none. When acquisition_type is 'consignment' the
+  // intake RPC guarantees the name and both commission fields are set —
+  // grey rows taken in before 0032 may still carry nulls, which the
+  // payout math reads as a zero commission rather than inventing one.
+  consignor_name: string | null;
+  consignor_phone: string | null;
+  consignor_national_id: string | null;
+  consignment_commission_type: CommissionType | null;
+  consignment_commission_value: number | null;
+  // Zero, and only zero, when acquisition_type is 'consignment': a
+  // consigned car deploys no capital. The DB CHECK says the same.
   purchase_price: number;
   // Sticker price and negotiation floor (migration 0028). Both nullable —
   // priced after intake. purchase_price above is the confidential cost;
@@ -417,6 +442,24 @@ export interface DealTicket {
   settlement_method: SettlementMethod | null;
   settlement_reference: string | null;
   settlement_bank: string | null;
+  // The trade-in leg (migration 0032) — تبديل. The buyer's old car,
+  // described and appraised on the ticket that sells them the new one.
+  // All nullable: most tickets have no trade-in, and every ticket
+  // predating 0032 has none. execute_vehicle_sale() turns these into a
+  // `vehicles` row the moment the sale settles, and nothing else reads
+  // them. The odometer lives here rather than on the vehicle because an
+  // odometer belongs on every car and that column arrives later; until
+  // then it is folded into the created vehicle's description.
+  trade_in_make: string | null;
+  trade_in_model: string | null;
+  trade_in_year: number | null;
+  trade_in_color: string | null;
+  trade_in_vin: string | null;
+  trade_in_odometer_km: number | null;
+  trade_in_allowance: number | null;
+  trade_in_notes: string | null;
+  // Never null — `not null default '{}'`, the photos/features precedent.
+  trade_in_photos: string[];
   status: DealStatus;
   financial_check_passed: boolean;
   discount_validated: boolean;
@@ -489,6 +532,36 @@ export interface LedgerEntry {
   ref_vehicle_id: string | null;
   note: string | null;
   created_at: string;
+}
+
+/**
+ * What the showroom owes the owner of a consigned car once it has sold
+ * it (migration 0032).
+ *
+ * Deliberately NOT a ledger_entries row: the ledger is the house's own
+ * wallet — CEO, investors, sales executives — and a consignor is an
+ * outside creditor. Booking them there would make every profit report
+ * count somebody else's money as the group's.
+ *
+ * Written only inside execute_vehicle_sale(). The accountant marks it
+ * paid; nothing deletes it.
+ */
+export interface ConsignmentPayout {
+  id: string;
+  vehicle_id: string;
+  deal_ticket_id: string;
+  // Copied off the vehicle at execution rather than joined: the name on
+  // the cheque is the name that was agreed on the day.
+  consignor_name: string;
+  amount_due: number;
+  commission_amount: number;
+  paid_at: string | null;
+  settlement_method: SettlementMethod | null;
+  settlement_reference: string | null;
+  note: string | null;
+  created_at: string;
+  vehicles?: Vehicle;
+  deal_tickets?: DealTicket;
 }
 
 export interface AuditLogRow {
@@ -566,5 +639,27 @@ export interface WaterfallPreview {
     percentage: number;
     share: number;
   }[];
+}
+
+/**
+ * What execute_vehicle_sale() returns (migration 0032).
+ *
+ * A superset of the preview: the same keys, plus the salesperson's
+ * commission, the id of any vehicle the trade-in leg created, and — on
+ * a consigned sale — the three keys that describe a commission rather
+ * than a waterfall. The consignment branch never calls
+ * compute_sale_waterfall() at all, so `shares` comes back empty and
+ * `net_profit` IS the house commission.
+ *
+ * Every extra key is optional because the preview RPC
+ * (preview_vehicle_sale_waterfall) returns the plain waterfall shape
+ * and is unchanged by 0032.
+ */
+export interface SaleResult extends WaterfallPreview {
+  commission?: number;
+  trade_in_vehicle_id?: string | null;
+  acquisition_type?: AcquisitionType;
+  consignment_commission?: number;
+  consignment_amount_due?: number;
 }
 

@@ -431,6 +431,19 @@ export async function createDealTicket(input: {
   settlement_method: "bank_transfer" | "cheque" | "instapay" | "cash" | null;
   settlement_reference: string | null;
   settlement_bank: string | null;
+  // The trade-in leg (0032). execute_vehicle_sale() turns these into a
+  // `vehicles` row the moment the sale settles, so what is typed here
+  // becomes stock — which is why the zod schema refuses an allowance
+  // with no car described against it.
+  trade_in_make: string | null;
+  trade_in_model: string | null;
+  trade_in_year: number | null;
+  trade_in_color: string | null;
+  trade_in_vin: string | null;
+  trade_in_odometer_km: number | null;
+  trade_in_allowance: number | null;
+  trade_in_notes: string | null;
+  trade_in_photos: string[];
 }) {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
@@ -477,6 +490,15 @@ export async function createDealTicket(input: {
       settlement_method: parsed.data.settlement_method,
       settlement_reference: parsed.data.settlement_reference,
       settlement_bank: parsed.data.settlement_bank,
+      trade_in_make: parsed.data.trade_in_make,
+      trade_in_model: parsed.data.trade_in_model,
+      trade_in_year: parsed.data.trade_in_year,
+      trade_in_color: parsed.data.trade_in_color,
+      trade_in_vin: parsed.data.trade_in_vin,
+      trade_in_odometer_km: parsed.data.trade_in_odometer_km,
+      trade_in_allowance: parsed.data.trade_in_allowance,
+      trade_in_notes: parsed.data.trade_in_notes,
+      trade_in_photos: parsed.data.trade_in_photos,
     })
     .select("id")
     .single();
