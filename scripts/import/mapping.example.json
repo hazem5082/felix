@@ -1,0 +1,35 @@
+{
+  "_comment": "Column headers -> FELIX fields. Copy this file, delete the fields you don't need, and add any header your export uses that isn't already covered by the importer's own built-in defaults (scripts/import-legacy.mjs merges this file OVER those defaults, so you only need to list headers the defaults get wrong or don't recognize at all). Matching is case-insensitive and trims whitespace, but otherwise exact — check your CSV's actual header row if a column isn't picked up.",
+
+  "الماركة": "make",
+  "الموديل": "model",
+  "سنة الصنع": "year",
+  "رقم الشاسيه": "vin",
+  "سعر الشراء": "purchase_price",
+  "الفرع": "branch",
+  "اللون": "color",
+  "الفئة": "trim",
+  "رقم المحرك": "engine_number",
+  "رقم اللوحة": "plate_number",
+  "بلد المنشأ": "country_of_origin",
+  "كود الصنف": "item_code",
+  "ملاحظات": "description",
+
+  "اسم العميل": "full_name",
+  "الرقم القومي": "national_id",
+  "رقم التليفون": "phone",
+  "العنوان": "address",
+  "الجنسية": "nationality",
+
+  "Make": "make",
+  "Model": "model",
+  "Model Year": "year",
+  "Chassis No": "vin",
+  "Cost Price": "purchase_price",
+  "Showroom": "branch",
+  "Colour": "color",
+
+  "Customer Name": "full_name",
+  "ID Number": "national_id",
+  "Mobile Number": "phone"
+}
