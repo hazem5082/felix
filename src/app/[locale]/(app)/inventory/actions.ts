@@ -28,6 +28,14 @@ export async function createVehicle(input: {
   country_of_origin: string;
   features: string[];
   item_code: string;
+  // How the showroom came to have this car (0032). 'trade_in' is not
+  // offered: such a row is born only inside execute_vehicle_sale().
+  acquisition_type: "purchase" | "consignment";
+  consignor_name: string;
+  consignor_phone: string;
+  consignor_national_id: string;
+  consignment_commission_type: "fixed" | "percent" | "";
+  consignment_commission_value: number | null;
   purchase_price: number;
   asking_price: number | null;
   min_price: number | null;
@@ -67,6 +75,16 @@ export async function createVehicle(input: {
     p_country_of_origin: parsed.data.country_of_origin,
     p_features: parsed.data.features,
     p_item_code: parsed.data.item_code,
+    // 0032 widened the RPC 17 → 23. The consignor group is sent for
+    // every intake and written only for a consignment — the function
+    // discards it otherwise, so a stale client cannot name somebody as
+    // the owner of a car the showroom bought.
+    p_acquisition_type: parsed.data.acquisition_type,
+    p_consignor_name: parsed.data.consignor_name,
+    p_consignor_phone: parsed.data.consignor_phone,
+    p_consignor_national_id: parsed.data.consignor_national_id,
+    p_consignment_commission_type: parsed.data.consignment_commission_type || null,
+    p_consignment_commission_value: parsed.data.consignment_commission_value,
     p_purchase_price: parsed.data.purchase_price,
     p_photos: parsed.data.photos,
     p_splits: parsed.data.splits,

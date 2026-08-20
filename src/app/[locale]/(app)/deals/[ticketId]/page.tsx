@@ -10,6 +10,7 @@ import type { DealTicket, Vehicle, Contract, VehicleEquitySplit } from "@/lib/su
 import { TicketPanel } from "./ticket-panel";
 import { canSeeCost } from "@/lib/auth";
 import { EtaInvoicePanel } from "./eta-invoice-panel";
+import { ConsignmentBanner, TradeInCard, type CreatedTradeInVehicle } from "./trade-in-card";
 
 export default async function TicketDetailPage({
   params,
@@ -45,6 +46,44 @@ export default async function TicketDetailPage({
     if (s.holder_id) investorNames[s.holder_id] = s.investors?.profiles?.full_name ?? "Investor";
   });
 
+  // ── 0032: the two acquisition legs ──────────────────────────
+  //
+  // The car a trade-in created, once the sale has executed. There is no
+  // FK from the ticket to it — adding one would mean a second path to a
+  // fact `vehicles` already holds, and the two would eventually disagree
+  // (0031's reasoning about deal_tickets → customers, applied here).
+  //
+  // So it is found by what execute_vehicle_sale() actually wrote. The
+  // DESCRIPTION is tried first, because the note it always ends with
+  // names this ticket by id — whereas the VIN is dropped whenever
+  // another vehicle already holds it, which is precisely the case where
+  // a VIN lookup would find the WRONG car. The VIN is the fallback for
+  // rows written before that note existed.
+  //
+  // Both queries run under the viewer's own RLS, so a manager at another
+  // branch simply sees the "not found" line.
+  const isConsignment = dt.vehicles?.acquisition_type === "consignment";
+  let tradeInVehicle: CreatedTradeInVehicle | null = null;
+  if (dt.trade_in_allowance != null && dt.status === "executed") {
+    const { data: byNote } = await supabase
+      .from("vehicles")
+      .select("id, year, make, model")
+      .eq("acquisition_type", "trade_in")
+      .ilike("description", `%${ticketId}%`)
+      .maybeSingle();
+    tradeInVehicle = (byNote as CreatedTradeInVehicle | null) ?? null;
+
+    if (!tradeInVehicle && dt.trade_in_vin) {
+      const { data: byVin } = await supabase
+        .from("vehicles")
+        .select("id, year, make, model")
+        .eq("acquisition_type", "trade_in")
+        .eq("vin", dt.trade_in_vin)
+        .maybeSingle();
+      tradeInVehicle = (byVin as CreatedTradeInVehicle | null) ?? null;
+    }
+  }
+
   const canReview = profile && ["ceo", "branch_manager"].includes(profile.role);
   const canExecute = canReview;
 
@@ -72,6 +111,14 @@ export default async function TicketDetailPage({
         </Panel>
       )}
 
+      {/* 0032, insertion point 1 of 2. A consigned sale has no cap table
+          and no waterfall: compute_sale_waterfall() would divide a
+          consignor's money among the house and its investors, and
+          execute_vehicle_sale() skips it entirely. The banner replaces
+          the profit block rather than sitting beside it — see
+          `isConsignment` on TicketPanel below. */}
+      {isConsignment && dt.vehicles && <ConsignmentBanner vehicle={dt.vehicles} ticket={dt} />}
+
       <TicketPanel
         // Without the join: TicketPanel is a Client Component, and the
         // joined vehicle row carries purchase_price — serialized props
@@ -80,9 +127,14 @@ export default async function TicketDetailPage({
         canReview={!!canReview}
         canExecute={!!canExecute}
         canSeeCost={canSeeCost(profile)}
+        isConsignment={isConsignment}
         investorNames={investorNames}
         contractSerial={(contract as Contract | null)?.serial ?? null}
       />
+
+      {/* 0032, insertion point 2 of 2. Renders nothing when the ticket
+          carries no allowance, which is almost every ticket. */}
+      <TradeInCard ticket={dt} createdVehicle={tradeInVehicle} />
 
       <EtaInvoicePanel contract={(contract as Contract | null) ?? null} canEdit={!!profile && ["ceo", "accountant"].includes(profile.role)} ticketId={ticketId} />
     </div>

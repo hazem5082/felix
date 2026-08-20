@@ -127,6 +127,15 @@ export function InventoryBrowser({
     setQ("");
   }
 
+  // How the showroom came to have a car (0032). Null for a purchase:
+  // that is the ordinary case and labelling it would put a chip on every
+  // tile, which is the same as putting one on none.
+  function acquisitionLabel(v: Vehicle): string | null {
+    if (v.acquisition_type === "consignment") return t("acquisitionConsignment");
+    if (v.acquisition_type === "trade_in") return t("acquisitionTradeIn");
+    return null;
+  }
+
   function statusLabel(s: StatusFilter) {
     if (s === "all") return misc("filterAll");
     if (s === "sold") return t("statusSold");
@@ -254,6 +263,7 @@ export function InventoryBrowser({
                     ? t("statusReserved")
                     : t("statusInStock")
               }
+              acquisitionText={acquisitionLabel(v)}
               colorText={colorLabel(colors, v.color)}
               showCost={showCost}
             />
@@ -282,9 +292,32 @@ export function InventoryBrowser({
                     </Link>
                   </div>
                 </Td>
-                <Td>{v.model}</Td>
+                <Td>
+                  <div className="flex items-center gap-1.5">
+                    {v.model}
+                    {/* 0032: the chip the grid shows in the corner of the
+                        tile, inline here beside the model. */}
+                    {acquisitionLabel(v) && (
+                      <StatusPill
+                        label={acquisitionLabel(v) as string}
+                        tone={v.acquisition_type === "consignment" ? "amber" : "blue"}
+                      />
+                    )}
+                  </div>
+                </Td>
                 <Td className="text-[var(--color-text-muted)]">{v.trim || "—"}</Td>
-                {showCost && <Td className="num">{formatMoney(v.purchase_price, locale)}</Td>}
+                {showCost && (
+                  <Td className="num">
+                    {v.acquisition_type === "consignment" ? (
+                      // No capital was deployed, so there is no cost to
+                      // read. A confident 0 in a money column is worse
+                      // than an em dash.
+                      <span className="text-[var(--color-text-faint)]">—</span>
+                    ) : (
+                      formatMoney(v.purchase_price, locale)
+                    )}
+                  </Td>
+                )}
                 <Td className="num">
                   {v.asking_price != null ? (
                     formatMoney(v.asking_price, locale)
@@ -321,18 +354,24 @@ export function InventoryBrowser({
 function VehicleCard({
   v,
   statusText,
+  acquisitionText,
   colorText,
   showCost,
 }: {
   v: Vehicle;
   statusText: string;
+  /** "Consignment" / "Trade-in" (0032), or null for an ordinary purchase. */
+  acquisitionText: string | null;
   colorText: string | null;
   showCost: boolean;
 }) {
   const locale = useLocale();
   const swatch = v.color ? colorSwatch(v.color) : undefined;
   // Management reads the cost off the card; everyone else the sticker.
-  const cardPrice = showCost ? v.purchase_price : v.asking_price;
+  // A consigned car cost nothing — showing a confident 0 where a price
+  // belongs reads as a data error, so the sticker stands in (0032).
+  const cardPrice =
+    showCost && v.acquisition_type !== "consignment" ? v.purchase_price : v.asking_price;
 
   return (
     <Link
@@ -349,6 +388,19 @@ function VehicleCard({
       <span className="absolute start-2 top-2 z-10">
         <StatusPill label={statusText} tone={vehicleStatusTone(v.status)} />
       </span>
+
+      {/* And, when it is not an ordinary purchase, how it got here
+          (0032). Opposite corner from the status pill so the two never
+          fight for the same space, and absent for a purchase — which is
+          almost every car, and does not need saying. */}
+      {acquisitionText && (
+        <span className="absolute end-2 top-2 z-10">
+          <StatusPill
+            label={acquisitionText}
+            tone={v.acquisition_type === "consignment" ? "amber" : "blue"}
+          />
+        </span>
+      )}
 
       {/* Minimal details, revealed on hover/focus. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-black/92 via-black/70 to-transparent p-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">

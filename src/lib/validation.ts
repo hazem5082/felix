@@ -146,22 +146,36 @@ export const CreateVehicleSchema = z.object({
   // stock is taken in before the class is registered on the portal, and
   // the RPC collapses "" to NULL.
   item_code: z.string().trim().max(60),
-  purchase_price: positiveMoney,
+  // How the showroom came to have this car (migration 0032). 'trade_in'
+  // is absent on purpose and the RPC refuses it too: such a row is born
+  // only inside execute_vehicle_sale(), against a ticket that carries
+  // the allowance it was valued at.
+  acquisition_type: z.enum(["purchase", "consignment"]).default("purchase"),
+  consignor_name: z.string().trim().max(120),
+  consignor_phone: z.union([phone, z.literal("")]).transform((v) => v || ""),
+  consignor_national_id: z.union([nationalId, z.literal("")]).transform((v) => v || ""),
+  consignment_commission_type: z.union([z.enum(["fixed", "percent"]), z.literal("")]),
+  // `money`, not `positiveMoney`: the DB CHECK and the intake RPC both
+  // accept zero, and a favour done for a friend's car is a real thing a
+  // showroom does. It still has to be TYPED — see the refinement.
+  consignment_commission_value: money.nullable(),
+  // Zero is legal here ONLY for a consignment — the refinement below
+  // pairs the two, mirroring vehicles_purchase_price_check from 0032.
+  purchase_price: money,
   // The sticker price and the negotiation floor (0028). Both nullable —
   // stock is often taken in before management prices it. Written by a
   // follow-up UPDATE under the column-limited grant, not by the RPC.
   asking_price: positiveMoney.nullable(),
   min_price: positiveMoney.nullable(),
   photos: z.array(z.url().max(2048)).max(24),
+  // The cap table. `min(1)` and the sum-to-100 rule moved OUT of the
+  // array and onto the object below when 0032 arrived: a consigned car
+  // has no cap table at all, so the array is legitimately empty there,
+  // and an array-level `min(1)` would make the mode unreachable. Both
+  // rules still hold in full for a purchase — see the refinements.
   splits: z
     .array(EquitySplitSchema)
-    .min(1)
     .max(20)
-    // The DB trigger only rejects >100. Requiring exactly 100 here is what
-    // stops profit being silently stranded at sale time.
-    .refine((rows) => Math.abs(rows.reduce((s, r) => s + r.percentage, 0) - 100) < 0.01, {
-      message: "Equity splits must sum to exactly 100%",
-    })
     .refine(
       (rows) => {
         const investors = rows.filter((r) => r.holder_type === "investor").map((r) => r.holder_id);
@@ -172,7 +186,62 @@ export const CreateVehicleSchema = z.object({
 }).refine((v) => v.asking_price === null || v.min_price === null || v.min_price <= v.asking_price, {
   message: "The lowest offer cannot exceed the sticker price",
   path: ["min_price"],
-});
+})
+  // A purchase must still name at least one holder, and the DB trigger
+  // only rejects >100 — requiring exactly 100 here is what stops profit
+  // being silently stranded at sale time.
+  .refine((v) => v.acquisition_type !== "purchase" || v.splits.length >= 1, {
+    message: "A purchased vehicle needs an equity split",
+    path: ["splits"],
+  })
+  .refine(
+    (v) =>
+      v.acquisition_type !== "purchase" ||
+      Math.abs(v.splits.reduce((s, r) => s + r.percentage, 0) - 100) < 0.01,
+    { message: "Equity splits must sum to exactly 100%", path: ["splits"] }
+  )
+  // The mirror of vehicles_purchase_price_check (0032): a purchase costs
+  // something, a consignment costs exactly nothing.
+  .refine((v) => v.acquisition_type !== "purchase" || v.purchase_price > 0, {
+    message: "Amount must be greater than zero",
+    path: ["purchase_price"],
+  })
+  .refine((v) => v.acquisition_type !== "consignment" || v.purchase_price === 0, {
+    message: "A consigned vehicle deploys no capital — its cost is zero",
+    path: ["purchase_price"],
+  })
+  // Refused rather than dropped: silently discarding an investor's stake
+  // is how somebody discovers months later that they were never on it.
+  // The RPC raises on the same input.
+  .refine((v) => v.acquisition_type !== "consignment" || v.splits.length === 0, {
+    message: "A consigned vehicle has no equity splits — the showroom does not own it",
+    path: ["splits"],
+  })
+  // The commission terms are the entire commercial content of a
+  // consignment: without them execute_vehicle_sale() has nothing to pay
+  // the house and nothing to owe the consignor.
+  .refine((v) => v.acquisition_type !== "consignment" || v.consignor_name.length > 0, {
+    message: "A consignment needs the consignor's name",
+    path: ["consignor_name"],
+  })
+  .refine((v) => v.acquisition_type !== "consignment" || v.consignment_commission_type !== "", {
+    message: "A consignment needs a commission type",
+    path: ["consignment_commission_type"],
+  })
+  .refine(
+    (v) => v.acquisition_type !== "consignment" || v.consignment_commission_value !== null,
+    { message: "A consignment needs a commission value", path: ["consignment_commission_value"] }
+  )
+  .refine(
+    (v) =>
+      v.consignment_commission_type !== "percent" ||
+      v.consignment_commission_value === null ||
+      v.consignment_commission_value <= 100,
+    {
+      message: "A percentage commission cannot exceed 100%",
+      path: ["consignment_commission_value"],
+    }
+  );
 
 // Re-pricing an existing vehicle — the one direct write the tenant role
 // holds on vehicles (0028's column-limited grant). Mirrors the DB CHECK.
@@ -477,6 +546,29 @@ export const CreateDealTicketSchema = z
     settlement_method: z.enum(["bank_transfer", "cheque", "instapay", "cash"]).nullable(),
     settlement_reference: optionalText(120),
     settlement_bank: optionalText(120),
+    // The trade-in leg (0032) — تبديل. All optional: most tickets have
+    // none. execute_vehicle_sale() turns these into a `vehicles` row at
+    // the moment the sale settles, so what is typed here becomes stock.
+    //
+    // The VIN is deliberately NOT VinSchema. A car being handed over at
+    // the counter frequently has a plate and a chassis number and no
+    // legible VIN, and a ticket that cannot be raised is a sale that
+    // does not happen; execute_vehicle_sale() drops a colliding or
+    // absent VIN into the description rather than refusing the sale.
+    trade_in_make: optionalText(60),
+    trade_in_model: optionalText(60),
+    trade_in_year: z
+      .number()
+      .int()
+      .min(1950)
+      .max(new Date().getFullYear() + 2)
+      .nullable(),
+    trade_in_color: optionalText(40),
+    trade_in_vin: optionalText(64),
+    trade_in_odometer_km: money.nullable(),
+    trade_in_allowance: positiveMoney.nullable(),
+    trade_in_notes: optionalText(1000),
+    trade_in_photos: z.array(z.url().max(2048)).max(24),
   })
   .refine((t) => t.financing_type === "cash" || t.financing_partner_id !== null, {
     message: "Installment deals require a financing partner",
@@ -489,6 +581,22 @@ export const CreateDealTicketSchema = z
   .refine((t) => t.down_payment === null || t.down_payment <= t.agreed_price, {
     message: "Down payment cannot exceed the agreed price",
     path: ["down_payment"],
+  })
+  // An appraisal with no car attached is a discount wearing a different
+  // name: it would leave the ledger holding a vehicle row nobody can
+  // identify and a cost basis nobody can defend. The make and the model
+  // are the minimum — everything else about a trade-in is genuinely
+  // optional at the counter, and the SQL fills the gaps.
+  .refine(
+    (t) => t.trade_in_allowance === null || (!!t.trade_in_make && !!t.trade_in_model),
+    { message: "Describe the trade-in car before allowing anything against it", path: ["trade_in_make"] }
+  )
+  // The allowance is part of the settlement, not a second discount, so
+  // together they cannot exceed what the buyer agreed to pay. Beyond
+  // that the showroom would be handing over money to sell a car.
+  .refine((t) => (t.trade_in_allowance ?? 0) + t.discount_amount <= t.agreed_price, {
+    message: "The discount and the trade-in allowance together exceed the agreed price",
+    path: ["trade_in_allowance"],
   });
 
 export const ChecklistSchema = z
@@ -504,6 +612,28 @@ export const RejectTicketSchema = z.object({
   // A rejection is a permanent record on the ticket's audit trail — make the
   // reviewer actually say something.
   reason: text(1000),
+});
+
+/**
+ * Settling what the showroom owes the owner of a consigned car
+ * (migration 0032).
+ *
+ * The only edit consignment_payouts ever takes. The amounts are set by
+ * execute_vehicle_sale() from a price a manager already approved and are
+ * deliberately absent here — an accountant marks a debt paid, they do
+ * not re-price it.
+ *
+ * The channel is required rather than optional, which the settlement
+ * fields on a deal ticket (0023) are not, and the asymmetry is the
+ * point: a ticket is often raised before the money moves, whereas this
+ * form is only ever opened at the moment it has. "Paid, somehow" is not
+ * a record anybody can reconcile against a bank statement.
+ */
+export const MarkPayoutPaidSchema = z.object({
+  payout_id: Uuid,
+  settlement_method: z.enum(["bank_transfer", "cheque", "instapay", "cash"]),
+  settlement_reference: optionalText(120),
+  note: optionalText(500),
 });
 
 /**

@@ -47,6 +47,15 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   const [origin, setOrigin] = useState("");
   const [features, setFeatures] = useState<string[]>([]);
   const [itemCode, setItemCode] = useState("");
+  // How the showroom is taking this car in (0032). 'trade_in' is
+  // deliberately not on offer — those rows are minted inside
+  // execute_vehicle_sale() against the ticket that valued them.
+  const [mode, setMode] = useState<"purchase" | "consignment">("purchase");
+  const [consignorName, setConsignorName] = useState("");
+  const [consignorPhone, setConsignorPhone] = useState("");
+  const [consignorNationalId, setConsignorNationalId] = useState("");
+  const [commissionType, setCommissionType] = useState<"" | "fixed" | "percent">("percent");
+  const [commissionValue, setCommissionValue] = useState("");
   const [price, setPrice] = useState("");
   const [askingPrice, setAskingPrice] = useState("");
   const [minPrice, setMinPrice] = useState("");
@@ -109,6 +118,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   }, [make, year]);
 
   const totalPct = splits.reduce((s, r) => s + (parseFloat(r.percentage) || 0), 0);
+  const isConsignment = mode === "consignment";
 
   // Standard VIN alphabet: 17 chars, uppercase alphanumerics excluding
   // I/O/Q. Blank stays fine — used stock sometimes has no readable VIN.
@@ -166,7 +176,19 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
 
   function submit() {
     setError(null);
-    if (Math.abs(totalPct - 100) > 0.5) {
+    // A consigned car has no cap table to sum — the showroom never
+    // funded it. Running this check anyway would make the mode
+    // unreachable, since the splits editor is not even rendered.
+    if (isConsignment) {
+      if (!consignorName.trim()) {
+        setError(t("consignorNameRequired"));
+        return;
+      }
+      if (!commissionType || !commissionValue.trim()) {
+        setError(t("commissionRequired"));
+        return;
+      }
+    } else if (Math.abs(totalPct - 100) > 0.5) {
       setError(t("splitMustSum"));
       return;
     }
@@ -193,16 +215,27 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         country_of_origin: origin,
         features,
         item_code: itemCode,
-        purchase_price: parseFloat(price),
+        acquisition_type: mode,
+        consignor_name: isConsignment ? consignorName : "",
+        consignor_phone: isConsignment ? consignorPhone : "",
+        consignor_national_id: isConsignment ? consignorNationalId : "",
+        consignment_commission_type: isConsignment ? commissionType : "",
+        consignment_commission_value:
+          isConsignment && commissionValue.trim() ? parseFloat(commissionValue) : null,
+        // A consigned car deploys no capital, so its cost basis is
+        // exactly zero — the DB CHECK and the RPC both insist on it.
+        purchase_price: isConsignment ? 0 : parseFloat(price),
         asking_price: askingPrice.trim() ? parseFloat(askingPrice) : null,
         min_price: minPrice.trim() ? parseFloat(minPrice) : null,
         photos,
-        splits: splits.map((s) => ({
-          holder_type: s.holder_type,
-          holder_id: s.holder_type === "ceo" ? null : s.holder_id,
-          amount_invested: (parseFloat(price || "0") * (parseFloat(s.percentage) || 0)) / 100,
-          percentage: parseFloat(s.percentage) || 0,
-        })),
+        splits: isConsignment
+          ? []
+          : splits.map((s) => ({
+              holder_type: s.holder_type,
+              holder_id: s.holder_type === "ceo" ? null : s.holder_id,
+              amount_invested: (parseFloat(price || "0") * (parseFloat(s.percentage) || 0)) / 100,
+              percentage: parseFloat(s.percentage) || 0,
+            })),
       });
       if ("error" in res) {
         setError(res.error);
@@ -222,6 +255,25 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
       </DialogTrigger>
       {open && (
         <DialogContent title={t("addVehicle")} className="max-w-2xl">
+          {/* How the car is being taken in (0032). It sits above every
+              other field because it decides which of them apply: a
+              consignment has a consignor and a commission and no cost
+              and no cap table, and asking for all four anyway is how a
+              form teaches people to type zeros into things. */}
+          <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-black/[0.02] p-3">
+            <Label>{t("acquisitionType")}</Label>
+            <Select
+              value={mode}
+              onChange={(e) => setMode(e.target.value as "purchase" | "consignment")}
+            >
+              <option value="purchase">{t("acquisitionPurchase")}</option>
+              <option value="consignment">{t("acquisitionConsignment")}</option>
+            </Select>
+            <p className="mt-1 text-[11px] text-[var(--color-text-faint)]">
+              {isConsignment ? t("consignmentHint") : t("purchaseHint")}
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>{t("branch")}</Label>
@@ -339,10 +391,15 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               />
               <p className="mt-1 text-[11px] text-[var(--color-text-faint)]">{t("itemCodeHint")}</p>
             </div>
-            <div>
-              <Label>{t("purchasePrice")}</Label>
-              <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
-            </div>
+            {/* Cost is management's number for a car the showroom
+                bought. A consigned car has none — it deploys no capital
+                — so the field is absent rather than zeroed. */}
+            {!isConsignment && (
+              <div>
+                <Label>{t("purchasePrice")}</Label>
+                <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+              </div>
+            )}
             {/* The sales floor's numbers (0028). Optional — a car can be
                 taken in first and priced from its page later. */}
             <div>
@@ -354,6 +411,73 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               <Input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
             </div>
           </div>
+
+          {/* The consignor and the terms (0032). These ARE the deal:
+              without them execute_vehicle_sale() has nothing to pay the
+              house and nothing to owe the owner, which is why the RPC
+              and the zod schema both refuse a consignment without
+              them. */}
+          {isConsignment && (
+            <div className="mt-4 rounded-lg border border-[var(--color-accent-amber)]/40 bg-[var(--color-accent-amber)]/[0.06] p-3">
+              <Label className="mb-2">{t("consignorSection")}</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>{t("consignorName")}</Label>
+                  <Input
+                    value={consignorName}
+                    onChange={(e) => setConsignorName(e.target.value)}
+                    maxLength={120}
+                  />
+                </div>
+                <div>
+                  <Label>{t("consignorPhone")}</Label>
+                  <Input
+                    value={consignorPhone}
+                    onChange={(e) => setConsignorPhone(e.target.value)}
+                    placeholder={common("optional")}
+                    maxLength={32}
+                  />
+                </div>
+                <div>
+                  <Label>{t("consignorNationalId")}</Label>
+                  {/* dir=ltr like every other digit-string identifier on
+                      this form: a national ID is read off a card. */}
+                  <Input
+                    value={consignorNationalId}
+                    onChange={(e) => setConsignorNationalId(e.target.value)}
+                    placeholder={common("optional")}
+                    maxLength={14}
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <Label>{t("commissionType")}</Label>
+                  <Select
+                    value={commissionType}
+                    onChange={(e) => setCommissionType(e.target.value as typeof commissionType)}
+                  >
+                    <option value="percent">{t("commissionPercent")}</option>
+                    <option value="fixed">{t("commissionFixed")}</option>
+                  </Select>
+                </div>
+                <div>
+                  <Label>
+                    {commissionType === "percent" ? t("commissionValuePercent") : t("commissionValueFixed")}
+                  </Label>
+                  <Input
+                    type="number"
+                    value={commissionValue}
+                    onChange={(e) => setCommissionValue(e.target.value)}
+                    min={0}
+                    max={commissionType === "percent" ? 100 : undefined}
+                  />
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-[var(--color-text-muted)]">
+                {t("commissionHint")}
+              </p>
+            </div>
+          )}
 
           <div className="mt-4">
             <Label>{t("description")}</Label>
@@ -480,6 +604,12 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
             )}
           </div>
 
+          {/* HIDDEN ENTIRELY for a consignment, not disabled: the
+              showroom does not own this car, so there is no cap table to
+              edit and a greyed-out one would suggest there could be.
+              trg_no_splits_on_consignment (0032) refuses the write
+              besides. */}
+          {!isConsignment && (
           <div className="mt-5 border-t border-[var(--color-border)] pt-4">
             <div className="mb-2 flex items-center justify-between">
               <Label className="mb-0">{t("equitySplit")}</Label>
@@ -540,6 +670,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               <Plus size={12} /> {t("addInvestorRow")}
             </Button>
           </div>
+          )}
 
           {error && (
             <p className="mt-3 rounded-lg bg-[var(--color-accent-red-dim)] px-3 py-2 text-xs text-[var(--color-accent-red)]">
@@ -549,7 +680,16 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
 
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setOpen(false)}>{common("cancel")}</Button>
-            <Button variant="accent" onClick={submit} disabled={pending || !make || !model || !price}>
+            {/* A consignment has no cost to type, so the price cannot be
+                what gates the button; the consignor's name is the field
+                without which the row means nothing. */}
+            <Button
+              variant="accent"
+              onClick={submit}
+              disabled={
+                pending || !make || !model || (isConsignment ? !consignorName.trim() : !price)
+              }
+            >
               {common("save")}
             </Button>
           </div>

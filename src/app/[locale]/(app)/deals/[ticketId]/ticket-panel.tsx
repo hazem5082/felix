@@ -16,6 +16,7 @@ export function TicketPanel({
   canReview,
   canExecute,
   canSeeCost,
+  isConsignment,
   investorNames,
   contractSerial,
 }: {
@@ -28,6 +29,16 @@ export function TicketPanel({
    * also refused server-side, this only spares the panel and the call.
    */
   canSeeCost: boolean;
+  /**
+   * Whether the car being sold is somebody else's (migration 0032).
+   *
+   * A consigned vehicle has no cap table, so compute_sale_waterfall()
+   * does not apply to it — the preview RPC would divide a consignor's
+   * money among the house and its investors. The waterfall block is
+   * suppressed and the fetch is not made; the page renders
+   * <ConsignmentBanner> above this panel instead.
+   */
+  isConsignment: boolean;
   investorNames: Record<string, string>;
   contractSerial: string | null;
 }) {
@@ -48,7 +59,11 @@ export function TicketPanel({
   });
 
   useEffect(() => {
-    if (!canSeeCost) return;
+    // 0032: a consigned car has no cap table, so the preview RPC has
+    // nothing to divide. Skipping the call rather than discarding its
+    // answer — a waterfall over an empty splits array reads as a total
+    // loss of the sale price, which is the opposite of the truth.
+    if (!canSeeCost || isConsignment) return;
     // Guard against an out-of-order response overwriting a newer one.
     let active = true;
     fetchWaterfallPreview(ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount).then(
@@ -59,7 +74,7 @@ export function TicketPanel({
     return () => {
       active = false;
     };
-  }, [canSeeCost, ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount]);
+  }, [canSeeCost, isConsignment, ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount]);
 
   function toggleCheck(key: keyof typeof checklist) {
     const previous = checklist;
@@ -222,7 +237,7 @@ export function TicketPanel({
           is the whole of its footprint here. */}
       <InstallmentsPanel ticket={ticket} />
 
-      {canSeeCost && (
+      {canSeeCost && !isConsignment && (
         <Panel className="md:col-span-2">
           <PanelHeader title={t("waterfall")} />
           {preview ? (
