@@ -228,13 +228,18 @@ export function DealTicketFormDialog({
                 <div>
                   <Label>{t("financingPartner")}</Label>
                   <Select value={partnerId} onChange={(e) => setPartnerId(e.target.value)}>
-                    <option value="">—</option>
+                    <option value="">{t("inHouseInstallments")}</option>
                     {partners.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.bank_name} — {p.product_name} {p.rate ? `(${p.rate}%)` : ""}
                       </option>
                     ))}
                   </Select>
+                  {!partnerId && (
+                    <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                      {t("inHouseInstallmentsHint")}
+                    </p>
+                  )}
                   {!partners.length && (
                     <p className="mt-1 text-xs text-[var(--color-accent-amber)]">
                       {common("noActivePartners")}

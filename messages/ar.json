@@ -540,6 +540,8 @@
     "cash": "نقدًا",
     "installments": "تقسيط",
     "financingPartner": "جهة التمويل",
+    "inHouseInstallments": "تقسيط مباشر — على دفتر المعرض",
+    "inHouseInstallmentsHint": "بدون بنك. المعرض يموّل هذه الصفقة بنفسه؛ بعد التنفيذ تُدار خطة السداد والشيكات من صفحة الصفقة.",
     "downPayment": "الدفعة المقدمة",
     "discount": "الخصم",
     "vatRate": "نسبة ضريبة القيمة المضافة (%)",

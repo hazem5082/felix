@@ -412,6 +412,8 @@
     "cash": "Cash",
     "installments": "Installments",
     "financingPartner": "Financing Partner",
+    "inHouseInstallments": "In-house — the showroom's own book",
+    "inHouseInstallmentsHint": "No bank. The showroom finances this sale itself; after execution, the payment plan and cheques are managed on the ticket.",
     "downPayment": "Down Payment",
     "discount": "Discount",
     "vatRate": "VAT Rate (%)",

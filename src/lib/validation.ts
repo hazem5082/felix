@@ -570,10 +570,11 @@ export const CreateDealTicketSchema = z
     trade_in_notes: optionalText(1000),
     trade_in_photos: z.array(z.url().max(2048)).max(24),
   })
-  .refine((t) => t.financing_type === "cash" || t.financing_partner_id !== null, {
-    message: "Installment deals require a financing partner",
-    path: ["financing_partner_id"],
-  })
+  // No partner requirement on installments any more (0033): an
+  // installments ticket WITHOUT a partner is the showroom lending its
+  // own money — تقسيط مباشر — and the DB gate that used to refuse it
+  // (enforce_financing_partner_active) was widened the same way. A
+  // NAMED partner must still be active; that check stays in the DB.
   .refine((t) => t.discount_amount <= t.agreed_price, {
     message: "Discount cannot exceed the agreed price",
     path: ["discount_amount"],
