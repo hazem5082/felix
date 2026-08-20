@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireActiveTenant, FINANCE_ROLES } from "@/lib/auth";
 import { getTenant } from "@/lib/tenant";
 import { resolveWindow, isReportKind, parseOffset } from "@/lib/report-window";
+import { formatMoney } from "@/lib/currency";
 import type {
   Branch,
   DealTicket,
@@ -27,6 +28,9 @@ import { DocFooter, DocHeader } from "../../doc-chrome";
  *   investors  — capital deployed, wallet balances, distributions.
  *   expenses   — vehicle expenses, by category and by branch.
  *   salaries   — salary + commission payouts, by person.
+ *   vat        — VAT Return Prep (Form 10): output tax on executed
+ *                sales, input tax on vehicle expenses, net position.
+ *                A worksheet for the accountant, not the filed return.
  *
  * Finance roles only; every row arrives through the viewer's own RLS
  * session. Rendered as branded print pages — the browser's print-to-PDF
@@ -59,8 +63,7 @@ export default async function ReportPage({
   const { from, to } = resolveWindow(sp.from, sp.to, new Date(), offset);
   const toInclusive = new Date(to.getTime() - 1);
 
-  const money = (n: number) =>
-    fmt.number(n, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+  const money = (n: number) => formatMoney(n, locale);
   // Dates are shown in the same zone the window was cut in, so a row's
   // printed date can never contradict the range printed above it.
   const day = (d: Date | string) => {
@@ -160,7 +163,7 @@ export default async function ReportPage({
           <table className="mt-2 w-full border-collapse">
             <thead>
               <tr className="border-b-2 border-black">
-                {[t("date"), t("vehicle"), t("branch"), t("payment"), t("finalPrice")].map((h) => (
+                {[t("date"), t("vehicle"), t("branch"), t("payment"), t("settlement"), t("finalPrice")].map((h) => (
                   <th key={h} className={th}>{h}</th>
                 ))}
               </tr>
@@ -174,13 +177,16 @@ export default async function ReportPage({
                   </td>
                   <td className={td}>{branches.find((b) => b.id === d.branch_id)?.name ?? "—"}</td>
                   <td className={td}>{d.financing_type === "cash" ? t("cash") : t("installments")}</td>
+                  <td className={td}>
+                    {d.settlement_method ? t(`settlement_${d.settlement_method}`) : "—"}
+                  </td>
                   <td className={`${td} font-semibold`}>
                     {money(Number(d.agreed_price) - Number(d.discount_amount))}
                   </td>
                 </tr>
               ))}
               {!executed.length && (
-                <tr><td colSpan={5} className="py-3 text-center text-black/50">{t("noSales")}</td></tr>
+                <tr><td colSpan={6} className="py-3 text-center text-black/50">{t("noSales")}</td></tr>
               )}
             </tbody>
           </table>
@@ -407,6 +413,193 @@ export default async function ReportPage({
               )}
             </tbody>
           </table>
+        </section>
+      </>,
+      t("footerInternal")
+    );
+  }
+
+  // ── vat ───────────────────────────────────────────────────
+  if (kind === "vat") {
+    const [{ data: executedRows }, { data: expenseRows }, { data: branchRows }] = await Promise.all([
+      supabase
+        .from("deal_tickets")
+        .select("*, vehicles(*)")
+        .eq("status", "executed")
+        .gte("executed_at", from.toISOString())
+        .lt("executed_at", to.toISOString())
+        .order("executed_at"),
+      supabase
+        .from("vehicle_expenses")
+        .select("*, vehicles(*)")
+        .gte("created_at", from.toISOString())
+        .lt("created_at", to.toISOString())
+        .order("created_at"),
+      supabase.from("branches").select("*").order("name"),
+    ]);
+
+    const executed = (executedRows as (DealTicket & { vehicles?: Vehicle })[]) ?? [];
+    const expenses = (expenseRows as (VehicleExpense & { vehicles?: Vehicle })[]) ?? [];
+    const branches = (branchRows as Branch[]) ?? [];
+
+    // Rows predating migration 0022 carry null VAT columns. They are
+    // shown as "—" but EXCLUDED from every total — summing unknowns as
+    // zero would print a confident, wrong return. The counts below tell
+    // the accountant exactly how incomplete the worksheet is.
+    const salesMissingVat = executed.filter((d) => d.vat_amount == null).length;
+    const outputVat = executed.reduce(
+      (s, d) => (d.vat_amount == null ? s : s + Number(d.vat_amount)),
+      0
+    );
+
+    const vatExpenses = expenses.filter((e) => e.vat_amount != null);
+    const expensesMissingVat = expenses.length - vatExpenses.length;
+    const inputVat = vatExpenses.reduce((s, e) => s + Number(e.vat_amount), 0);
+    const netVat = outputVat - inputVat;
+
+    const registered = branches.filter((b) => b.tax_registration_no);
+    const vehicleLabel = (v?: Vehicle) => (v ? `${v.year} ${v.make} ${v.model}` : "—");
+    const warn =
+      "mt-2 rounded-md border border-black/40 bg-black/5 px-3 py-1.5 text-[12px] font-semibold";
+
+    return chrome(
+      <>
+        <section className="mt-5 rounded-lg border-2 border-black p-3 text-[12px] font-semibold leading-snug">
+          {t("vatDisclaimer")}
+        </section>
+
+        <section className="mt-4 text-[12px]">
+          <span className="font-bold">{t("vatRegistration")}: </span>
+          {registered.length ? (
+            registered.map((b) => `${b.name} — ${b.tax_registration_no}`).join(" · ")
+          ) : (
+            <span className="text-black/60">{t("vatRegistrationMissing")}</span>
+          )}
+        </section>
+
+        <section className="mt-6 grid grid-cols-3 gap-4">
+          {[
+            [t("totalOutputVat"), money(outputVat)],
+            [t("totalInputVat"), money(inputVat)],
+            [t("netVat"), money(netVat)],
+          ].map(([k, v]) => (
+            <div key={k} className="rounded-lg border border-black/15 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-black/50">{k}</p>
+              <p className="mt-1 text-lg font-black">{v}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="mt-8">
+          <h2 className={sectionTitle}>{t("outputTax")}</h2>
+          <table className="mt-2 w-full border-collapse">
+            <thead>
+              <tr className="border-b-2 border-black">
+                {[
+                  t("date"), t("vehicle"), t("branch"), t("finalPrice"),
+                  t("vatRate"), t("vatAmount"), t("priceIncludesVat"), t("settlement"),
+                ].map((h) => (
+                  <th key={h} className={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {executed.map((d) => (
+                <tr key={d.id} className="border-b border-black/10">
+                  <td className={td}>{d.executed_at ? day(d.executed_at) : "—"}</td>
+                  <td className={td}>{vehicleLabel(d.vehicles)}</td>
+                  <td className={td}>{branches.find((b) => b.id === d.branch_id)?.name ?? "—"}</td>
+                  <td className={td}>{money(Number(d.agreed_price) - Number(d.discount_amount))}</td>
+                  <td className={td}>{d.vat_rate == null ? "—" : `${Number(d.vat_rate)}%`}</td>
+                  <td className={`${td} font-semibold`}>
+                    {d.vat_amount == null ? "—" : money(Number(d.vat_amount))}
+                  </td>
+                  <td className={td}>
+                    {d.price_includes_vat == null
+                      ? "—"
+                      : d.price_includes_vat
+                        ? t("vatInclusive")
+                        : t("vatExclusive")}
+                  </td>
+                  <td className={td}>
+                    {d.settlement_method ? t(`settlement_${d.settlement_method}`) : "—"}
+                  </td>
+                </tr>
+              ))}
+              {!executed.length && (
+                <tr><td colSpan={8} className="py-3 text-center text-black/50">{t("noSales")}</td></tr>
+              )}
+              <tr>
+                <td colSpan={5} className="py-2 font-bold">{t("totalOutputVat")}</td>
+                <td colSpan={3} className="py-2 text-base font-black">{money(outputVat)}</td>
+              </tr>
+            </tbody>
+          </table>
+          {salesMissingVat > 0 && (
+            <p className={warn}>{t("vatSalesMissing", { count: salesMissingVat })}</p>
+          )}
+        </section>
+
+        <section className="mt-8">
+          <h2 className={sectionTitle}>{t("inputTax")}</h2>
+          <table className="mt-2 w-full border-collapse">
+            <thead>
+              <tr className="border-b-2 border-black">
+                {[
+                  t("date"), t("vehicle"), t("category"), t("supplierTaxId"),
+                  t("supplierInvoiceNo"), t("amount"), t("vatAmount"),
+                ].map((h) => (
+                  <th key={h} className={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {vatExpenses.map((e) => (
+                <tr key={e.id} className="border-b border-black/10">
+                  <td className={td}>{day(e.created_at)}</td>
+                  <td className={td}>{vehicleLabel(e.vehicles)}</td>
+                  <td className={td}>{e.category}</td>
+                  <td className={td}>{e.supplier_tax_id ?? "—"}</td>
+                  <td className={td}>{e.supplier_invoice_no ?? "—"}</td>
+                  <td className={td}>{money(Number(e.amount))}</td>
+                  <td className={`${td} font-semibold`}>{money(Number(e.vat_amount))}</td>
+                </tr>
+              ))}
+              {!vatExpenses.length && (
+                <tr><td colSpan={7} className="py-3 text-center text-black/50">{t("noVatExpenses")}</td></tr>
+              )}
+              <tr>
+                <td colSpan={6} className="py-2 font-bold">{t("totalInputVat")}</td>
+                <td className="py-2 text-base font-black">{money(inputVat)}</td>
+              </tr>
+            </tbody>
+          </table>
+          {expensesMissingVat > 0 && (
+            <p className={warn}>{t("vatExpensesMissing", { count: expensesMissingVat })}</p>
+          )}
+        </section>
+
+        <section className="mt-8">
+          <h2 className={sectionTitle}>{t("netVat")}</h2>
+          <table className="mt-2 w-full border-collapse">
+            <tbody>
+              <tr className="border-b border-black/10">
+                <td className={`${td} w-64 font-medium text-black/60`}>{t("totalOutputVat")}</td>
+                <td className={`${td} font-semibold`}>{money(outputVat)}</td>
+              </tr>
+              <tr className="border-b border-black/10">
+                <td className={`${td} w-64 font-medium text-black/60`}>{t("totalInputVat")}</td>
+                <td className={`${td} font-semibold`}>{money(inputVat)}</td>
+              </tr>
+              <tr>
+                <td className="py-2 font-bold">
+                  {netVat >= 0 ? t("netVatPayable") : t("netVatCredit")}
+                </td>
+                <td className="py-2 text-base font-black">{money(netVat)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-1 text-[11px] text-black/60">{t("netVatHint")}</p>
         </section>
       </>,
       t("footerInternal")

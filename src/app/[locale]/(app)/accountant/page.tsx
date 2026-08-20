@@ -1,5 +1,6 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
+import { formatMoney } from "@/lib/currency";
 import { getProfile, FINANCE_ROLES } from "@/lib/auth";
 import { ReportsLauncher } from "./reports-launcher";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -14,6 +15,7 @@ import { PartnerContractUpload } from "./partner-contract-upload";
 export default async function AccountantPage() {
   const t = await getTranslations("accountant");
   const tc = await getTranslations("common");
+  const locale = await getLocale();
   const supabase = await createClient();
   const profile = await getProfile();
 
@@ -85,7 +87,7 @@ export default async function AccountantPage() {
               <Tr key={r.id}>
                 <Td>{r.deal_tickets?.vehicles ? `${r.deal_tickets.vehicles.year} ${r.deal_tickets.vehicles.make} ${r.deal_tickets.vehicles.model}` : "—"}</Td>
                 <Td>{r.financing_partners?.bank_name ?? "—"}</Td>
-                <Td className="num">{r.deal_tickets?.agreed_price ? `$${r.deal_tickets.agreed_price.toLocaleString()}` : "—"}</Td>
+                <Td className="num">{r.deal_tickets?.agreed_price ? formatMoney(r.deal_tickets.agreed_price, locale) : "—"}</Td>
                 <Td>
                   {isFinance ? (
                     <RequestStatusControl requestId={r.id} status={r.status} />

@@ -85,7 +85,7 @@ export function resolveWindow(
   };
 }
 
-export const REPORT_KINDS = ["operating", "investors", "expenses", "salaries"] as const;
+export const REPORT_KINDS = ["operating", "investors", "expenses", "salaries", "vat"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
 export function isReportKind(s: string): s is ReportKind {

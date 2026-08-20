@@ -8,6 +8,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Pencil } from "lucide-react";
 import type { Lead } from "@/lib/supabase/types";
 import { NotePointsEditor } from "../note-points-editor";
+import { leadNationalIdInvalid } from "../lead-form";
 import { updateLead } from "../actions";
 
 /**
@@ -43,6 +44,10 @@ export function LeadEditFormDialog({ lead }: { lead: Lead }) {
     income: lead.income !== null ? String(lead.income) : "",
     client_notes: lead.client_notes ?? "",
     contact_time_preference: lead.contact_time_preference ?? "",
+    // Buyer identity (0020) — usually recorded here rather than at
+    // creation: the ID arrives when the person is actually buying.
+    national_id: lead.national_id ?? "",
+    nationality: lead.nationality ?? "",
   };
 
   const [form, setForm] = useState(initial);
@@ -137,6 +142,29 @@ export function LeadEditFormDialog({ lead }: { lead: Lead }) {
                 placeholder={misc("bestTimePlaceholder")}
               />
             </div>
+            <div>
+              <Label>{misc("nationalId")}</Label>
+              <Input
+                dir="ltr"
+                maxLength={14}
+                inputMode="numeric"
+                value={form.national_id}
+                onChange={(e) => set("national_id", e.target.value)}
+              />
+              {leadNationalIdInvalid(form.national_id) && (
+                <p className="mt-1 text-xs text-[var(--color-accent-red)]">
+                  {misc("nationalIdInvalid")}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label>{misc("nationality")}</Label>
+              <Input
+                value={form.nationality}
+                onChange={(e) => set("nationality", e.target.value)}
+                placeholder={misc("nationalityPlaceholder")}
+              />
+            </div>
             <div className="col-span-2">
               <Label>{misc("address")}</Label>
               <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
@@ -163,7 +191,12 @@ export function LeadEditFormDialog({ lead }: { lead: Lead }) {
             <Button
               variant="accent"
               onClick={submit}
-              disabled={pending || !form.client_name.trim() || !form.phone_number.trim()}
+              disabled={
+                pending ||
+                !form.client_name.trim() ||
+                !form.phone_number.trim() ||
+                leadNationalIdInvalid(form.national_id)
+              }
             >
               {common("save")}
             </Button>

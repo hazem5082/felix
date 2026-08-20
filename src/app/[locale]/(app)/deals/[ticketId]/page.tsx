@@ -1,5 +1,6 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
+import { formatMoney } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -7,6 +8,8 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { dealStatusTone } from "@/lib/status-tone";
 import type { DealTicket, Vehicle, Contract, VehicleEquitySplit } from "@/lib/supabase/types";
 import { TicketPanel } from "./ticket-panel";
+import { canSeeCost } from "@/lib/auth";
+import { EtaInvoicePanel } from "./eta-invoice-panel";
 
 export default async function TicketDetailPage({
   params,
@@ -16,6 +19,7 @@ export default async function TicketDetailPage({
   const { ticketId } = await params;
   const t = await getTranslations("deals");
   const common = await getTranslations("common");
+  const locale = await getLocale();
   const supabase = await createClient();
   const profile = await getProfile();
 
@@ -48,7 +52,7 @@ export default async function TicketDetailPage({
     <div className="space-y-6">
       <PanelHeader
         title={dt.vehicles ? `${dt.vehicles.year} ${dt.vehicles.make} ${dt.vehicles.model}`  : common("dealTicket")}
-        subtitle={`$${dt.agreed_price.toLocaleString()} · ${dt.financing_type === "cash" ? t("cash") : t("installments")}`}
+        subtitle={`${formatMoney(dt.agreed_price, locale)} · ${dt.financing_type === "cash" ? t("cash") : t("installments")}`}
         action={
           <StatusPill
             label={
@@ -69,12 +73,18 @@ export default async function TicketDetailPage({
       )}
 
       <TicketPanel
-        ticket={dt}
+        // Without the join: TicketPanel is a Client Component, and the
+        // joined vehicle row carries purchase_price — serialized props
+        // reach the browser whether or not they are rendered (0028).
+        ticket={{ ...dt, vehicles: undefined }}
         canReview={!!canReview}
         canExecute={!!canExecute}
+        canSeeCost={canSeeCost(profile)}
         investorNames={investorNames}
         contractSerial={(contract as Contract | null)?.serial ?? null}
       />
+
+      <EtaInvoicePanel contract={(contract as Contract | null) ?? null} canEdit={!!profile && ["ceo", "accountant"].includes(profile.role)} ticketId={ticketId} />
     </div>
   );
 }

@@ -25,6 +25,10 @@ export async function createLead(input: {
   income: string;
   client_notes: string;
   client_note_points: string[];
+  // Buyer identity (0020) — "" collapses to null in the schema, and a
+  // non-empty national ID must be the 14 digits the DB CHECK demands.
+  national_id: string;
+  nationality: string;
 }) {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
@@ -78,6 +82,8 @@ export async function updateLead(input: {
   client_notes: string;
   client_note_points: string[];
   contact_time_preference: string;
+  national_id: string;
+  nationality: string;
 }) {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
@@ -322,6 +328,12 @@ export async function createDealTicket(input: {
   financing_partner_id: string | null;
   down_payment: number | null;
   discount_amount: number;
+  vat_rate: number | null;
+  vat_amount: number | null;
+  price_includes_vat: boolean | null;
+  settlement_method: "bank_transfer" | "cheque" | "instapay" | "cash" | null;
+  settlement_reference: string | null;
+  settlement_bank: string | null;
 }) {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
@@ -362,6 +374,12 @@ export async function createDealTicket(input: {
       financing_partner_id: parsed.data.financing_partner_id,
       down_payment: parsed.data.down_payment,
       discount_amount: parsed.data.discount_amount,
+      vat_rate: parsed.data.vat_rate,
+      vat_amount: parsed.data.vat_amount,
+      price_includes_vat: parsed.data.price_includes_vat,
+      settlement_method: parsed.data.settlement_method,
+      settlement_reference: parsed.data.settlement_reference,
+      settlement_bank: parsed.data.settlement_bank,
     })
     .select("id")
     .single();
@@ -407,9 +425,11 @@ export async function fetchActiveVehicles() {
 
   const supabase = await createClient();
   // RLS already scopes this to the caller's branch (plus org-wide roles).
+  // asking_price, never purchase_price: this feeds the CRM's vehicle
+  // pickers, which the sales floor uses — cost stays off their wire (0028).
   const { data } = await supabase
     .from("vehicles")
-    .select("id, year, make, model, trim, purchase_price")
+    .select("id, year, make, model, trim, asking_price")
     .eq("status", "in_stock")
     .order("created_at", { ascending: false })
     .limit(500);

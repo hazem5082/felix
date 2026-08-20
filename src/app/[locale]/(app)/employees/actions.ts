@@ -3,9 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { authorize } from "@/lib/auth";
+import { authenticate, authorize } from "@/lib/auth";
 import { temporaryPassword } from "@/lib/passwords";
-import { CreateStaffSchema, UpdateStaffSchema, Uuid, parseInput } from "@/lib/validation";
+import {
+  CreateStaffSchema,
+  SetTargetSchema,
+  UpdateAvatarSchema,
+  UpdateStaffSchema,
+  Uuid,
+  parseInput,
+} from "@/lib/validation";
+import { isManagedUploadUrl } from "@/lib/r2";
 import { toUserError } from "@/lib/db-error";
 
 // Staff management is CEO-only end to end. Every action here re-checks
@@ -27,6 +35,13 @@ export async function createEmployee(input: {
   role: string;
   branch_id: string | null;
   phone: string;
+  // Statutory employee data for the monthly NOSI filing (0018). All
+  // optional — "" collapses to null in the schema.
+  national_id: string;
+  social_insurance_number: string;
+  hire_date: string;
+  monthly_wage: string;
+  employment_type: string;
 }): Promise<CreatedCredentials | { error: string; fieldErrors?: Record<string, string[]> }> {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
@@ -95,6 +110,26 @@ export async function createEmployee(input: {
     };
   }
 
+  // Statutory fields ride a plain UPDATE through the CEO's own session:
+  // handle_new_user() has already minted the profiles row (it fires
+  // synchronously on the auth.users insert above), and RLS plus the
+  // profiles_update_self policy scope the write to this showroom. The
+  // invite RPC is deliberately not widened — these are HR fields, not
+  // identity, and the account must not fail to exist over them. If this
+  // update trips (it should not: columns are nullable and pre-validated),
+  // the CEO still gets the one-time credentials and can fill the fields
+  // in via Edit.
+  const statutory = {
+    national_id: staff.national_id,
+    social_insurance_number: staff.social_insurance_number,
+    hire_date: staff.hire_date,
+    monthly_wage: staff.monthly_wage,
+    employment_type: staff.employment_type,
+  };
+  if (Object.values(statutory).some((v) => v !== null)) {
+    await supabase.from("profiles").update(statutory).eq("id", created.user.id);
+  }
+
   revalidatePath("/[locale]/(app)/employees", "page");
   return { email: staff.email.toLowerCase(), temporary_password: temp };
 }
@@ -142,6 +177,11 @@ export async function updateEmployee(input: {
   role: string;
   branch_id: string | null;
   phone: string;
+  national_id: string;
+  social_insurance_number: string;
+  hire_date: string;
+  monthly_wage: string;
+  employment_type: string;
 }) {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
@@ -171,6 +211,11 @@ export async function updateEmployee(input: {
       role: parsed.data.role,
       branch_id: parsed.data.branch_id,
       phone: parsed.data.phone,
+      national_id: parsed.data.national_id,
+      social_insurance_number: parsed.data.social_insurance_number,
+      hire_date: parsed.data.hire_date,
+      monthly_wage: parsed.data.monthly_wage,
+      employment_type: parsed.data.employment_type,
     })
     .eq("id", parsed.data.id)
     .select("id");
@@ -179,5 +224,77 @@ export async function updateEmployee(input: {
   if (!data?.length) return { error: "No such employee in this showroom." };
 
   revalidatePath("/[locale]/(app)/employees", "page");
+  return { ok: true };
+}
+
+/**
+ * Upsert one monthly target. Manager-or-above app-side; the database
+ * re-checks the branch scope (a manager can only target their own
+ * staff) and pins set_by to the caller — RLS is the enforcement, this
+ * guard just gives a readable refusal.
+ */
+export async function setEmployeeTarget(input: {
+  profile_id: string;
+  metric: string;
+  target_value: number;
+  period_month: string;
+}) {
+  const auth = await authorize(["ceo", "branch_manager"]);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(SetTargetSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("employee_targets").upsert(
+    {
+      profile_id: parsed.data.profile_id,
+      metric: parsed.data.metric,
+      target_value: parsed.data.target_value,
+      period_month: parsed.data.period_month,
+      set_by: auth.profile.id,
+    },
+    { onConflict: "profile_id,metric,period_month" }
+  );
+
+  if (error) return toUserError(error);
+
+  revalidatePath("/[locale]/(app)/employees/[profileId]", "page");
+  return { ok: true };
+}
+
+/**
+ * Set or clear a profile photo. Open to any signed-in member because
+ * the profiles_update_self policy is the real gate: it admits exactly
+ * the owner and the CEO, so a sales exec POSTing a colleague's id gets
+ * zero rows updated, not a new photo.
+ */
+export async function updateEmployeeAvatar(input: {
+  profile_id: string;
+  avatar_url: string;
+}) {
+  const auth = await authenticate();
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(UpdateAvatarSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  // A hand-typed URL must not stand in for an uploaded photo — the same
+  // rule the bank-contract upload enforces.
+  if (parsed.data.avatar_url && !isManagedUploadUrl(parsed.data.avatar_url, "avatars")) {
+    return { error: "The photo must be uploaded through the app." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ avatar_url: parsed.data.avatar_url })
+    .eq("id", parsed.data.profile_id)
+    .select("id");
+
+  if (error) return toUserError(error);
+  if (!data?.length) return { error: "You can only change your own photo." };
+
+  revalidatePath("/[locale]/(app)/employees/[profileId]", "page");
   return { ok: true };
 }

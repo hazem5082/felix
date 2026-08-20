@@ -51,6 +51,16 @@ const optionalMoneyString = z
 
 const percentage = z.number().finite().min(0).max(100);
 
+// Egyptian national ID: a non-empty value must be exactly the 14 digits
+// the DB CHECKs demand (profiles_national_id_check in 0018,
+// leads_national_id_check in 0020), so the user gets a readable message
+// instead of a raw constraint violation. Shared by the staff statutory
+// fields and the lead identity fields.
+const nationalId = z
+  .string()
+  .trim()
+  .regex(/^[0-9]{14}$/, { message: "National ID must be exactly 14 digits" });
+
 // Loose on purpose: this system is deployed for Arabic- and English-speaking
 // markets, so no country-specific format is assumed. We only guarantee the
 // value is dialable and bounded.
@@ -103,7 +113,44 @@ export const CreateVehicleSchema = z.object({
   // gallery: an inspection set is evidence of what the car looked like on
   // the day it was taken in, and mixing the two loses that.
   inspection_photos: z.array(z.url().max(2048)).max(100),
+  // Mechanical identifiers for the traffic-authority ownership transfer
+  // (migration 0021). Free text, blank allowed: formats vary by
+  // manufacturer/era, and used stock sometimes arrives with neither
+  // legible. The RPC collapses "" to NULL.
+  engine_number: z.string().trim().max(60),
+  plate_number: z.string().trim().max(20),
+  // CPA Decision 115/2021 windshield-sticker fields (migration 0025).
+  // Origin is free text, blank allowed — grey-import paperwork names it
+  // inconsistently, and the RPC collapses "" to NULL. Features are the
+  // structured amenities list: trimmed, de-duplicated, empties dropped
+  // (the notePoints treatment), because the last editor row legitimately
+  // sits blank waiting to be typed into.
+  country_of_origin: z.string().trim().max(60),
+  features: z
+    .array(z.string())
+    .max(50)
+    .transform((rows) => {
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const row of rows) {
+        const feature = row.trim().slice(0, 120);
+        if (!feature || seen.has(feature)) continue;
+        seen.add(feature);
+        out.push(feature);
+      }
+      return out;
+    }),
+  // ETA e-invoicing product code (migration 0026) — EGS
+  // (EG-{tax reg}-{internal code}) or GS1. Free text, blank allowed:
+  // stock is taken in before the class is registered on the portal, and
+  // the RPC collapses "" to NULL.
+  item_code: z.string().trim().max(60),
   purchase_price: positiveMoney,
+  // The sticker price and the negotiation floor (0028). Both nullable —
+  // stock is often taken in before management prices it. Written by a
+  // follow-up UPDATE under the column-limited grant, not by the RPC.
+  asking_price: positiveMoney.nullable(),
+  min_price: positiveMoney.nullable(),
   photos: z.array(z.url().max(2048)).max(24),
   splits: z
     .array(EquitySplitSchema)
@@ -121,17 +168,60 @@ export const CreateVehicleSchema = z.object({
       },
       { message: "The same investor cannot hold two splits on one vehicle" }
     ),
+}).refine((v) => v.asking_price === null || v.min_price === null || v.min_price <= v.asking_price, {
+  message: "The lowest offer cannot exceed the sticker price",
+  path: ["min_price"],
 });
 
-export const AddExpenseSchema = z.object({
+// Re-pricing an existing vehicle — the one direct write the tenant role
+// holds on vehicles (0028's column-limited grant). Mirrors the DB CHECK.
+export const SetVehiclePricesSchema = z
+  .object({
+    vehicle_id: Uuid,
+    asking_price: positiveMoney.nullable(),
+    min_price: positiveMoney.nullable(),
+  })
+  .refine((v) => v.asking_price === null || v.min_price === null || v.min_price <= v.asking_price, {
+    message: "The lowest offer cannot exceed the sticker price",
+    path: ["min_price"],
+  });
+
+// ── Channel listings (0029) ─────────────────────────────────
+
+export const LISTING_CHANNELS = ["dubizzle", "facebook", "instagram", "tiktok", "website", "other"] as const;
+export const LISTING_STATUSES = ["draft", "posted", "needs_update", "removed"] as const;
+
+export const UpsertListingSchema = z.object({
   vehicle_id: Uuid,
-  category: text(60),
-  amount: positiveMoney,
+  channel: z.enum(LISTING_CHANNELS),
+  status: z.enum(LISTING_STATUSES),
+  // "" clears the link — a draft has none yet.
+  url: z.union([z.url().max(2048), z.literal("")]).transform((v) => v || null),
   note: optionalText(500),
-  // Deliberately absent: is_ceo_override. That flag permanently locks a row
-  // from non-CEO edits, so it is derived from the caller's role on the server
-  // and never accepted from the client.
 });
+
+export const AddExpenseSchema = z
+  .object({
+    vehicle_id: Uuid,
+    category: text(60),
+    amount: positiveMoney,
+    note: optionalText(500),
+    // Input VAT (0022) — recorded when the expense carries an e-invoice,
+    // which is what makes it deductible on Form 10. All optional: plenty
+    // of forecourt expenses have no VAT invoice at all.
+    vat_amount: money.nullable(),
+    supplier_tax_id: optionalText(50),
+    supplier_invoice_no: optionalText(100),
+    // Deliberately absent: is_ceo_override. That flag permanently locks a row
+    // from non-CEO edits, so it is derived from the caller's role on the server
+    // and never accepted from the client.
+  })
+  // 14% of any base — inclusive or exclusive — is always below the gross,
+  // so VAT at or above the expense amount is a mistyped field, not a rate.
+  .refine((e) => e.vat_amount === null || e.vat_amount <= e.amount, {
+    message: "VAT cannot exceed the expense amount",
+    path: ["vat_amount"],
+  });
 
 // ── CRM ─────────────────────────────────────────────────────
 
@@ -175,6 +265,14 @@ const LeadFieldsSchema = z.object({
   income: optionalMoneyString,
   client_notes: optionalText(2000),
   client_note_points: notePoints,
+  // Buyer identity for the sale paperwork (migration 0020): the
+  // e-invoice at or above EGP 25,000, the ownership transfer and AML due
+  // diligence. Both optional — a lead is worth recording long before the
+  // ID is in hand — and deliberately absent from PublicLeadSchema below:
+  // an unauthenticated referral page must never ask strangers for their
+  // government ID. Staff record it when the person is actually buying.
+  national_id: z.union([nationalId, z.literal("")]).transform((v) => v || null),
+  nationality: optionalText(60),
 });
 
 export const CreateLeadSchema = LeadFieldsSchema;
@@ -329,6 +427,21 @@ export const CreateDealTicketSchema = z
     financing_partner_id: Uuid.nullable(),
     down_payment: money.nullable(),
     discount_amount: money,
+    // VAT on the sale (0022). The rate travels per ticket — schedule-tax
+    // vehicles differ from the 14% standard — and price_includes_vat says
+    // whether agreed_price already carries it. All nullable so a ticket
+    // can be raised before the VAT treatment is settled.
+    vat_rate: percentage.nullable(),
+    vat_amount: money.nullable(),
+    price_includes_vat: z.boolean().nullable(),
+    // Settlement channel (0023). Egyptian payment rules push car sales
+    // through bank channels; the ticket records the channel actually used
+    // plus the reference and receiving bank. All nullable — a ticket can
+    // be raised before settlement, and 'cash' is recorded rather than
+    // forbidden (legacy/edge cases are the owner's compliance call).
+    settlement_method: z.enum(["bank_transfer", "cheque", "instapay", "cash"]).nullable(),
+    settlement_reference: optionalText(120),
+    settlement_bank: optionalText(120),
   })
   .refine((t) => t.financing_type === "cash" || t.financing_partner_id !== null, {
     message: "Installment deals require a financing partner",
@@ -357,6 +470,53 @@ export const RejectTicketSchema = z.object({
   // reviewer actually say something.
   reason: text(1000),
 });
+
+/**
+ * Recording the ETA portal's identifiers on a contract (migration 0024).
+ *
+ * The eta_uuid is NOT an RFC uuid — the portal issues a 26-character
+ * base-36-looking code, and its exact shape has varied across portal
+ * versions — so it is bounded free text, not `Uuid`. Everything except
+ * the ticket id is optional: the showroom transcribes what the portal
+ * shows, which right after submission is a UUID and a 'submitted'
+ * status with no long ID yet. Requiring the full set would force
+ * inventing values. The one refinement: recording a submission with no
+ * identifier and no status at all is a no-op worth refusing.
+ */
+export const RecordEtaInvoiceSchema = z
+  .object({
+    ticketId: Uuid,
+    eta_uuid: optionalText(64),
+    eta_long_id: optionalText(100),
+    eta_submission_status: z
+      .union([z.enum(["pending", "submitted", "accepted", "rejected"]), z.literal("")])
+      .nullable()
+      .transform((v) => v || null),
+    // Off a `date` input; "" collapses to null. Bounded like `instant`
+    // so a mistyped year cannot park the submission in 1970.
+    eta_submitted_at: z
+      .string()
+      .trim()
+      .optional()
+      .nullable()
+      .transform((v) => (v ? v : null))
+      .refine((s) => s === null || !Number.isNaN(Date.parse(s)), {
+        message: "Not a valid date",
+      })
+      .transform((s) => (s === null ? null : new Date(s).toISOString()))
+      .refine(
+        (iso) => {
+          if (iso === null) return true;
+          const year = new Date(iso).getUTCFullYear();
+          return year >= 2000 && year <= 2100;
+        },
+        { message: "Date must be between 2000 and 2100" }
+      ),
+  })
+  .refine(
+    (e) => e.eta_uuid !== null || e.eta_long_id !== null || e.eta_submission_status !== null,
+    { message: "Record at least the ETA UUID, long ID or a status" }
+  );
 
 // ── Calendar ────────────────────────────────────────────────
 
@@ -500,7 +660,23 @@ export const PresignSchema = z.object({
 
 // ── Administration ──────────────────────────────────────────
 
-export const ROLES = ["ceo", "accountant", "branch_manager", "sales_exec", "investor"] as const;
+export const ROLES = ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing"] as const;
+
+// Statutory employee data for Egypt's monthly NOSI filing (migration
+// 0018). Everything optional — an account is often created before the
+// HR paperwork lands. `nationalId` lives with the primitives.
+const StaffStatutoryFields = {
+  national_id: z.union([nationalId, z.literal("")]).transform((v) => v || null),
+  social_insurance_number: optionalText(64),
+  hire_date: z.union([z.iso.date(), z.literal("")]).transform((v) => v || null),
+  // The statutory wage basis for NOSI contributions, typed into a text
+  // input — distinct from ad-hoc ledger payouts.
+  monthly_wage: optionalMoneyString,
+  employment_type: z
+    .union([z.enum(["full_time", "part_time"]), z.literal("")])
+    .nullable()
+    .transform((v) => v || null),
+} as const;
 
 export const CreateStaffSchema = z
   .object({
@@ -509,9 +685,11 @@ export const CreateStaffSchema = z
     role: z.enum(ROLES),
     branch_id: Uuid.nullable(),
     phone: z.union([phone, z.literal("")]).transform((v) => v || null),
+    ...StaffStatutoryFields,
   })
-  // A CEO and an investor are org-wide; everyone else works out of a branch.
-  .refine((s) => s.role === "ceo" || s.role === "investor" || s.branch_id !== null, {
+  // A CEO, an investor and marketing are org-wide; everyone else works
+  // out of a branch (marketing lists the whole showroom's stock — 0029).
+  .refine((s) => s.role === "ceo" || s.role === "investor" || s.role === "marketing" || s.branch_id !== null, {
     message: "Branch staff must be assigned to a branch",
     path: ["branch_id"],
   });
@@ -522,6 +700,33 @@ export const UpdateStaffSchema = z.object({
   role: z.enum(ROLES),
   branch_id: Uuid.nullable(),
   phone: z.union([phone, z.literal("")]).transform((v) => v || null),
+  ...StaffStatutoryFields,
+});
+
+// ── Employee targets & profile (0027) ───────────────────────
+
+export const TARGET_METRICS = ["calls", "new_leads", "deals_closed"] as const;
+
+export const SetTargetSchema = z.object({
+  profile_id: Uuid,
+  metric: z.enum(TARGET_METRICS),
+  // Matches the DB CHECK (target_value > 0). There is no "clear a
+  // target" path on purpose: the tenant role holds no DELETE grant, and
+  // a target that was a mistake is overwritten, audited, not erased.
+  target_value: z.number().int().min(1).max(100_000),
+  // First day of the month, matching the DB CHECK — one spelling per month.
+  period_month: z.iso.date().refine((d) => d.endsWith("-01"), {
+    message: "Target month must be the first day of the month",
+  }),
+});
+
+export const UpdateAvatarSchema = z.object({
+  profile_id: Uuid,
+  // "" clears the photo. A non-empty value is re-checked against
+  // isManagedUploadUrl in the action — the schema only bounds it.
+  avatar_url: z
+    .union([z.url().max(500), z.literal("")])
+    .transform((v) => v || null),
 });
 
 export const BranchSchema = z.object({

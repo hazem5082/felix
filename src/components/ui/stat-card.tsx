@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { animate, motion, useMotionValue } from "framer-motion";
+import { useLocale } from "next-intl";
 import { Panel } from "./panel";
 import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/currency";
 import type { SemanticTone } from "./status-pill";
 
 /**
@@ -23,12 +25,10 @@ import type { SemanticTone } from "./status-pill";
  */
 function CountUp({
   value,
-  prefix = "",
-  suffix = "",
+  format,
 }: {
   value: number;
-  prefix?: string;
-  suffix?: string;
+  format: (v: number) => string;
 }) {
   const motionValue = useMotionValue(0);
   const ref = useRef<HTMLSpanElement>(null);
@@ -36,8 +36,6 @@ function CountUp({
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
-
-    const format = (v: number) => `${prefix}${Math.round(v).toLocaleString()}${suffix}`;
 
     // Subscribe before starting the animation. The previous version started
     // it in an earlier effect and subscribed in a later one, so any frame
@@ -55,11 +53,11 @@ function CountUp({
       // Never leave a half-counted figure on screen.
       node.textContent = format(value);
     };
-  }, [value, prefix, suffix, motionValue]);
+  }, [value, format, motionValue]);
 
   return (
     <span ref={ref} className="num">
-      {`${prefix}${value.toLocaleString()}${suffix}`}
+      {format(value)}
     </span>
   );
 }
@@ -77,6 +75,7 @@ export function StatCard({
   value,
   prefix,
   suffix,
+  currency,
   tone = "neutral",
   hint,
   icon,
@@ -85,10 +84,21 @@ export function StatCard({
   value: number;
   prefix?: string;
   suffix?: string;
+  /** Render the value as money in the app currency (EGP), locale-aware. */
+  currency?: boolean;
   tone?: SemanticTone;
   hint?: string;
   icon?: React.ReactNode;
 }) {
+  const locale = useLocale();
+  // Stable identity so a parent re-render doesn't restart the count-up.
+  const format = useCallback(
+    (v: number) =>
+      currency
+        ? formatMoney(v, locale)
+        : `${prefix ?? ""}${Math.round(v).toLocaleString()}${suffix ?? ""}`,
+    [currency, locale, prefix, suffix]
+  );
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -103,7 +113,7 @@ export function StatCard({
           {icon && <span className="text-[var(--color-text-faint)] transition-colors hover:text-[var(--color-text)]">{icon}</span>}
         </div>
         <div className={cn("mt-2 text-2xl font-bold tabular-nums tracking-tight", TONE_TEXT[tone])}>
-          <CountUp value={value} prefix={prefix} suffix={suffix} />
+          <CountUp value={value} format={format} />
         </div>
         {hint && <p className="mt-1 text-xs text-[var(--color-text-faint)]">{hint}</p>}
       </Panel>

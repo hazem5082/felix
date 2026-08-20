@@ -27,6 +27,7 @@ export type DemoAccountKey =
   | "manager"
   | "accountant"
   | "sales"
+  | "marketing"
   | "investor1"
   | "investor2";
 
@@ -54,6 +55,7 @@ export const DEMO_ACCOUNTS: Record<DemoAccountKey, DemoAccount> = {
   manager: { email: "manager@filex.demo", role: "branch_manager", name: "Dana Reyes" },
   accountant: { email: "accountant@filex.demo", role: "accountant", name: "Sam Nguyen" },
   sales: { email: "sales@filex.demo", role: "sales_exec", name: "Jordan Blake" },
+  marketing: { email: "marketing@filex.demo", role: "marketing", name: "Farah Adel" },
   investor1: { email: "investor1@filex.demo", role: "investor", name: "Morgan Lee" },
   investor2: { email: "investor2@filex.demo", role: "investor", name: "Priya Shah" },
 };

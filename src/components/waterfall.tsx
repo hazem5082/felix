@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { InvestorChip } from "@/components/ui/investor-chip";
+import { formatMoney } from "@/lib/currency";
 import type { WaterfallPreview } from "@/lib/supabase/types";
 
 function Line({
@@ -18,6 +19,7 @@ function Line({
   emphasize?: boolean;
   negative?: boolean;
 }) {
+  const locale = useLocale();
   return (
     <motion.div
       initial={{ opacity: 0, x: -12 }}
@@ -39,7 +41,7 @@ function Line({
               : "text-[var(--color-text)]"
         }`}
       >
-        {negative && value !== 0 ? "−" : ""}${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        {negative && value !== 0 ? "−" : ""}{formatMoney(Math.abs(value), locale)}
       </span>
     </motion.div>
   );
@@ -53,6 +55,7 @@ export function Waterfall({
   investorNames: Record<string, string>;
 }) {
   const t = useTranslations("deals");
+  const locale = useLocale();
 
   return (
     <div>
@@ -85,7 +88,7 @@ export function Waterfall({
             <span className="num text-[var(--color-text-muted)]">
               {s.percentage}% ·{" "}
               <span className={s.share >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-accent-red)]"}>
-                ${s.share.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {formatMoney(s.share, locale)}
               </span>
             </span>
           </motion.div>

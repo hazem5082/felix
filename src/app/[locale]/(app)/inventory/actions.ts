@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authorize, assertBranch, INTAKE_ROLES, EXPENSE_ROLES } from "@/lib/auth";
-import { AddExpenseSchema, CreateVehicleSchema, parseInput } from "@/lib/validation";
+import { AddExpenseSchema, CreateVehicleSchema, SetVehiclePricesSchema, parseInput } from "@/lib/validation";
 import { toUserError } from "@/lib/db-error";
 
 export interface EquitySplitInput {
@@ -23,7 +23,14 @@ export async function createVehicle(input: {
   color: string;
   description: string;
   inspection_photos: string[];
+  engine_number: string;
+  plate_number: string;
+  country_of_origin: string;
+  features: string[];
+  item_code: string;
   purchase_price: number;
+  asking_price: number | null;
+  min_price: number | null;
   photos: string[];
   splits: EquitySplitInput[];
 }) {
@@ -55,14 +62,78 @@ export async function createVehicle(input: {
     p_color: parsed.data.color,
     p_description: parsed.data.description,
     p_inspection_photos: parsed.data.inspection_photos,
+    p_engine_number: parsed.data.engine_number,
+    p_plate_number: parsed.data.plate_number,
+    p_country_of_origin: parsed.data.country_of_origin,
+    p_features: parsed.data.features,
+    p_item_code: parsed.data.item_code,
     p_purchase_price: parsed.data.purchase_price,
     p_photos: parsed.data.photos,
     p_splits: parsed.data.splits,
   });
 
   if (error) return toUserError(error);
+
+  // The intake RPC stays at 17 arguments (0028's header): sticker/min
+  // price ride the column-limited UPDATE grant instead. Not atomic with
+  // the create, and deliberately so — the worst case is a car that
+  // exists un-priced, which is also what intake without prices produces.
+  if (parsed.data.asking_price !== null || parsed.data.min_price !== null) {
+    const { error: priceError } = await supabase
+      .from("vehicles")
+      .update({ asking_price: parsed.data.asking_price, min_price: parsed.data.min_price })
+      .eq("id", data as string);
+    if (priceError) {
+      // The car is IN — returning an error here would leave the intake
+      // dialog open and a retry would create a duplicate. The prices can
+      // be set from the vehicle page; log and move on.
+      console.error("[inventory] vehicle created but pricing failed", priceError.message);
+    }
+  }
+
   revalidatePath("/[locale]/(app)/inventory", "page");
   return { id: data as string };
+}
+
+/**
+ * Re-prices a vehicle — sticker and lowest offer. The one direct write
+ * the tenant role holds on vehicles: 0028's grant is limited to exactly
+ * these two columns, and the vehicles_update policy scopes a manager to
+ * their own branch. Cost, status and the rest remain RPC-only.
+ */
+export async function setVehiclePrices(input: {
+  vehicle_id: string;
+  asking_price: number | null;
+  min_price: number | null;
+}) {
+  const auth = await authorize(INTAKE_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(SetVehiclePricesSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+
+  const { data: vehicle } = await supabase
+    .from("vehicles")
+    .select("id, branch_id")
+    .eq("id", parsed.data.vehicle_id)
+    .maybeSingle();
+  const v = vehicle as { id: string; branch_id: string } | null;
+  if (!v) return { error: "Unknown vehicle." };
+
+  const branchError = assertBranch(auth.profile, v.branch_id);
+  if (branchError) return branchError;
+
+  const { error } = await supabase
+    .from("vehicles")
+    .update({ asking_price: parsed.data.asking_price, min_price: parsed.data.min_price })
+    .eq("id", parsed.data.vehicle_id);
+  if (error) return toUserError(error);
+
+  revalidatePath("/[locale]/(app)/inventory", "page");
+  revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
+  return { ok: true };
 }
 
 export async function addExpense(input: {
@@ -70,6 +141,9 @@ export async function addExpense(input: {
   category: string;
   amount: number;
   note: string;
+  vat_amount: number | null;
+  supplier_tax_id: string;
+  supplier_invoice_no: string;
   is_ceo_override: boolean;
 }) {
   const auth = await authorize(EXPENSE_ROLES);
@@ -108,6 +182,9 @@ export async function addExpense(input: {
     category: parsed.data.category,
     amount: parsed.data.amount,
     note: parsed.data.note,
+    vat_amount: parsed.data.vat_amount,
+    supplier_tax_id: parsed.data.supplier_tax_id,
+    supplier_invoice_no: parsed.data.supplier_invoice_no,
     created_by: auth.profile.id,
     is_ceo_override: isCeoOverride,
   });

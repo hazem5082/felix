@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
+import { formatMoney } from "@/lib/currency";
 import { Select, Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/ui/status-pill";
 import { BrandMark } from "@/components/ui/brand-mark";
@@ -34,14 +35,23 @@ const STATUS_TABS: StatusFilter[] = ["all", "in_stock", "reserved", "sold"];
 export function InventoryBrowser({
   vehicles,
   branches,
+  showCost,
 }: {
   vehicles: Vehicle[];
   branches: Branch[];
+  /**
+   * Whether the viewer may see what a car COST the showroom. Sales and
+   * marketing get the sticker price only (0028); the server page decides
+   * from the profile role, so a crafted client cannot flip it into
+   * anything the RLS-fetched rows don't already carry.
+   */
+  showCost: boolean;
 }) {
   const t = useTranslations("inventory");
   const common = useTranslations("common");
   const misc = useTranslations("misc");
   const colors = useTranslations("colors");
+  const locale = useLocale();
 
   const [view, setView] = useState<ViewMode>("grid");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -245,6 +255,7 @@ export function InventoryBrowser({
                     : t("statusInStock")
               }
               colorText={colorLabel(colors, v.color)}
+              showCost={showCost}
             />
           ))}
         </div>
@@ -255,7 +266,8 @@ export function InventoryBrowser({
             <Th>{t("make")}</Th>
             <Th>{t("model")}</Th>
             <Th>{t("trim")}</Th>
-            <Th>{t("purchasePrice")}</Th>
+            {showCost && <Th>{t("purchasePrice")}</Th>}
+            <Th>{t("stickerPrice")}</Th>
             <Th>{common("status")}</Th>
           </THead>
           <TBody>
@@ -272,7 +284,14 @@ export function InventoryBrowser({
                 </Td>
                 <Td>{v.model}</Td>
                 <Td className="text-[var(--color-text-muted)]">{v.trim || "—"}</Td>
-                <Td className="num">${v.purchase_price.toLocaleString()}</Td>
+                {showCost && <Td className="num">{formatMoney(v.purchase_price, locale)}</Td>}
+                <Td className="num">
+                  {v.asking_price != null ? (
+                    formatMoney(v.asking_price, locale)
+                  ) : (
+                    <span className="text-[var(--color-text-faint)]">{t("notPriced")}</span>
+                  )}
+                </Td>
                 <Td>
                   <StatusPill
                     label={
@@ -303,12 +322,17 @@ function VehicleCard({
   v,
   statusText,
   colorText,
+  showCost,
 }: {
   v: Vehicle;
   statusText: string;
   colorText: string | null;
+  showCost: boolean;
 }) {
+  const locale = useLocale();
   const swatch = v.color ? colorSwatch(v.color) : undefined;
+  // Management reads the cost off the card; everyone else the sticker.
+  const cardPrice = showCost ? v.purchase_price : v.asking_price;
 
   return (
     <Link
@@ -336,7 +360,7 @@ function VehicleCard({
         </div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="num text-xs text-cyan-200">
-            ${v.purchase_price.toLocaleString()}
+            {cardPrice != null ? formatMoney(cardPrice, locale) : "—"}
           </span>
           {colorText && (
             <span className="flex items-center gap-1 truncate text-[11px] text-white/70">

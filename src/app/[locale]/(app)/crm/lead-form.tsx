@@ -9,6 +9,16 @@ import { Plus } from "lucide-react";
 import { NotePointsEditor } from "./note-points-editor";
 import { createLead } from "./actions";
 
+/**
+ * Egyptian national ID: exactly 14 digits when present (mirrors the DB
+ * CHECK from migration 0020). Same shape as the employees form's helper,
+ * exported for the edit dialog on the lead page.
+ */
+export function leadNationalIdInvalid(value: string) {
+  const v = value.trim();
+  return v !== "" && !/^[0-9]{14}$/.test(v);
+}
+
 export function LeadFormDialog() {
   const t = useTranslations("crm");
   const common = useTranslations("common");
@@ -20,6 +30,9 @@ export function LeadFormDialog() {
   const [form, setForm] = useState({
     client_name: "", phone_number: "", car_interest: "", address: "",
     company_name: "", job_title: "", income: "", client_notes: "",
+    // Buyer identity (0020) — optional at creation; the ID is usually
+    // collected when the person is actually buying, not on first contact.
+    national_id: "", nationality: "",
   });
   // The bullets under the note — "needs seven seats", "bad roads, wants
   // an SUV". Held apart from `form` because it is a string[], and folding
@@ -36,7 +49,7 @@ export function LeadFormDialog() {
       const res = await createLead({ ...form, client_note_points: points });
       if ("error" in res) { setError(res.error); return; }
       setOpen(false);
-      setForm({ client_name: "", phone_number: "", car_interest: "", address: "", company_name: "", job_title: "", income: "", client_notes: "" });
+      setForm({ client_name: "", phone_number: "", car_interest: "", address: "", company_name: "", job_title: "", income: "", client_notes: "", national_id: "", nationality: "" });
       setPoints([]);
     });
   }
@@ -77,6 +90,27 @@ export function LeadFormDialog() {
               <Label>{misc("address")}</Label>
               <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
             </div>
+            <div>
+              <Label>{misc("nationalId")}</Label>
+              <Input
+                dir="ltr"
+                maxLength={14}
+                inputMode="numeric"
+                value={form.national_id}
+                onChange={(e) => set("national_id", e.target.value)}
+              />
+              {leadNationalIdInvalid(form.national_id) && (
+                <p className="mt-1 text-xs text-[var(--color-accent-red)]">{misc("nationalIdInvalid")}</p>
+              )}
+            </div>
+            <div>
+              <Label>{misc("nationality")}</Label>
+              <Input
+                value={form.nationality}
+                onChange={(e) => set("nationality", e.target.value)}
+                placeholder={misc("nationalityPlaceholder")}
+              />
+            </div>
             <div className="col-span-2">
               <Label>{notes("heading")}</Label>
               <Textarea rows={2} value={form.client_notes} placeholder={notes("headingPlaceholder")} onChange={(e) => set("client_notes", e.target.value)} />
@@ -88,7 +122,11 @@ export function LeadFormDialog() {
           {error && <p className="mt-3 text-xs text-[var(--color-accent-red)]">{error}</p>}
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setOpen(false)}>{common("cancel")}</Button>
-            <Button variant="accent" onClick={submit} disabled={pending || !form.client_name || !form.phone_number}>
+            <Button
+              variant="accent"
+              onClick={submit}
+              disabled={pending || !form.client_name || !form.phone_number || leadNationalIdInvalid(form.national_id)}
+            >
               {common("save")}
             </Button>
           </div>

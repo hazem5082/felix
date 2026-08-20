@@ -10,10 +10,29 @@ import type { Branch, Role } from "@/lib/supabase/types";
 import { createEmployee } from "./actions";
 import { CredentialsNote } from "./credentials-note";
 
-const ROLES: Role[] = ["sales_exec", "branch_manager", "accountant", "investor", "ceo"];
-const ORG_WIDE: Role[] = ["ceo", "investor"];
+const ROLES: Role[] = ["sales_exec", "marketing", "branch_manager", "accountant", "investor", "ceo"];
+const ORG_WIDE: Role[] = ["ceo", "investor", "marketing"];
 
-const EMPTY = { full_name: "", email: "", role: "sales_exec" as Role, branch_id: "", phone: "" };
+const EMPTY = {
+  full_name: "",
+  email: "",
+  role: "sales_exec" as Role,
+  branch_id: "",
+  phone: "",
+  // Statutory employee data for the monthly NOSI filing — all optional
+  // at creation time; the paperwork often arrives after the account.
+  national_id: "",
+  social_insurance_number: "",
+  hire_date: "",
+  monthly_wage: "",
+  employment_type: "",
+};
+
+/** Egyptian national ID: exactly 14 digits when present (mirrors the DB CHECK). */
+export function nationalIdInvalid(value: string) {
+  const v = value.trim();
+  return v !== "" && !/^[0-9]{14}$/.test(v);
+}
 
 export function EmployeeFormDialog({ branches }: { branches: Branch[] }) {
   const t = useTranslations("employees");
@@ -41,6 +60,11 @@ export function EmployeeFormDialog({ branches }: { branches: Branch[] }) {
         role: form.role,
         branch_id: needsBranch ? form.branch_id || null : null,
         phone: form.phone,
+        national_id: form.national_id,
+        social_insurance_number: form.social_insurance_number,
+        hire_date: form.hire_date,
+        monthly_wage: form.monthly_wage,
+        employment_type: form.employment_type,
       });
       if ("error" in res) {
         setError(res.error);
@@ -126,6 +150,62 @@ export function EmployeeFormDialog({ branches }: { branches: Branch[] }) {
                     <Input dir="ltr" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
                   </div>
                 )}
+
+                {/* Statutory data for the monthly NOSI filing — optional. */}
+                <div className="col-span-2 mt-1 text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
+                  {t("statutorySection")}
+                </div>
+                <div>
+                  <Label>{t("nationalId")}</Label>
+                  <Input
+                    dir="ltr"
+                    maxLength={14}
+                    inputMode="numeric"
+                    value={form.national_id}
+                    onChange={(e) => set("national_id", e.target.value)}
+                  />
+                  {nationalIdInvalid(form.national_id) && (
+                    <p className="mt-1 text-xs text-[var(--color-accent-red)]">{t("nationalIdInvalid")}</p>
+                  )}
+                </div>
+                <div>
+                  <Label>{t("insuranceNumber")}</Label>
+                  <Input
+                    dir="ltr"
+                    value={form.social_insurance_number}
+                    onChange={(e) => set("social_insurance_number", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>{t("hireDate")}</Label>
+                  <Input
+                    type="date"
+                    dir="ltr"
+                    value={form.hire_date}
+                    onChange={(e) => set("hire_date", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>{t("monthlyWage")}</Label>
+                  <Input
+                    type="number"
+                    dir="ltr"
+                    min={0}
+                    value={form.monthly_wage}
+                    onChange={(e) => set("monthly_wage", e.target.value)}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Label>{t("employmentType")}</Label>
+                  <Select
+                    value={form.employment_type}
+                    onChange={(e) => set("employment_type", e.target.value)}
+                  >
+                    <option value="">{t("employmentTypeUnset")}</option>
+                    <option value="full_time">{t("fullTime")}</option>
+                    <option value="part_time">{t("partTime")}</option>
+                  </Select>
+                </div>
               </div>
 
               {error && <p className="mt-3 text-xs text-[var(--color-accent-red)]">{error}</p>}
@@ -141,7 +221,8 @@ export function EmployeeFormDialog({ branches }: { branches: Branch[] }) {
                     pending ||
                     !form.full_name.trim() ||
                     !form.email.trim() ||
-                    (needsBranch && !form.branch_id)
+                    (needsBranch && !form.branch_id) ||
+                    nationalIdInvalid(form.national_id)
                   }
                 >
                   {t("createAccount")}

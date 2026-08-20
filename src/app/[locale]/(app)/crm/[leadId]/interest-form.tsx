@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatMoney } from "@/lib/currency";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
@@ -15,7 +16,7 @@ type VehicleOption = {
   make: string;
   model: string;
   trim: string | null;
-  purchase_price: number;
+  asking_price: number | null;
 };
 
 interface InterestForm {
@@ -40,8 +41,11 @@ const EMPTY: InterestForm = {
   note: "",
 };
 
-function vehicleOptionLabel(v: VehicleOption) {
-  return `${v.year} ${v.make} ${v.model} ${v.trim ?? ""} — $${v.purchase_price.toLocaleString()}`;
+function vehicleOptionLabel(v: VehicleOption, locale: string) {
+  // The sticker price, never the cost — this label renders for the
+  // sales floor (0028). A car not yet priced shows without a number.
+  const price = v.asking_price != null ? ` — ${formatMoney(v.asking_price, locale)}` : "";
+  return `${v.year} ${v.make} ${v.model} ${v.trim ?? ""}${price}`;
 }
 
 /**
@@ -70,6 +74,7 @@ function InterestFields({
 }) {
   const t = useTranslations("interest");
   const common = useTranslations("common");
+  const locale = useLocale();
 
   function set<K extends keyof InterestForm>(key: K, value: InterestForm[K]) {
     setForm({ ...form, [key]: value });
@@ -107,7 +112,7 @@ function InterestFields({
               <option value="">—</option>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
-                  {vehicleOptionLabel(v)}
+                  {vehicleOptionLabel(v, locale)}
                 </option>
               ))}
             </Select>
@@ -299,7 +304,7 @@ export function InterestEditDialog({ interest }: { interest: LeadVehicleInterest
         make: interest.vehicles.make,
         model: interest.vehicles.model,
         trim: interest.vehicles.trim,
-        purchase_price: interest.vehicles.purchase_price,
+        asking_price: interest.vehicles.asking_price,
       }
     : null;
 

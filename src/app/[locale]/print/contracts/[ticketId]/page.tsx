@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireActiveTenant } from "@/lib/auth";
 import { getTenant } from "@/lib/tenant";
+import { formatMoney } from "@/lib/currency";
 import type {
   Branch,
   Contract,
@@ -68,8 +69,7 @@ export default async function ContractPrintPage({
   const branch = branchRow as Branch | null;
 
   const executed = ticket.status === "executed";
-  const money = (n: number) =>
-    fmt.number(n, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+  const money = (n: number) => formatMoney(n, locale);
   const date = (iso: string) => fmt.dateTime(new Date(iso), { dateStyle: "long" });
 
   const finalPrice = Number(ticket.agreed_price) - Number(ticket.discount_amount);
@@ -222,6 +222,16 @@ export default async function ContractPrintPage({
           </div>
         ))}
       </section>
+
+      {/* ETA e-invoice linkage (migration 0024) — a discreet line only
+          when the showroom has recorded the portal's document UUID.
+          Absent entirely otherwise: a contract must not advertise a
+          submission that never happened. */}
+      {contract.eta_uuid && (
+        <p className="mt-8 text-[10px] text-black/45" dir="ltr">
+          {t("etaFooter", { uuid: contract.eta_uuid })}
+        </p>
+      )}
 
       <DocFooter line={t("footer", { serial: contract.serial })} />
     </article>

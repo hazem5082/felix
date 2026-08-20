@@ -7,11 +7,17 @@ export type Role =
   | "accountant"
   | "branch_manager"
   | "sales_exec"
+  | "marketing"
   | "investor";
 
 export type VehicleStatus = "in_stock" | "reserved" | "sold";
 export type DealStatus = "submitted" | "approved" | "rejected" | "executed";
 export type FinancingType = "cash" | "installments";
+// How the sale actually settled (migration 0023) — distinct from
+// FinancingType, which only says paid-in-full vs financed. 'cash' stays
+// representable: Egyptian payment rules restrict cash settlement of car
+// sales, but FELIX records the channel rather than forbidding it.
+export type SettlementMethod = "bank_transfer" | "cheque" | "instapay" | "cash";
 export type FinancingPartnerStatus = "pending_upload" | "active";
 export type FinancingRequestStatus =
   | "submitted"
@@ -35,6 +41,21 @@ export interface Branch {
   id: string;
   name: string;
   address: string | null;
+  // Egyptian permit tracking (migration 0019). All nullable: branches
+  // seeded at provision time carry none of these until recorded.
+  commercial_registration_no: string | null;
+  tax_card_no: string | null;
+  /**
+   * The branch's VAT registration number (migration 0022) — the seller
+   * identity on e-invoices and the Form 10 VAT return. Distinct from
+   * tax_card_no, which is the income-tax identity.
+   */
+  tax_registration_no: string | null;
+  trade_license_no: string | null;
+  /** ISO date (yyyy-mm-dd). Trade license per Decree 323/1956 + Law 154/2019. */
+  trade_license_expiry: string | null;
+  /** True = premises under a residential building (2027 relocation mandate). Null = not assessed. */
+  is_under_residential_building: boolean | null;
   created_at: string;
 }
 
@@ -62,6 +83,57 @@ export interface Profile {
   // 0007. Self-editable; null means "do not send".
   notification_email: string | null;
   whatsapp_number: string | null;
+  // Statutory employee data for Egypt's monthly NOSI social-insurance
+  // filing — migration 0018. All nullable: rows predating the migration
+  // and the demo fixtures carry nulls. national_id is CHECKed to exactly
+  // 14 digits when present.
+  national_id: string | null;
+  social_insurance_number: string | null;
+  /** ISO date (YYYY-MM-DD). */
+  hire_date: string | null;
+  /** Statutory wage basis for NOSI contributions — distinct from ad-hoc ledger payouts. */
+  monthly_wage: number | null;
+  employment_type: EmploymentType | null;
+  created_at: string;
+}
+
+export type EmploymentType = "full_time" | "part_time";
+
+// Metrics a manager can set a monthly target for (migration 0027). The
+// actuals are counted from tables that already exist: 'calls' from
+// lead_comments authored by the employee, 'new_leads' from leads
+// carrying them as salesperson, 'deals_closed' from executed
+// deal_tickets. Adding a metric here means adding a counting query on
+// the employee profile page, or it renders as 0/N forever.
+export type TargetMetric = "calls" | "new_leads" | "deals_closed";
+
+export interface EmployeeTarget {
+  id: string;
+  profile_id: string;
+  metric: TargetMetric;
+  target_value: number;
+  /** First day of the month the target covers (YYYY-MM-01). */
+  period_month: string;
+  /** Who last stated the number — pinned to the writer by RLS. */
+  set_by: string | null;
+  created_at: string;
+}
+
+// Where a car is advertised (migration 0029). One row per
+// (vehicle, channel); the unique index makes posting state an upsert.
+export type ListingChannel = "dubizzle" | "facebook" | "instagram" | "tiktok" | "website" | "other";
+export type ListingStatus = "draft" | "posted" | "needs_update" | "removed";
+
+export interface VehicleListing {
+  id: string;
+  vehicle_id: string;
+  channel: ListingChannel;
+  status: ListingStatus;
+  url: string | null;
+  note: string | null;
+  /** Who last touched the listing — pinned to the writer by RLS. */
+  posted_by: string | null;
+  posted_at: string | null;
   created_at: string;
 }
 
@@ -94,7 +166,27 @@ export interface Vehicle {
   color: string | null;
   description: string | null;
   inspection_photos: string[];
+  // Mechanical identifiers for Egypt's traffic-authority ownership
+  // transfer (migration 0021). Both nullable — recorded when legible.
+  engine_number: string | null;
+  plate_number: string | null;
+  // CPA Decision 115/2021 windshield-sticker fields (migration 0025).
+  // Origin is nullable free text; features is the structured amenities
+  // list — never null, the column is `not null default '{}'` so no read
+  // site needs a coalesce (the photos/client_note_points precedent).
+  country_of_origin: string | null;
+  features: string[];
+  // ETA e-invoicing product code (migration 0026) — the EGS
+  // (EG-{tax reg}-{internal code}) or GS1 code the showroom registered
+  // for this vehicle class on the ETA portal. Nullable — stock is taken
+  // in before the class is registered.
+  item_code: string | null;
   purchase_price: number;
+  // Sticker price and negotiation floor (migration 0028). Both nullable —
+  // priced after intake. purchase_price above is the confidential cost;
+  // these two are what the sales floor (and marketing) work with.
+  asking_price: number | null;
+  min_price: number | null;
   status: VehicleStatus;
   photos: string[];
   created_by: string | null;
@@ -121,6 +213,12 @@ export interface VehicleExpense {
   note: string | null;
   created_by: string | null;
   is_ceo_override: boolean;
+  // Input VAT for the Form 10 deduction (migration 0022). Since July 2023
+  // deduction requires an e-invoice-backed expense — the supplier's tax ID
+  // and invoice number tie this row to that document. All nullable.
+  vat_amount: number | null;
+  supplier_tax_id: string | null;
+  supplier_invoice_no: string | null;
   created_at: string;
 }
 
@@ -158,6 +256,16 @@ export interface Lead {
    * '{}'` precisely so no read site needs a coalesce.
    */
   client_note_points: string[];
+  /**
+   * Buyer identity for the sale paperwork (migration 0020): the
+   * e-invoice at or above EGP 25,000, the traffic-authority ownership
+   * transfer, and AML due diligence. Null until staff record it — the
+   * public referral form never collects it, and the DB CHECK requires
+   * exactly 14 digits when present.
+   */
+  national_id: string | null;
+  /** Free text; conceptually Egyptian by default but null until entered. */
+  nationality: string | null;
   created_at: string;
   profiles?: Profile;
 }
@@ -229,6 +337,21 @@ export interface DealTicket {
   financing_partner_id: string | null;
   down_payment: number | null;
   discount_amount: number;
+  // Output VAT on the sale (migration 0022). Nullable: tickets predating
+  // 0022 carry nulls. The rate is stored per transaction (percentage,
+  // e.g. 14) because schedule-tax vehicles differ from the 14% standard;
+  // price_includes_vat records whether agreed_price is VAT-inclusive.
+  vat_rate: number | null;
+  vat_amount: number | null;
+  price_includes_vat: boolean | null;
+  // Settlement channel (migration 0023). Egypt's CBE mandate and the
+  // 2025 Finance Bill require car sales to settle through bank channels,
+  // so the ticket records the channel, the transfer ref / cheque number,
+  // and the showroom-side receiving bank. Nullable: tickets predating
+  // 0023 carry nulls, and a ticket can be raised before settlement.
+  settlement_method: SettlementMethod | null;
+  settlement_reference: string | null;
+  settlement_bank: string | null;
   status: DealStatus;
   financial_check_passed: boolean;
   discount_validated: boolean;
@@ -268,6 +391,8 @@ export interface FinancingRequest {
   financing_partners?: FinancingPartner;
 }
 
+export type EtaSubmissionStatus = "pending" | "submitted" | "accepted" | "rejected";
+
 export interface Contract {
   id: string;
   deal_ticket_id: string;
@@ -275,6 +400,13 @@ export interface Contract {
   pdf_url: string | null;
   generated_at: string;
   unlocked_at: string | null;
+  // ETA e-invoice linkage (migration 0024) — the Egyptian Tax
+  // Authority's own identifiers for the invoice behind this sale,
+  // recorded by the accountant after manual submission on the portal.
+  eta_uuid: string | null;
+  eta_long_id: string | null;
+  eta_submission_status: EtaSubmissionStatus | null;
+  eta_submitted_at: string | null;
 }
 
 export interface CommissionTier {

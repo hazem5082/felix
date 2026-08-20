@@ -5,13 +5,8 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
+// Money formatting lives in src/lib/currency.ts (formatMoney) — the
+// app is EGP-denominated and that module is the single seam for it.
 
 export function formatDate(dateStr: string, locale: string = "en") {
   return new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-US", {

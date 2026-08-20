@@ -1,6 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/auth";
+import { getProfile, canSeeCost } from "@/lib/auth";
 import { PanelHeader } from "@/components/ui/panel";
 import type { Vehicle, Branch } from "@/lib/supabase/types";
 import { VehicleFormDialog } from "./vehicle-form";
@@ -17,6 +17,14 @@ export default async function InventoryPage() {
   ]);
 
   const canAdd = profile && ["ceo", "branch_manager"].includes(profile.role);
+  const showCost = canSeeCost(profile);
+
+  // The browser is a Client Component: its props are serialized into the
+  // page payload whether or not a column renders them. For the sales
+  // floor the cost is REDACTED here, not merely hidden (0028).
+  const rows = ((vehicles as Vehicle[]) ?? []).map((v) =>
+    showCost ? v : { ...v, purchase_price: 0 }
+  );
 
   return (
     <div className="space-y-6">
@@ -29,8 +37,9 @@ export default async function InventoryPage() {
           already decided which vehicles this profile may see, so the set here
           is the complete set they are entitled to. */}
       <InventoryBrowser
-        vehicles={(vehicles as Vehicle[]) ?? []}
+        vehicles={rows}
         branches={(branches as Branch[]) ?? []}
+        showCost={showCost}
       />
     </div>
   );

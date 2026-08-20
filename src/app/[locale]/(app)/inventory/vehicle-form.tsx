@@ -6,10 +6,11 @@ import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
-import { Plus, Trash2, Upload, FolderUp } from "lucide-react";
+import { Plus, Trash2, Upload, FolderUp, X } from "lucide-react";
 import { YEARS, fetchMakes, fetchModels, COMMON_TRIMS, COMMON_COLORS } from "@/lib/nhtsa";
 import { uploadFile } from "@/lib/upload-client";
 import { colorSwatch } from "@/lib/vehicle-color";
+import { COMMON_ORIGINS, originKey } from "@/lib/vehicle-origin";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { createVehicle, fetchInvestorsForPicker } from "./actions";
 import type { Branch } from "@/lib/supabase/types";
@@ -28,6 +29,9 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   // COMMON_COLORS) and rendered through this namespace, so the Arabic UI
   // shows Arabic names without the database holding two spellings.
   const colors = useTranslations("colors");
+  // Origins follow the same canonical-English-plus-translation scheme —
+  // see vehicle-origin.ts.
+  const origins = useTranslations("origins");
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +42,14 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   const [trim, setTrim] = useState("");
   const [color, setColor] = useState("");
   const [vin, setVin] = useState("");
+  const [engineNumber, setEngineNumber] = useState("");
+  const [plateNumber, setPlateNumber] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [features, setFeatures] = useState<string[]>([]);
+  const [itemCode, setItemCode] = useState("");
   const [price, setPrice] = useState("");
+  const [askingPrice, setAskingPrice] = useState("");
+  const [minPrice, setMinPrice] = useState("");
   const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
 
   const [makes, setMakes] = useState<string[]>([]);
@@ -99,6 +110,11 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
 
   const totalPct = splits.reduce((s, r) => s + (parseFloat(r.percentage) || 0), 0);
 
+  // Standard VIN alphabet: 17 chars, uppercase alphanumerics excluding
+  // I/O/Q. Blank stays fine — used stock sometimes has no readable VIN.
+  // Mirrors VinSchema in lib/validation.ts and the DB CHECK from 0021.
+  const vinInvalid = vin.trim() !== "" && !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin.trim());
+
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     setUploading(true);
@@ -124,6 +140,10 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
     label: colors(c.toLowerCase()),
     swatch: colorSwatch(c),
   }));
+  const originOptions: ComboboxOption[] = COMMON_ORIGINS.map((o) => {
+    const key = originKey(o);
+    return { value: o, label: key ? origins(key) : o };
+  });
 
   async function handleInspectionUpload(e: React.ChangeEvent<HTMLInputElement>) {
     // A folder pick hands back everything inside it — thumbs.db, a stray PDF,
@@ -150,10 +170,17 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
       setError(t("splitMustSum"));
       return;
     }
+    // A blank VIN is a legitimate intake; a malformed one would only
+    // bounce off the server schema and the DB CHECK with an untranslated
+    // message, so say it here instead.
+    if (vinInvalid) {
+      setError(t("vinInvalid"));
+      return;
+    }
     startTransition(async () => {
       const res = await createVehicle({
         branch_id: branchId,
-        vin,
+        vin: vin.trim(),
         year: parseInt(year, 10),
         make,
         model,
@@ -161,7 +188,14 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         color,
         description,
         inspection_photos: inspection,
+        engine_number: engineNumber,
+        plate_number: plateNumber,
+        country_of_origin: origin,
+        features,
+        item_code: itemCode,
         purchase_price: parseFloat(price),
+        asking_price: askingPrice.trim() ? parseFloat(askingPrice) : null,
+        min_price: minPrice.trim() ? parseFloat(minPrice) : null,
         photos,
         splits: splits.map((s) => ({
           holder_type: s.holder_type,
@@ -199,7 +233,15 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
             </div>
             <div>
               <Label>{t("vin")}</Label>
-              <Input value={vin} onChange={(e) => setVin(e.target.value)} placeholder={common("optional")} />
+              <Input
+                value={vin}
+                onChange={(e) => setVin(e.target.value.toUpperCase())}
+                placeholder={common("optional")}
+                maxLength={17}
+              />
+              {vinInvalid && (
+                <p className="mt-1 text-[11px] text-[var(--color-accent-amber)]">{t("vinInvalid")}</p>
+              )}
             </div>
             <div>
               <Label>{t("year")}</Label>
@@ -256,8 +298,60 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               />
             </div>
             <div>
+              <Label>{t("engineNumber")}</Label>
+              <Input
+                value={engineNumber}
+                onChange={(e) => setEngineNumber(e.target.value)}
+                placeholder={common("optional")}
+                maxLength={60}
+              />
+            </div>
+            <div>
+              <Label>{t("plateNumber")}</Label>
+              <Input
+                value={plateNumber}
+                onChange={(e) => setPlateNumber(e.target.value)}
+                placeholder={common("optional")}
+                maxLength={20}
+              />
+            </div>
+            <div>
+              <Label>{t("countryOfOrigin")}</Label>
+              <Combobox
+                value={origin}
+                onChange={setOrigin}
+                options={originOptions}
+                placeholder={misc("searchOrType")}
+                emptyLabel={misc("noMatches")}
+              />
+            </div>
+            <div>
+              <Label>{t("itemCode")}</Label>
+              {/* ETA e-invoicing product code (0026). dir=ltr: EGS/GS1
+                  codes are Latin technical strings even in the Arabic
+                  UI, like the VIN. */}
+              <Input
+                value={itemCode}
+                onChange={(e) => setItemCode(e.target.value)}
+                placeholder={common("optional")}
+                maxLength={60}
+                dir="ltr"
+              />
+              <p className="mt-1 text-[11px] text-[var(--color-text-faint)]">{t("itemCodeHint")}</p>
+            </div>
+            <div>
               <Label>{t("purchasePrice")}</Label>
               <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+            </div>
+            {/* The sales floor's numbers (0028). Optional — a car can be
+                taken in first and priced from its page later. */}
+            <div>
+              <Label>{t("stickerPrice")}</Label>
+              <Input type="number" value={askingPrice} onChange={(e) => setAskingPrice(e.target.value)} />
+            </div>
+            <div>
+              <Label>{t("lowestOffer")}</Label>
+              <Input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
             </div>
           </div>
 
@@ -269,6 +363,47 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               onChange={(e) => setDescription(e.target.value)}
               placeholder={misc("descriptionPlaceholder")}
             />
+          </div>
+
+          {/* The CPA Decision 115/2021 amenities list — one input per
+              feature, the NotePointsEditor pattern: rows are added,
+              reworded and removed one at a time, and blank rows are
+              dropped by the server schema rather than policed here. */}
+          <div className="mt-4">
+            <Label>{t("features")}</Label>
+            <p className="mb-2 text-xs text-[var(--color-text-faint)]">{t("featuresHint")}</p>
+            <div className="space-y-2">
+              {features.map((feature, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <span aria-hidden className="text-[var(--color-text-faint)]">•</span>
+                  <Input
+                    value={feature}
+                    placeholder={t("featurePlaceholder")}
+                    onChange={(e) =>
+                      setFeatures((f) => f.map((p, i) => (i === index ? e.target.value : p)))
+                    }
+                  />
+                  <button
+                    type="button"
+                    aria-label={t("removeFeature")}
+                    onClick={() => setFeatures((f) => f.filter((_, i) => i !== index))}
+                    className="cursor-pointer rounded-md p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-black/[0.05] hover:text-[var(--color-text)]"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => setFeatures((f) => [...f, ""])}
+            >
+              <Plus size={13} />
+              {t("addFeature")}
+            </Button>
           </div>
 
           <div className="mt-4">

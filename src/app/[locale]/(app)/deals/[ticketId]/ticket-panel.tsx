@@ -14,12 +14,19 @@ export function TicketPanel({
   ticket,
   canReview,
   canExecute,
+  canSeeCost,
   investorNames,
   contractSerial,
 }: {
   ticket: DealTicket;
   canReview: boolean;
   canExecute: boolean;
+  /**
+   * Whether the viewer may see the profit anatomy — purchase price,
+   * expenses, overhead (0028). False for the sales floor; the fetch is
+   * also refused server-side, this only spares the panel and the call.
+   */
+  canSeeCost: boolean;
   investorNames: Record<string, string>;
   contractSerial: string | null;
 }) {
@@ -40,6 +47,7 @@ export function TicketPanel({
   });
 
   useEffect(() => {
+    if (!canSeeCost) return;
     // Guard against an out-of-order response overwriting a newer one.
     let active = true;
     fetchWaterfallPreview(ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount).then(
@@ -50,7 +58,7 @@ export function TicketPanel({
     return () => {
       active = false;
     };
-  }, [ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount]);
+  }, [canSeeCost, ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount]);
 
   function toggleCheck(key: keyof typeof checklist) {
     const previous = checklist;
@@ -175,13 +183,57 @@ export function TicketPanel({
       </Panel>
 
       <Panel className="md:col-span-2">
-        <PanelHeader title={t("waterfall")} />
-        {preview ? (
-          <Waterfall preview={preview} investorNames={investorNames} />
+        <PanelHeader title={t("settlement")} />
+        {ticket.settlement_method ? (
+          <div className="space-y-2">
+            <TermRow
+              label={t("settlementMethod")}
+              value={
+                ticket.settlement_method === "bank_transfer" ? t("settlementBankTransfer")
+                : ticket.settlement_method === "cheque" ? t("settlementCheque")
+                : ticket.settlement_method === "instapay" ? t("settlementInstapay")
+                : t("settlementCash")
+              }
+            />
+            {ticket.settlement_reference && (
+              <TermRow label={t("settlementReference")} value={ticket.settlement_reference} />
+            )}
+            {ticket.settlement_bank && (
+              <TermRow label={t("settlementBank")} value={ticket.settlement_bank} />
+            )}
+            {ticket.settlement_method === "cash" && (
+              // Same non-blocking notice the intake form shows: cash
+              // settlement of car sales is restricted, so the reviewer
+              // sees the flag on the recorded ticket too.
+              <p className="rounded-lg border border-[var(--color-accent-amber)]/40 bg-[var(--color-accent-amber)]/10 px-3 py-2 text-xs text-[var(--color-accent-amber)]">
+                {t("cashSettlementWarning")}
+              </p>
+            )}
+          </div>
         ) : (
-          <p className="text-xs text-[var(--color-text-faint)]">{common("loading")}</p>
+          <p className="text-xs text-[var(--color-text-faint)]">{t("settlementNotRecorded")}</p>
         )}
       </Panel>
+
+      {canSeeCost && (
+        <Panel className="md:col-span-2">
+          <PanelHeader title={t("waterfall")} />
+          {preview ? (
+            <Waterfall preview={preview} investorNames={investorNames} />
+          ) : (
+            <p className="text-xs text-[var(--color-text-faint)]">{common("loading")}</p>
+          )}
+        </Panel>
+      )}
+    </div>
+  );
+}
+
+function TermRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 text-sm">
+      <span className="text-[var(--color-text-secondary)]">{label}</span>
+      <span className="num font-medium">{value}</span>
     </div>
   );
 }

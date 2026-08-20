@@ -92,8 +92,8 @@ describe("parseOffset", () => {
 });
 
 describe("isReportKind", () => {
-  it("accepts exactly the four kinds", () => {
-    for (const k of ["operating", "investors", "expenses", "salaries"]) {
+  it("accepts exactly the five kinds", () => {
+    for (const k of ["operating", "investors", "expenses", "salaries", "vat"]) {
       expect(isReportKind(k)).toBe(true);
     }
     for (const k of ["monthly", "OPERATING", "", "ledger", "../secrets"]) {

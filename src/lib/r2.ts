@@ -21,7 +21,7 @@ export const FOLDER_ROLES: Record<UploadFolder, Role[]> = {
   vehicles: ["ceo", "branch_manager", "accountant"],
   "financing-contracts": ["ceo", "accountant"],
   "financing-requests": ["ceo", "accountant", "branch_manager", "sales_exec"],
-  avatars: ["ceo", "accountant", "branch_manager", "sales_exec", "investor"],
+  avatars: ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing"],
 };
 
 function requiredEnv(name: string): string {

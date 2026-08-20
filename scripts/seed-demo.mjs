@@ -212,6 +212,9 @@ const ACCOUNTS = [
   { key: "manager", role: "branch_manager", name: "Dana Reyes", branch: "downtown" },
   { key: "accountant", role: "accountant", name: "Sam Nguyen", branch: "downtown" },
   { key: "sales", role: "sales_exec", name: "Jordan Blake", branch: "downtown" },
+  // Org-wide, like the CEO and the investors: marketing advertises the
+  // whole showroom's stock (0029), not one branch's.
+  { key: "marketing", role: "marketing", name: "Farah Adel", branch: null },
   { key: "investor1", role: "investor", name: "Morgan Lee", branch: null },
   { key: "investor2", role: "investor", name: "Priya Shah", branch: null },
 ];

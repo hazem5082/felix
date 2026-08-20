@@ -1,5 +1,6 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
+import { formatMoney } from "@/lib/currency";
 import { Link } from "@/i18n/navigation";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
@@ -11,6 +12,7 @@ export default async function DealsPage() {
   const t = await getTranslations("deals");
   const common = await getTranslations("common");
   const misc = await getTranslations("misc");
+  const locale = await getLocale();
   const supabase = await createClient();
 
   const { data: tickets } = await supabase
@@ -38,7 +40,7 @@ export default async function DealsPage() {
                     {ticket.vehicles ? `${ticket.vehicles.year} ${ticket.vehicles.make} ${ticket.vehicles.model}` : "—"}
                   </Link>
                 </Td>
-                <Td className="num">${ticket.agreed_price.toLocaleString()}</Td>
+                <Td className="num">{formatMoney(ticket.agreed_price, locale)}</Td>
                 <Td>{ticket.financing_type === "cash" ? t("cash") : t("installments")}</Td>
                 <Td className="text-[var(--color-text-muted)]">{ticket.profiles?.full_name ?? "—"}</Td>
                 <Td>

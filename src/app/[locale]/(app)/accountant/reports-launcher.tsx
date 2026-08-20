@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { BarChart3, FileSpreadsheet, HandCoins, PiggyBank, Receipt } from "lucide-react";
+import { BarChart3, FileSpreadsheet, HandCoins, Landmark, PiggyBank, Receipt } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Select, Label, Input } from "@/components/ui/input";
 
@@ -39,6 +39,7 @@ const REPORTS = [
   { kind: "investors", icon: PiggyBank },
   { kind: "expenses", icon: Receipt },
   { kind: "salaries", icon: HandCoins },
+  { kind: "vat", icon: Landmark },
 ] as const;
 
 /**

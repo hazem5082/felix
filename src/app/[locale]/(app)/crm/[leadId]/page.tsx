@@ -1,5 +1,6 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
+import { formatMoney } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/server";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -30,6 +31,7 @@ export default async function LeadDetailPage({
   const misc = await getTranslations("misc");
   const common = await getTranslations("common");
   const history = await getTranslations("history");
+  const locale = await getLocale();
   const supabase = await createClient();
 
   const [{ data: lead }, { data: comments }, { data: interests }] = await Promise.all([
@@ -41,7 +43,7 @@ export default async function LeadDetailPage({
       .order("created_at", { ascending: false }),
     supabase
       .from("lead_vehicle_interests")
-      .select("*, vehicles(id, year, make, model, trim, purchase_price, status)")
+      .select("*, vehicles(id, year, make, model, trim, asking_price, status)")
       .eq("lead_id", leadId)
       .order("created_at", { ascending: false }),
   ]);
@@ -137,8 +139,13 @@ export default async function LeadDetailPage({
               <Row label={t("carInterest")} value={l.car_interest} />
               <Row label={misc("company")} value={l.company_name} />
               <Row label={misc("jobTitle")} value={l.job_title} />
-              <Row label={misc("income")} value={l.income ? `$${l.income.toLocaleString()}` : null} />
+              <Row label={misc("income")} value={l.income ? formatMoney(l.income, locale) : null} />
               <Row label={misc("address")} value={l.address} />
+              {/* Buyer identity (0020): mandatory on the e-invoice and the
+                  ownership transfer, so the person closing the deal must be
+                  able to see at a glance whether it has been captured. */}
+              <Row label={misc("nationalId")} value={l.national_id} />
+              <Row label={misc("nationality")} value={l.nationality} />
               <Row label={misc("contactTime")} value={l.contact_time_preference} />
             </dl>
             <NotePointsView heading={l.client_notes} points={l.client_note_points ?? []} />
@@ -178,7 +185,7 @@ export default async function LeadDetailPage({
                     <div className="text-end">
                       <p className="num text-sm text-[var(--color-text)]">
                         {i.budget_amount !== null
-                          ? `$${Number(i.budget_amount).toLocaleString()}`
+                          ? formatMoney(Number(i.budget_amount), locale)
                           : interest("noBudget")}
                       </p>
                       <p className="text-[10px] text-[var(--color-text-faint)]">{interest("budget")}</p>

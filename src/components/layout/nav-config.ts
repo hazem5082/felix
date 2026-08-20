@@ -7,6 +7,7 @@ export interface NavItem {
     | "inventory"
     | "crm"
     | "deals"
+    | "marketing"
     | "accountant"
     | "investor"
     | "calendar"
@@ -20,6 +21,7 @@ export const ALL_NAV: NavItem[] = [
   { href: "/inventory", key: "inventory" },
   { href: "/crm", key: "crm" },
   { href: "/deals", key: "deals" },
+  { href: "/marketing", key: "marketing" },
   { href: "/accountant", key: "accountant" },
   { href: "/investor", key: "investor" },
   { href: "/calendar", key: "calendar" },
@@ -34,11 +36,14 @@ export const ALL_NAV: NavItem[] = [
 // Employees is the opposite extreme: CEO-only, and the page +
 // every action behind it re-checks that server-side.
 const NAV_BY_ROLE: Record<Role, NavItem["key"][]> = {
-  ceo: ["ceoDashboard", "inventory", "crm", "deals", "accountant", "calendar", "employees", "support", "account"],
+  ceo: ["ceoDashboard", "inventory", "crm", "deals", "marketing", "accountant", "calendar", "employees", "support", "account"],
   branch_manager: ["inventory", "crm", "deals", "calendar", "support", "account"],
   accountant: ["accountant", "inventory", "deals", "calendar", "support", "account"],
   sales_exec: ["crm", "deals", "calendar", "support", "account"],
   investor: ["investor", "calendar", "support", "account"],
+  // Marketing lists stock across channels: their workspace, the inventory
+  // they advertise (cost hidden — 0028), and the tabs everyone carries.
+  marketing: ["marketing", "inventory", "calendar", "support", "account"],
 };
 
 export function navForRole(role: Role): NavItem[] {

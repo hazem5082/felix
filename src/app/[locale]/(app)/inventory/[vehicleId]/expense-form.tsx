@@ -18,6 +18,11 @@ export function ExpenseFormDialog({ vehicleId, isCeo }: { vehicleId: string; isC
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  // Input VAT (0022): filled only when the expense is backed by an
+  // e-invoice, which is what makes the VAT deductible on Form 10.
+  const [vatAmount, setVatAmount] = useState("");
+  const [supplierTaxId, setSupplierTaxId] = useState("");
+  const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
   const [override, setOverride] = useState(false);
 
   function submit() {
@@ -28,6 +33,9 @@ export function ExpenseFormDialog({ vehicleId, isCeo }: { vehicleId: string; isC
         category,
         amount: parseFloat(amount),
         note,
+        vat_amount: vatAmount ? parseFloat(vatAmount) : null,
+        supplier_tax_id: supplierTaxId,
+        supplier_invoice_no: supplierInvoiceNo,
         is_ceo_override: isCeo && override,
       });
       if ("error" in res) {
@@ -38,6 +46,9 @@ export function ExpenseFormDialog({ vehicleId, isCeo }: { vehicleId: string; isC
       setCategory("");
       setAmount("");
       setNote("");
+      setVatAmount("");
+      setSupplierTaxId("");
+      setSupplierInvoiceNo("");
       setOverride(false);
     });
   }
@@ -61,6 +72,18 @@ export function ExpenseFormDialog({ vehicleId, isCeo }: { vehicleId: string; isC
             <div>
               <Label>{t("note")}</Label>
               <Input value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
+            <div>
+              <Label>{t("vatAmount")}</Label>
+              <Input type="number" min={0} value={vatAmount} onChange={(e) => setVatAmount(e.target.value)} />
+            </div>
+            <div>
+              <Label>{t("supplierTaxId")}</Label>
+              <Input value={supplierTaxId} onChange={(e) => setSupplierTaxId(e.target.value)} />
+            </div>
+            <div>
+              <Label>{t("supplierInvoiceNo")}</Label>
+              <Input value={supplierInvoiceNo} onChange={(e) => setSupplierInvoiceNo(e.target.value)} />
             </div>
             {isCeo && (
               <label className="flex items-center gap-2 text-xs text-[var(--color-accent-amber)]">

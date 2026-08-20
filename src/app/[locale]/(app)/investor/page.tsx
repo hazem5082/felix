@@ -1,5 +1,6 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
+import { formatMoney } from "@/lib/currency";
 import { getProfile } from "@/lib/auth";
 import { StatCard } from "@/components/ui/stat-card";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -13,6 +14,7 @@ export default async function InvestorPortalPage() {
   const t = await getTranslations("investorPortal");
   const misc = await getTranslations("misc");
   const common = await getTranslations("common");
+  const locale = await getLocale();
   const supabase = await createClient();
   const profile = await getProfile();
   if (!profile) return null;
@@ -31,8 +33,8 @@ export default async function InvestorPortalPage() {
       <PanelHeader title={t("title")} />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label={t("walletBalance")} value={walletBalance} prefix="$" tone={walletBalance >= 0 ? "green" : "red"} icon={<Wallet size={16} />} />
-        <StatCard label={misc("totalInvested")} value={totalInvested} prefix="$" icon={<TrendingUp size={16} />} />
+        <StatCard label={t("walletBalance")} value={walletBalance} currency tone={walletBalance >= 0 ? "green" : "red"} icon={<Wallet size={16} />} />
+        <StatCard label={misc("totalInvested")} value={totalInvested} currency icon={<TrendingUp size={16} />} />
         <StatCard label={t("fundedVehicles")} value={activeVehicles} icon={<Car size={16} />} />
       </div>
 
@@ -50,7 +52,7 @@ export default async function InvestorPortalPage() {
               <Tr key={s.id}>
                 <Td>{s.vehicles ? `${s.vehicles.year} ${s.vehicles.make} ${s.vehicles.model}` : "—"}</Td>
                 <Td className="num">{s.percentage}%</Td>
-                <Td className="num">${s.amount_invested.toLocaleString()}</Td>
+                <Td className="num">{formatMoney(s.amount_invested, locale)}</Td>
                 <Td>
                   {s.vehicles && (
                     <StatusPill
@@ -80,7 +82,7 @@ export default async function InvestorPortalPage() {
               <Tr key={e.id} toneBar={e.amount >= 0 ? "var(--color-accent-green)" : "var(--color-accent-red)"}>
                 <Td className="capitalize">{e.type.replace(/_/g, " ")}</Td>
                 <Td className={`num ${e.amount >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-accent-red)]"}`}>
-                  {e.amount >= 0 ? "+" : ""}${e.amount.toLocaleString()}
+                  {e.amount >= 0 ? "+" : ""}{formatMoney(e.amount, locale)}
                 </Td>
                 <Td className="text-[var(--color-text-muted)]">{e.note ?? "—"}</Td>
                 <Td className="text-[var(--color-text-faint)]">{new Date(e.created_at).toLocaleDateString()}</Td>

@@ -194,6 +194,17 @@ export function assertBranch(profile: Profile, branchId: string | null): ActionE
     : { error: "That record belongs to another branch." };
 }
 
+/**
+ * Who may see what a car COST the showroom (and the expenses/equity/
+ * profit figures that derive from it). No showroom shows its cost to
+ * the sales floor: sales and marketing work with asking_price and
+ * min_price (0028) and nothing else.
+ */
+export const COST_ROLES: Role[] = ["ceo", "accountant", "branch_manager", "investor"];
+export function canSeeCost(profile: Profile | null): boolean {
+  return !!profile && COST_ROLES.includes(profile.role);
+}
+
 export const REVIEWER_ROLES: Role[] = ["ceo", "branch_manager"];
 export const STAFF_ROLES: Role[] = ["ceo", "accountant", "branch_manager", "sales_exec"];
 export const FINANCE_ROLES: Role[] = ["ceo", "accountant"];
@@ -210,6 +221,8 @@ export function defaultRouteForRole(role: Role) {
       return "/accountant";
     case "investor":
       return "/investor";
+    case "marketing":
+      return "/marketing";
     case "sales_exec":
     default:
       return "/crm";

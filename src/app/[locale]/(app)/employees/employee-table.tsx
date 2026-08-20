@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
+import { formatMoney } from "@/lib/currency";
 import { KeyRound, Pencil } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
@@ -9,9 +11,10 @@ import { StatusPill, type SemanticTone } from "@/components/ui/status-pill";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
-import type { Branch, Role } from "@/lib/supabase/types";
+import type { Branch, EmploymentType, Role } from "@/lib/supabase/types";
 import { resetEmployeePassword, updateEmployee } from "./actions";
 import { CredentialsNote } from "./credentials-note";
+import { nationalIdInvalid } from "./employee-form";
 
 export interface EmployeeRow {
   id: string;
@@ -21,6 +24,14 @@ export interface EmployeeRow {
   branch_name: string | null;
   phone: string | null;
   email: string | null;
+  // Statutory NOSI data (0018). Rendered only here — this page is
+  // already CEO-only, and national ID / insurance number must not leak
+  // onto any other surface.
+  national_id: string | null;
+  social_insurance_number: string | null;
+  hire_date: string | null;
+  monthly_wage: number | null;
+  employment_type: EmploymentType | null;
   created_at: string;
   is_me: boolean;
 }
@@ -30,22 +41,34 @@ const ROLE_TONE: Record<Role, SemanticTone> = {
   branch_manager: "green",
   accountant: "amber",
   sales_exec: "neutral",
+  marketing: "blue",
   investor: "red",
 };
 
-const ROLES: Role[] = ["sales_exec", "branch_manager", "accountant", "investor", "ceo"];
-const ORG_WIDE: Role[] = ["ceo", "investor"];
+const ROLES: Role[] = ["sales_exec", "marketing", "branch_manager", "accountant", "investor", "ceo"];
+const ORG_WIDE: Role[] = ["ceo", "investor", "marketing"];
 
 export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branches: Branch[] }) {
   const t = useTranslations("employees");
   const roles = useTranslations("roles");
   const common = useTranslations("common");
+  const locale = useLocale();
   const [pending, startTransition] = useTransition();
 
   const [creds, setCreds] = useState<{ email: string; password: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EmployeeRow | null>(null);
-  const [editForm, setEditForm] = useState({ full_name: "", role: "sales_exec" as Role, branch_id: "", phone: "" });
+  const [editForm, setEditForm] = useState({
+    full_name: "",
+    role: "sales_exec" as Role,
+    branch_id: "",
+    phone: "",
+    national_id: "",
+    social_insurance_number: "",
+    hire_date: "",
+    monthly_wage: "",
+    employment_type: "",
+  });
 
   function beginEdit(row: EmployeeRow) {
     setEditing(row);
@@ -54,6 +77,11 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
       role: row.role,
       branch_id: row.branch_id ?? "",
       phone: row.phone ?? "",
+      national_id: row.national_id ?? "",
+      social_insurance_number: row.social_insurance_number ?? "",
+      hire_date: row.hire_date ?? "",
+      monthly_wage: row.monthly_wage != null ? String(row.monthly_wage) : "",
+      employment_type: row.employment_type ?? "",
     });
     setError(null);
   }
@@ -82,6 +110,11 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
         role: editForm.role,
         branch_id: needsBranch ? editForm.branch_id || null : null,
         phone: editForm.phone,
+        national_id: editForm.national_id,
+        social_insurance_number: editForm.social_insurance_number,
+        hire_date: editForm.hire_date,
+        monthly_wage: editForm.monthly_wage,
+        employment_type: editForm.employment_type,
       });
       if (res && "error" in res) {
         setError(res.error);
@@ -103,13 +136,24 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
             <Th>{t("role")}</Th>
             <Th>{t("branch")}</Th>
             <Th>{t("phone")}</Th>
+            {/* Statutory NOSI columns — CEO-only page, sensitive data stays here. */}
+            <Th>{t("nationalId")}</Th>
+            <Th>{t("insuranceNumber")}</Th>
+            <Th>{t("hireDate")}</Th>
+            <Th>{t("monthlyWage")}</Th>
+            <Th>{t("employmentType")}</Th>
             <Th>{common("actions")}</Th>
           </THead>
           <TBody>
             {rows.map((r) => (
               <Tr key={r.id}>
                 <Td>
-                  {r.full_name}
+                  <Link
+                    href={`/employees/${r.id}`}
+                    className="font-medium text-[var(--color-text)] hover:underline"
+                  >
+                    {r.full_name}
+                  </Link>
                   {r.is_me && (
                     <span className="ms-2 text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
                       {t("you")}
@@ -125,6 +169,21 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
                 <Td className="text-[var(--color-text-muted)]">{r.branch_name ?? "—"}</Td>
                 <Td className="num text-[var(--color-text-muted)]">
                   <span dir="ltr">{r.phone ?? "—"}</span>
+                </Td>
+                <Td className="num text-[var(--color-text-muted)]">
+                  <span dir="ltr">{r.national_id ?? "—"}</span>
+                </Td>
+                <Td className="num text-[var(--color-text-muted)]">
+                  <span dir="ltr">{r.social_insurance_number ?? "—"}</span>
+                </Td>
+                <Td className="num text-[var(--color-text-muted)]">
+                  <span dir="ltr">{r.hire_date ?? "—"}</span>
+                </Td>
+                <Td className="num text-[var(--color-text-muted)]">
+                  {r.monthly_wage != null ? formatMoney(r.monthly_wage, locale) : <span dir="ltr">—</span>}
+                </Td>
+                <Td className="text-[var(--color-text-muted)]">
+                  {r.employment_type ? t(r.employment_type === "full_time" ? "fullTime" : "partTime") : "—"}
                 </Td>
                 <Td>
                   <div className="flex gap-1.5">
@@ -221,6 +280,62 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
                   />
                 </div>
               )}
+
+              {/* Statutory data for the monthly NOSI filing — optional. */}
+              <div className="col-span-2 mt-1 text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
+                {t("statutorySection")}
+              </div>
+              <div>
+                <Label>{t("nationalId")}</Label>
+                <Input
+                  dir="ltr"
+                  maxLength={14}
+                  inputMode="numeric"
+                  value={editForm.national_id}
+                  onChange={(e) => setEditForm((f) => ({ ...f, national_id: e.target.value }))}
+                />
+                {nationalIdInvalid(editForm.national_id) && (
+                  <p className="mt-1 text-xs text-[var(--color-accent-red)]">{t("nationalIdInvalid")}</p>
+                )}
+              </div>
+              <div>
+                <Label>{t("insuranceNumber")}</Label>
+                <Input
+                  dir="ltr"
+                  value={editForm.social_insurance_number}
+                  onChange={(e) => setEditForm((f) => ({ ...f, social_insurance_number: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>{t("hireDate")}</Label>
+                <Input
+                  type="date"
+                  dir="ltr"
+                  value={editForm.hire_date}
+                  onChange={(e) => setEditForm((f) => ({ ...f, hire_date: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>{t("monthlyWage")}</Label>
+                <Input
+                  type="number"
+                  dir="ltr"
+                  min={0}
+                  value={editForm.monthly_wage}
+                  onChange={(e) => setEditForm((f) => ({ ...f, monthly_wage: e.target.value }))}
+                />
+              </div>
+              <div className="col-span-2">
+                <Label>{t("employmentType")}</Label>
+                <Select
+                  value={editForm.employment_type}
+                  onChange={(e) => setEditForm((f) => ({ ...f, employment_type: e.target.value }))}
+                >
+                  <option value="">{t("employmentTypeUnset")}</option>
+                  <option value="full_time">{t("fullTime")}</option>
+                  <option value="part_time">{t("partTime")}</option>
+                </Select>
+              </div>
             </div>
 
             {error && <p className="mt-3 text-xs text-[var(--color-accent-red)]">{error}</p>}
@@ -232,7 +347,12 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
               <Button
                 variant="accent"
                 onClick={saveEdit}
-                disabled={pending || !editForm.full_name.trim() || (needsBranch && !editForm.branch_id)}
+                disabled={
+                  pending ||
+                  !editForm.full_name.trim() ||
+                  (needsBranch && !editForm.branch_id) ||
+                  nationalIdInvalid(editForm.national_id)
+                }
               >
                 {common("save")}
               </Button>

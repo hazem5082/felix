@@ -61,6 +61,12 @@ const LEAD_FIELDS = [
   "contact_time_preference",
   "client_notes",
   "client_note_points",
+  // Buyer identity (0020). Deliberately on the allowlist: who recorded —
+  // or altered — a client's national ID is exactly the kind of change
+  // the trail exists to answer, and the value itself is already visible
+  // to everyone who can read this history.
+  "national_id",
+  "nationality",
   "status",
 ] as const;
 

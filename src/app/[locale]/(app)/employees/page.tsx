@@ -53,6 +53,12 @@ export default async function EmployeesPage({
     branch_name: p.branch_id ? (branchNames.get(p.branch_id) ?? "—") : null,
     phone: p.phone,
     email: emails.get(p.id) ?? null,
+    // Statutory NOSI fields (0018) — surfaced only on this CEO-only page.
+    national_id: p.national_id,
+    social_insurance_number: p.social_insurance_number,
+    hire_date: p.hire_date,
+    monthly_wage: p.monthly_wage,
+    employment_type: p.employment_type,
     created_at: p.created_at,
     is_me: p.id === me.id,
   }));

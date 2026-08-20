@@ -1,7 +1,8 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
+import { formatMoney } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/auth";
+import { getProfile, canSeeCost } from "@/lib/auth";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -16,7 +17,10 @@ import type {
   LeadVehicleInterest,
 } from "@/lib/supabase/types";
 import { ExpenseFormDialog } from "./expense-form";
+import { PricingDialog } from "../pricing-form";
 import { colorLabel } from "@/lib/vehicle-color";
+import { originLabel } from "@/lib/vehicle-origin";
+import { Printer } from "lucide-react";
 
 export default async function VehicleDetailPage({
   params,
@@ -30,6 +34,8 @@ export default async function VehicleDetailPage({
   const interest = await getTranslations("interest");
   const common = await getTranslations("common");
   const colors = await getTranslations("colors");
+  const origins = await getTranslations("origins");
+  const locale = await getLocale();
   const supabase = await createClient();
   const profile = await getProfile();
 
@@ -71,6 +77,10 @@ export default async function VehicleDetailPage({
 
   const canManageExpenses = profile && ["ceo", "accountant", "branch_manager"].includes(profile.role);
   const isCeo = profile?.role === "ceo";
+  // Cost, expenses and the funding structure are management's numbers
+  // (0028): sales and marketing see the sticker price and lowest offer.
+  const showCost = canSeeCost(profile);
+  const canPrice = profile && ["ceo", "branch_manager"].includes(profile.role);
 
   const totalExpenses = ((expenses as VehicleExpense[]) ?? []).reduce((s, e) => s + Number(e.amount), 0);
   const buyers = (interests as LeadVehicleInterest[]) ?? [];
@@ -81,43 +91,84 @@ export default async function VehicleDetailPage({
         title={`${v.year} ${v.make} ${v.model} ${v.trim ?? ""}`}
         subtitle={[colorLabel(colors, v.color), v.vin ? `VIN ${v.vin}` : null].filter(Boolean).join(" · ") || undefined}
         action={
-          v.status === "in_stock" ? (
-            <Link href={`/crm?newTicketVehicle=${v.id}`}>
-              <span className="inline-flex h-9 items-center rounded-lg bg-[var(--color-accent-blue)] px-4 text-sm font-medium text-white hover:brightness-110">
-                {dealsT("newTicket")}
-              </span>
-            </Link>
-          ) : (
-            <StatusPill
-            label={v.status === "reserved" ? t("statusReserved") : t("statusSold")}
-            tone={vehicleStatusTone(v.status)}
-          />
-          )
+          <div className="flex items-center gap-2">
+            {/* The CPA Decision 115/2021 windshield sticker — a print
+                page, so a plain anchor into a new tab like the contract
+                link, not an i18n <Link>. */}
+            <a
+              href={`/${locale}/print/sticker/${v.id}`}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-black/[0.04]"
+            >
+              <Printer size={14} />
+              {t("printSticker")}
+            </a>
+            {v.status === "in_stock" ? (
+              <Link href={`/crm?newTicketVehicle=${v.id}`}>
+                <span className="inline-flex h-9 items-center rounded-lg bg-[var(--color-accent-blue)] px-4 text-sm font-medium text-white hover:brightness-110">
+                  {dealsT("newTicket")}
+                </span>
+              </Link>
+            ) : (
+              <StatusPill
+                label={v.status === "reserved" ? t("statusReserved") : t("statusSold")}
+                tone={vehicleStatusTone(v.status)}
+              />
+            )}
+          </div>
         }
       />
 
       <div className="grid gap-6 md:grid-cols-3">
         <Panel className="md:col-span-2">
-          <PanelHeader title={t("equitySplit")} />
-          <div className="space-y-2">
-            {((splits as VehicleEquitySplit[]) ?? []).map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded-lg bg-black/[0.02] px-3 py-2 text-sm">
-                {s.holder_type === "ceo" ? (
-                  <span>{t("ceoShare")}</span>
-                ) : (
-                  <InvestorChip id={s.holder_id ?? s.id} name={s.investors?.profiles?.full_name ?? "Investor"} />
-                )}
-                <span className="num text-[var(--color-text-muted)]">
-                  {s.percentage}% · ${s.amount_invested.toLocaleString()}
-                </span>
+          {/* The funding structure is confidential to management — for the
+              sales floor this panel opens straight onto the car itself. */}
+          {showCost ? (
+            <>
+              <PanelHeader title={t("equitySplit")} />
+              <div className="space-y-2">
+                {((splits as VehicleEquitySplit[]) ?? []).map((s) => (
+                  <div key={s.id} className="flex items-center justify-between rounded-lg bg-black/[0.02] px-3 py-2 text-sm">
+                    {s.holder_type === "ceo" ? (
+                      <span>{t("ceoShare")}</span>
+                    ) : (
+                      <InvestorChip id={s.holder_id ?? s.id} name={s.investors?.profiles?.full_name ?? "Investor"} />
+                    )}
+                    <span className="num text-[var(--color-text-muted)]">
+                      {s.percentage}% · {formatMoney(s.amount_invested, locale)}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <PanelHeader title={t("vehicleDetails")} />
+          )}
 
           {v.description && (
             <div className="mt-4 border-t border-[var(--color-border)] pt-3">
               <p className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t("description")}</p>
               <p className="whitespace-pre-wrap text-sm text-[var(--color-text)]">{v.description}</p>
+            </div>
+          )}
+
+          {/* The CPA sticker's amenities list (0025) — shown wherever the
+              car is inspected on screen, so the printed sticker never
+              says something the page does not. */}
+          {v.features?.length > 0 && (
+            <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+              <p className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t("features")}</p>
+              <ul className="flex flex-wrap gap-1.5">
+                {v.features.map((feature) => (
+                  <li
+                    key={feature}
+                    className="rounded-full bg-black/[0.04] px-2.5 py-1 text-xs text-[var(--color-text)]"
+                  >
+                    {feature}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -146,11 +197,51 @@ export default async function VehicleDetailPage({
         </Panel>
 
         <Panel>
-          <PanelHeader title={t("purchasePrice")} />
-          <p className="num text-2xl font-semibold">${v.purchase_price.toLocaleString()}</p>
+          <PanelHeader
+            title={t("pricing")}
+            action={
+              canPrice ? (
+                <PricingDialog vehicleId={v.id} askingPrice={v.asking_price} minPrice={v.min_price} />
+              ) : undefined
+            }
+          />
+          {/* The sticker price is the headline for everyone — it is the
+              number a car is sold against. */}
+          <p className="num text-2xl font-semibold">
+            {v.asking_price != null ? (
+              formatMoney(v.asking_price, locale)
+            ) : (
+              <span className="text-[var(--color-text-faint)]">{t("notPriced")}</span>
+            )}
+          </p>
           <div className="mt-3 space-y-1 text-xs text-[var(--color-text-muted)]">
+            <div className="flex justify-between">
+              <span>{t("lowestOffer")}</span>
+              <span className="num">{v.min_price != null ? formatMoney(v.min_price, locale) : "—"}</span>
+            </div>
+            {showCost && (
+              <>
+                <div className="flex justify-between"><span>{t("purchasePrice")}</span><span className="num">{formatMoney(v.purchase_price, locale)}</span></div>
+                <div className="flex justify-between"><span>{t("expenses")}</span><span className="num">{formatMoney(totalExpenses, locale)}</span></div>
+              </>
+            )}
             <div className="flex justify-between"><span>{t("branch")}</span><span>{(branchRow as Branch | null)?.name ?? "—"}</span></div>
-            <div className="flex justify-between"><span>{t("expenses")}</span><span className="num">${totalExpenses.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>{t("countryOfOrigin")}</span><span>{originLabel(origins, v.country_of_origin) ?? "—"}</span></div>
+          </div>
+          {/* The identifiers the traffic authority asks for at ownership
+              transfer (0021) — kept together so the clerk reads them off
+              one block. dir=ltr on VIN/engine: those are Latin technical
+              codes even in the Arabic UI; the plate may be Arabic script,
+              so it keeps the page direction. */}
+          <div className="mt-3 space-y-1 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-text-muted)]">
+            <div className="flex justify-between gap-3"><span>{t("vin")}</span><span className="num" dir="ltr">{v.vin ?? "—"}</span></div>
+            <div className="flex justify-between gap-3"><span>{t("engineNumber")}</span><span className="num" dir="ltr">{v.engine_number ?? "—"}</span></div>
+            <div className="flex justify-between gap-3"><span>{t("plateNumber")}</span><span className="num">{v.plate_number ?? "—"}</span></div>
+            {/* The ETA e-invoice product code (0026) — monospaced and
+                LTR: an EGS/GS1 code is a Latin technical string even in
+                the Arabic UI, and the dashes matter when it is read off
+                against the portal. */}
+            <div className="flex justify-between gap-3"><span>{t("itemCode")}</span><span className="font-mono" dir="ltr">{v.item_code ?? "—"}</span></div>
           </div>
         </Panel>
       </div>
@@ -162,13 +253,21 @@ export default async function VehicleDetailPage({
             <Th>{crm("clientName")}</Th>
             <Th>{crm("phone")}</Th>
             <Th>{interest("budget")}</Th>
-            <Th>{interest("vsCost")}</Th>
+            <Th>{showCost ? interest("vsCost") : interest("vsAsking")}</Th>
             <Th>{common("status")}</Th>
           </THead>
           <TBody>
             {buyers.map((i) => {
               const budget = i.budget_amount === null ? null : Number(i.budget_amount);
-              const gap = budget === null ? null : budget - Number(v.purchase_price);
+              // Management reads an offer against cost — the number that
+              // decides whether it is worth taking. The sales floor reads
+              // it against the sticker price, never the cost (0028).
+              const baseline = showCost
+                ? Number(v.purchase_price)
+                : v.asking_price != null
+                  ? Number(v.asking_price)
+                  : null;
+              const gap = budget === null || baseline === null ? null : budget - baseline;
               return (
                 <Tr key={i.id}>
                   <Td>
@@ -185,12 +284,9 @@ export default async function VehicleDetailPage({
                     {budget === null ? (
                       <span className="text-[var(--color-text-faint)]">{interest("noBudget")}</span>
                     ) : (
-                      `$${budget.toLocaleString()}`
+                      formatMoney(budget, locale)
                     )}
                   </Td>
-                  {/* Against acquisition cost, not an asking price: the schema
-                      has no asking price, and cost is the number that decides
-                      whether an offer is worth taking. */}
                   <Td
                     className={`num ${
                       gap === null
@@ -200,7 +296,7 @@ export default async function VehicleDetailPage({
                           : "text-[var(--color-accent-red)]"
                     }`}
                   >
-                    {gap === null ? "—" : `${gap >= 0 ? "+" : "−"}$${Math.abs(gap).toLocaleString()}`}
+                    {gap === null ? "—" : `${gap >= 0 ? "+" : "−"}${formatMoney(Math.abs(gap), locale)}`}
                   </Td>
                   <Td>
                     <StatusPill
@@ -220,6 +316,7 @@ export default async function VehicleDetailPage({
         </Table>
       </Panel>
 
+      {showCost && (
       <Panel>
         <PanelHeader
           title={t("expenses")}
@@ -236,7 +333,7 @@ export default async function VehicleDetailPage({
             {((expenses as VehicleExpense[]) ?? []).map((e) => (
               <Tr key={e.id} toneBar={e.is_ceo_override ? "var(--color-accent-amber)" : undefined}>
                 <Td>{e.category}</Td>
-                <Td className="num">${Number(e.amount).toLocaleString()}</Td>
+                <Td className="num">{formatMoney(Number(e.amount), locale)}</Td>
                 <Td className="text-[var(--color-text-muted)]">{e.note || "—"}</Td>
                 <Td className="text-[var(--color-text-faint)]">
                   {e.is_ceo_override && (
@@ -254,6 +351,7 @@ export default async function VehicleDetailPage({
           </TBody>
         </Table>
       </Panel>
+      )}
     </div>
   );
 }

@@ -157,7 +157,11 @@ export async function fetchWaterfallPreview(
   agreedPrice: number,
   discount: number
 ): Promise<WaterfallPreview | null> {
-  const auth = await authorize(["ceo", "accountant", "branch_manager", "sales_exec", "investor"]);
+  // COST ROLES ONLY (0028): the waterfall names the purchase price, the
+  // expense total and the overhead — exactly the figures a showroom does
+  // not show its sales floor. A sales exec sees the ticket, its checklist
+  // and its status; the profit anatomy is management's.
+  const auth = await authorize(["ceo", "accountant", "branch_manager", "investor"]);
   if (!auth.ok) return null;
 
   const id = Uuid.safeParse(vehicleId);

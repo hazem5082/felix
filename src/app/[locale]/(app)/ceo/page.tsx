@@ -1,5 +1,6 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
+import { formatMoney } from "@/lib/currency";
 import { StatCard } from "@/components/ui/stat-card";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
@@ -23,6 +24,7 @@ export default async function CeoDashboardPage() {
   const t = await getTranslations("dashboard");
   const demandT = await getTranslations("demand");
   const misc = await getTranslations("misc");
+  const locale = await getLocale();
   const supabase = await createClient();
 
   const startOfMonth = new Date();
@@ -92,8 +94,8 @@ export default async function CeoDashboardPage() {
       <PanelHeader title={t("title")} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label={t("activeInventoryValue")} value={activeInventoryValue} prefix="$" icon={<Car size={16} />} />
-        <StatCard label={t("mtdProfit")} value={mtdProfit} prefix="$" tone={mtdProfit >= 0 ? "green" : "red"} icon={<LayoutDashboard size={16} />} />
+        <StatCard label={t("activeInventoryValue")} value={activeInventoryValue} currency icon={<Car size={16} />} />
+        <StatCard label={t("mtdProfit")} value={mtdProfit} currency tone={mtdProfit >= 0 ? "green" : "red"} icon={<LayoutDashboard size={16} />} />
         <StatCard label={t("pendingApprovals")} value={pendingTickets?.length ?? 0} tone="amber" icon={<Clock size={16} />} />
         <StatCard label={t("activeBranches")} value={branches?.length ?? 0} icon={<Building2 size={16} />} />
       </div>
@@ -114,7 +116,7 @@ export default async function CeoDashboardPage() {
                   <Td>{r.branch.name}</Td>
                   <Td className="num">{r.vehicleCount - r.soldCount}</Td>
                   <Td className="num">{r.soldCount}</Td>
-                  <Td className="num">${r.activeValue.toLocaleString()}</Td>
+                  <Td className="num">{formatMoney(r.activeValue, locale)}</Td>
                 </Tr>
               ))}
             </TBody>
@@ -128,7 +130,7 @@ export default async function CeoDashboardPage() {
               <div key={key} className="flex items-center justify-between rounded-lg bg-black/[0.02] px-3 py-2 text-sm">
                 {key === "ceo" ? <span>{misc("ceoWallet")}</span> : <InvestorChip id={key} name={investorNames.get(key) ?? "Investor"} />}
                 <span className={`num ${balance >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-accent-red)]"}`}>
-                  ${balance.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatMoney(balance, locale)}
                 </span>
               </div>
             ))}
@@ -136,6 +138,71 @@ export default async function CeoDashboardPage() {
           </div>
         </Panel>
       </div>
+
+      {/* Read-only: branches have no edit UI (they are planted at provision
+          time), so the permit record is surfaced here rather than behind a
+          management form that does not exist. Data lands via SQL for now. */}
+      <Panel>
+        <PanelHeader title={t("branchLicensing")} subtitle={t("branchLicensingSubtitle")} />
+        <Table>
+          <THead>
+            <Th>{misc("branchCol")}</Th>
+            <Th>{t("commercialRegCol")}</Th>
+            <Th>{t("taxCardCol")}</Th>
+            <Th>{t("tradeLicenseCol")}</Th>
+            <Th>{t("licenseExpiryCol")}</Th>
+            <Th>{t("residentialCol")}</Th>
+          </THead>
+          <TBody>
+            {((branches as Branch[]) ?? []).map((b) => {
+              const expiry = b.trade_license_expiry ? new Date(b.trade_license_expiry) : null;
+              const now = new Date();
+              const soonCutoff = new Date(now);
+              soonCutoff.setDate(soonCutoff.getDate() + 90);
+              const dash = <span className="text-[var(--color-text-faint)]">—</span>;
+              return (
+                <Tr key={b.id}>
+                  <Td>{b.name}</Td>
+                  <Td className="num">{b.commercial_registration_no ?? dash}</Td>
+                  <Td className="num">{b.tax_card_no ?? dash}</Td>
+                  <Td className="num">{b.trade_license_no ?? dash}</Td>
+                  <Td>
+                    {expiry ? (
+                      <span className="flex items-center gap-2">
+                        <span className="num">{expiry.toLocaleDateString()}</span>
+                        <StatusPill
+                          label={
+                            expiry < now
+                              ? t("licenseExpired")
+                              : expiry < soonCutoff
+                                ? t("licenseExpiringSoon")
+                                : t("licenseValid")
+                          }
+                          tone={expiry < now ? "red" : expiry < soonCutoff ? "amber" : "green"}
+                        />
+                      </span>
+                    ) : (
+                      dash
+                    )}
+                  </Td>
+                  {/* Three states on purpose: null means "not assessed", which
+                      is not the same claim as "not under a residential
+                      building" — the 2027 mandate makes that difference real. */}
+                  <Td>
+                    {b.is_under_residential_building === true ? (
+                      <StatusPill label={t("relocateBy2027")} tone="amber" />
+                    ) : b.is_under_residential_building === false ? (
+                      <StatusPill label={t("residentialClear")} tone="green" />
+                    ) : (
+                      dash
+                    )}
+                  </Td>
+                </Tr>
+              );
+            })}
+          </TBody>
+        </Table>
+      </Panel>
 
       <Panel>
         <PanelHeader title={demandT("title")} subtitle={demandT("subtitle")} />
@@ -174,7 +241,7 @@ export default async function CeoDashboardPage() {
                   {d.topBudget === null ? (
                     <span className="text-[var(--color-text-faint)]">—</span>
                   ) : (
-                    `$${d.topBudget.toLocaleString()}`
+                    formatMoney(d.topBudget, locale)
                   )}
                 </Td>
                 <Td className="num text-[var(--color-text-muted)]">
@@ -182,7 +249,7 @@ export default async function CeoDashboardPage() {
                     ? demandT("noneQuoted")
                     : d.lowBudget === d.topBudget
                       ? demandT("quoted", { count: d.quoted })
-                      : `$${d.lowBudget!.toLocaleString()} – $${d.topBudget!.toLocaleString()}`}
+                      : `${formatMoney(d.lowBudget!, locale)} – ${formatMoney(d.topBudget!, locale)}`}
                 </Td>
                 {/* Three states, not two. A row that exists only because a
                     lead's car_interest is free text says nothing about
@@ -191,7 +258,7 @@ export default async function CeoDashboardPage() {
                 <Td>
                   {d.inStock ? (
                     <StatusPill
-                      label={`$${(d.purchasePrice ?? 0).toLocaleString()}`}
+                      label={formatMoney(d.purchasePrice ?? 0, locale)}
                       tone={
                         d.topBudget !== null && d.purchasePrice !== null && d.topBudget < d.purchasePrice
                           ? "red"

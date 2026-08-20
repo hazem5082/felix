@@ -18,6 +18,7 @@ import {
   UserCog,
   LifeBuoy,
   UserCircle2,
+  Megaphone,
 } from "lucide-react";
 
 const ICONS = {
@@ -25,6 +26,7 @@ const ICONS = {
   inventory: Car,
   crm: Users,
   deals: FileCheck2,
+  marketing: Megaphone,
   accountant: Calculator,
   investor: Wallet,
   calendar: CalendarDays,
