@@ -735,6 +735,20 @@
     "egypt": "Egypt",
     "sweden": "Sweden"
   },
+  "customer": {
+    "title": "Customer",
+    "returning": "Returning customer",
+    "returningHint": "Has bought from the group before",
+    "notLinked": "No customer record linked to this enquiry yet.",
+    "phones": "Phone numbers",
+    "otherEnquiries": "Other enquiries",
+    "noOtherEnquiries": "No other enquiries you can see.",
+    "deals": "Deals",
+    "noDeals": "No deals you can see.",
+    "thisEnquiry": "this enquiry",
+    "scopeNote": "Shows only the enquiries and deals your role can already see.",
+    "existingMatch": "{name} is already a customer — this lead will be linked to them."
+  },
   "notes": {
     "heading": "Note",
     "headingPlaceholder": "Who they are — e.g. married, three kids",

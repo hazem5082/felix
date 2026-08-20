@@ -8,6 +8,7 @@ import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
 import { StatusPill } from "@/components/ui/status-pill";
 import { TimeAgoDot, type TimeBand } from "@/components/ui/time-ago-dot";
 import { Input, Select } from "@/components/ui/input";
+import { UserRoundCheck } from "lucide-react";
 import type { Lead, LeadStatus } from "@/lib/supabase/types";
 
 type SourceFilter = "all" | "link" | "manual";
@@ -45,13 +46,24 @@ const LEAD_AGE_BANDS: TimeBand[] = [
 export function LeadsBrowser({
   leads,
   lastContactByLead,
+  returningLeadIds = [],
 }: {
   leads: Lead[];
   lastContactByLead: Record<string, string>;
+  /**
+   * Leads whose customer (0031) already bought a car through a DIFFERENT
+   * enquiry that this viewer can see. Computed once on the server from a
+   * single query — see crm/page.tsx — rather than per row, and empty on a
+   * database that has not had 0031 applied.
+   */
+  returningLeadIds?: string[];
 }) {
   const t = useTranslations("crm");
   const misc = useTranslations("misc");
   const common = useTranslations("common");
+  const customer = useTranslations("customer");
+
+  const returning = useMemo(() => new Set(returningLeadIds), [returningLeadIds]);
 
   const [q, setQ] = useState("");
   const [source, setSource] = useState<SourceFilter>("all");
@@ -118,7 +130,21 @@ export function LeadsBrowser({
                   <TimeAgoDot since={lastContactByLead[l.id] ?? null} bands={LAST_CONTACT_BANDS} emptyLabel={t("noContactYet")} />
                 </Td>
                 <Td>
-                  <Link href={`/crm/${l.id}`} className="hover:underline">{l.client_name}</Link>
+                  <span className="flex items-center gap-1.5">
+                    <Link href={`/crm/${l.id}`} className="hover:underline">{l.client_name}</Link>
+                    {/* Deliberately a mark rather than a column: it is
+                        true of a minority of rows, and a whole column of
+                        blanks would cost more attention than it repays. */}
+                    {returning.has(l.id) && (
+                      <span title={customer("returningHint")}>
+                        <UserRoundCheck
+                          size={13}
+                          className="text-[var(--color-accent-blue)]"
+                          aria-label={customer("returning")}
+                        />
+                      </span>
+                    )}
+                  </span>
                 </Td>
                 <Td className="num text-[var(--color-text-muted)]">{l.phone_number}</Td>
                 <Td className="text-[var(--color-text-muted)]">{l.car_interest || "—"}</Td>

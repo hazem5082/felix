@@ -4,10 +4,13 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authorize, assertBranch, STAFF_ROLES } from "@/lib/auth";
 import { toUserError } from "@/lib/db-error";
+import { findCustomerCandidates, linkLeadToCustomer } from "@/lib/customer-link";
+import { decideCustomerLink } from "@/lib/customer-match";
 import {
   CreateDealTicketSchema,
   CreateLeadInterestSchema,
   CreateLeadSchema,
+  CustomerLookupSchema,
   LeadCommentSchema,
   UpdateLeadInterestSchema,
   UpdateLeadInterestStatusSchema,
@@ -37,16 +40,78 @@ export async function createLead(input: {
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
-  const { error } = await supabase.from("leads").insert({
-    ...parsed.data,
-    salesperson_id: auth.profile.id,
-    branch_id: auth.profile.branch_id,
-    source: "manual",
-  });
+  const { data, error } = await supabase
+    .from("leads")
+    .insert({
+      ...parsed.data,
+      salesperson_id: auth.profile.id,
+      branch_id: auth.profile.branch_id,
+      source: "manual",
+    })
+    .select("id")
+    .single();
 
   if (error) return toUserError(error);
+
+  // The identity behind the enquiry (0031). Runs after the insert and
+  // never fails the action: the lead is the record that matters, and a
+  // deployment still on 0030 has no customers table to write to. See
+  // lib/customer-link.ts for why this is here and not in a trigger.
+  await linkLeadToCustomer(supabase, (data as { id: string }).id, {
+    full_name: parsed.data.client_name,
+    phone_number: parsed.data.phone_number,
+    national_id: parsed.data.national_id,
+    address: parsed.data.address,
+    nationality: parsed.data.nationality,
+  });
+
   revalidatePath("/[locale]/(app)/crm", "page");
   return { ok: true };
+}
+
+/**
+ * "Have we met this person before?", asked while the Add Lead dialog is
+ * still open (migration 0031).
+ *
+ * NON-BLOCKING BY DESIGN. It returns a name to show above the form and
+ * nothing else — it does not pre-fill fields, does not change what gets
+ * saved, and cannot refuse a save. The link itself is decided again,
+ * server-side, by createLead: this probe is a courtesy, and a courtesy
+ * that could block the counter would be worse than no courtesy.
+ *
+ * Returns only `full_name`. Deliberately not the customer's other leads,
+ * their tickets or what they paid — the dialog's job is to stop a
+ * salesperson typing a duplicate, and everything beyond the name is on
+ * the lead page afterwards, behind the reader's own RLS.
+ */
+export async function lookupCustomerForLead(input: {
+  national_id: string;
+  phone_number: string;
+}): Promise<{ full_name: string } | null> {
+  const auth = await authorize(STAFF_ROLES);
+  if (!auth.ok) return null;
+
+  const parsed = parseInput(CustomerLookupSchema, input);
+  if (!parsed.ok) return null;
+  if (!parsed.data.national_id && !parsed.data.phone_number) return null;
+
+  const supabase = await createClient();
+  const candidates = await findCustomerCandidates(supabase, parsed.data);
+  if (!candidates?.length) return null;
+
+  // The same decision createLead will make, so the notice cannot promise
+  // a link the save then declines to create.
+  const plan = decideCustomerLink(parsed.data, candidates);
+  if (plan.action !== "link") return null;
+
+  const { data } = await supabase
+    .from("customers")
+    .select("full_name")
+    .eq("id", plan.customerId)
+    .maybeSingle();
+
+  const customer = data as { full_name: string } | null;
+  return customer ? { full_name: customer.full_name } : null;
 }
 
 /**
@@ -106,6 +171,38 @@ export async function updateLead(input: {
   // another salesperson's pipeline, and an update that changed nothing
   // would otherwise report success.
   if (!data) return { error: "That client is not available to you." };
+
+  // Re-run the link (0031). This is the write path that matters most:
+  // the national ID is normally recorded HERE rather than at creation,
+  // because it arrives when the person is actually buying — which makes
+  // this edit the moment a lead first becomes matchable to somebody the
+  // showroom already knows.
+  //
+  // customer_id is read in its own statement rather than folded into the
+  // UPDATE's returning clause: naming a column that a pre-0031 database
+  // does not have would turn every lead edit into an error, whereas a
+  // separate select simply comes back empty and the link step no-ops.
+  const { data: linkRow } = await supabase
+    .from("leads")
+    .select("customer_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  // Passed through so an edit that matches nobody new enriches the
+  // identity already attached instead of minting a second one and
+  // orphaning this person's history — see lib/customer-link.ts.
+  await linkLeadToCustomer(
+    supabase,
+    id,
+    {
+      full_name: fields.client_name,
+      phone_number: fields.phone_number,
+      national_id: fields.national_id,
+      address: fields.address,
+      nationality: fields.nationality,
+    },
+    (linkRow as { customer_id: string | null } | null)?.customer_id ?? null
+  );
 
   revalidatePath("/[locale]/(app)/crm/[leadId]", "page");
   revalidatePath("/[locale]/(app)/crm", "page");

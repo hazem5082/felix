@@ -101,17 +101,18 @@ export const DEMO_INTERESTS = [
  * (it runs main() at module scope). Defining it here keeps this module
  * import-safe: nothing happens until somebody calls it.
  *
- * Idempotent on both halves — leads by phone number, interests by the
- * pair that identifies the row — so a re-run neither duplicates a buyer
- * nor overwrites a budget somebody edited while demonstrating the
- * product.
+ * Idempotent on all three parts — leads by phone number, customers by
+ * the number already in their phone_numbers array, interests by the pair
+ * that identifies the row — so a re-run neither duplicates a buyer nor
+ * overwrites a budget somebody edited while demonstrating the product.
  *
  * @param db            service-role client already pinned to t_<slug>
  * @param branchId      branch every seeded lead belongs to
  * @param salespersonId owner of the leads and author of the interests
  * @param vehicleIdFor  BASE_VINS key -> vehicles.id, or null if absent
  * @returns {Promise<{leads: Record<string,string>, leadsAdded: number,
- *                    interestsAdded: number, interestsSkipped: boolean}>}
+ *                    customersAdded: number, interestsAdded: number,
+ *                    interestsSkipped: boolean}>}
  */
 export async function seedPipeline({ db, branchId, salespersonId, vehicleIdFor, log = () => {} }) {
   const leads = {};
@@ -140,12 +141,59 @@ export async function seedPipeline({ db, branchId, salespersonId, vehicleIdFor, 
     log(`✓ lead ${l.client_name}`);
   }
 
+  // ── The identity behind each lead (migration 0031) ─────────
+  //
+  // 0031's backfill turns EXISTING leads into customers, which does
+  // nothing for a showroom seeded afterwards — so the seed does the same
+  // job for its own rows, or the customer card on every demo lead would
+  // read "not linked yet".
+  //
+  // Matched on the exact phone number, exactly as the backfill does. The
+  // app's matcher normalises; a seed script is the last place to be
+  // clever about it, and these fixtures all write numbers the same way.
+  //
+  // Probe-guarded like the interests below: a showroom that has not had
+  // 0031 applied still gets its leads rather than failing the whole seed.
+  let customersAdded = 0;
+  const { error: customerProbeErr } = await db.from("customers").select("id").limit(1);
+  if (customerProbeErr) {
+    log(`! customers unavailable (${customerProbeErr.message}) — apply migration 0031, then re-run.`);
+  } else {
+    for (const l of DEMO_LEADS) {
+      const leadId = leads[l.key];
+      if (!leadId) continue;
+
+      const { data: linked } = await db
+        .from("leads").select("customer_id").eq("id", leadId).maybeSingle();
+      if (linked?.customer_id) continue;
+
+      const { data: existing } = await db
+        .from("customers").select("id")
+        .contains("phone_numbers", [l.phone_number])
+        .limit(1).maybeSingle();
+
+      let customerId = existing?.id ?? null;
+      if (!customerId) {
+        const { data, error } = await db
+          .from("customers")
+          .insert({ full_name: l.client_name, phone_numbers: [l.phone_number] })
+          .select("id").single();
+        if (error) throw new Error(`seeding customer ${l.client_name}: ${error.message}`);
+        customerId = data.id;
+        customersAdded++;
+      }
+
+      await db.from("leads").update({ customer_id: customerId }).eq("id", leadId);
+    }
+    if (customersAdded) log(`✓ ${customersAdded} customer(s)`);
+  }
+
   // The table arrives with migration 0016. A showroom one migration
   // behind must still get its leads rather than failing the whole seed.
   const { error: probeErr } = await db.from("lead_vehicle_interests").select("id").limit(1);
   if (probeErr) {
     log(`! lead_vehicle_interests unavailable (${probeErr.message}) — apply migration 0016, then re-run.`);
-    return { leads, leadsAdded, interestsAdded: 0, interestsSkipped: true };
+    return { leads, leadsAdded, customersAdded, interestsAdded: 0, interestsSkipped: true };
   }
 
   let interestsAdded = 0;
@@ -182,7 +230,7 @@ export async function seedPipeline({ db, branchId, salespersonId, vehicleIdFor, 
     interestsAdded++;
   }
 
-  return { leads, leadsAdded, interestsAdded, interestsSkipped: false };
+  return { leads, leadsAdded, customersAdded, interestsAdded, interestsSkipped: false };
 }
 
 /**

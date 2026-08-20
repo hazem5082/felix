@@ -305,6 +305,40 @@ export const PublicLeadSchema = z.object({
   client_notes: optionalText(1000),
 });
 
+/**
+ * The "existing customer — will be linked" probe behind the Add Lead
+ * dialog (migration 0031).
+ *
+ * Deliberately the loosest schema in this file, and for a reason the
+ * others do not share: it runs while somebody is still typing. A
+ * half-entered national ID has to come back "no match", not a validation
+ * error thrown at a field nobody has finished with — so both inputs are
+ * bounded and character-classed, then quietly TRANSFORMED to null when
+ * they are not yet a usable key. The action reads null as "do not look
+ * anything up", which is the same answer as "found nobody".
+ *
+ * Bounded and character-classed all the same: this is still a public
+ * endpoint that reads the customer book, and it must not be drivable by
+ * arbitrary text or by a 4KB string.
+ */
+export const CustomerLookupSchema = z.object({
+  national_id: z
+    .string()
+    .trim()
+    .max(32)
+    .optional()
+    .nullable()
+    .transform((v) => (v && /^[0-9]{14}$/.test(v) ? v : null)),
+  phone_number: z
+    .string()
+    .trim()
+    .max(32)
+    .regex(/^[+()\d\s-]*$/, { message: "Phone number contains invalid characters" })
+    .optional()
+    .nullable()
+    .transform((v) => (v && v.length >= 6 ? v : null)),
+});
+
 export const LeadCommentSchema = z.object({
   lead_id: Uuid,
   body: text(2000),

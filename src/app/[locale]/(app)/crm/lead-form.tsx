@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
-import { Plus } from "lucide-react";
+import { Plus, UserRoundCheck } from "lucide-react";
 import { NotePointsEditor } from "./note-points-editor";
-import { createLead } from "./actions";
+import { createLead, lookupCustomerForLead } from "./actions";
 
 /**
  * Egyptian national ID: exactly 14 digits when present (mirrors the DB
@@ -24,6 +24,7 @@ export function LeadFormDialog() {
   const common = useTranslations("common");
   const misc = useTranslations("misc");
   const notes = useTranslations("notes");
+  const customer = useTranslations("customer");
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -39,9 +40,50 @@ export function LeadFormDialog() {
   // it in would make the generic `set()` above lie about its value type.
   const [points, setPoints] = useState<string[]>([]);
 
+  // "We know this person already" (0031). Advisory only: it never blocks
+  // the save, never pre-fills a field, and the link is decided again
+  // server-side by createLead. Its whole job is to stop a salesperson
+  // typing a second record for somebody the group already has.
+  const [known, setKnown] = useState<{ full_name: string } | null>(null);
+
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // Debounced, because it watches two fields somebody is typing into, and
+  // the cleanup drops the reply of any probe that has been superseded —
+  // responses can land out of order, and a slow answer for a half-typed
+  // number must not overwrite the answer for the complete one.
+  //
+  // Cheap enough to run while somebody types: at most two indexed queries
+  // (the unique index on national_id, the GIN index on phone_numbers)
+  // returning one name or nothing.
+  const probeId = form.national_id.trim();
+  const probePhone = form.phone_number.trim();
+  useEffect(() => {
+    if (!open) return;
+    if (probePhone.length < 6 && !/^[0-9]{14}$/.test(probeId)) {
+      setKnown(null);
+      return;
+    }
+
+    let live = true;
+    const timer = setTimeout(() => {
+      lookupCustomerForLead({ national_id: probeId, phone_number: probePhone })
+        .then((match) => {
+          if (live) setKnown(match);
+        })
+        .catch(() => {
+          // A failed probe is a missing courtesy, never a failed form.
+          if (live) setKnown(null);
+        });
+    }, 400);
+
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [open, probeId, probePhone]);
 
   function submit() {
     setError(null);
@@ -51,6 +93,7 @@ export function LeadFormDialog() {
       setOpen(false);
       setForm({ client_name: "", phone_number: "", car_interest: "", address: "", company_name: "", job_title: "", income: "", client_notes: "", national_id: "", nationality: "" });
       setPoints([]);
+      setKnown(null);
     });
   }
 
@@ -61,6 +104,16 @@ export function LeadFormDialog() {
       </DialogTrigger>
       {open && (
         <DialogContent title={t("addLead")}>
+          {/* Non-blocking, and placed above the fields rather than beside
+              one of them: it is about the person, not about the national
+              ID or the phone individually, and either can be what
+              matched. */}
+          {known && (
+            <div className="mb-3 flex items-start gap-2 rounded-md bg-[var(--color-accent-blue-dim)] px-3 py-2 text-xs text-[var(--color-accent-blue)]">
+              <UserRoundCheck size={14} className="mt-px shrink-0" />
+              <span>{customer("existingMatch", { name: known.full_name })}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label>{t("clientName")}</Label>

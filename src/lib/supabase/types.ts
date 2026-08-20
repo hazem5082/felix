@@ -248,6 +248,40 @@ export interface OverheadConfig {
   updated_at: string;
 }
 
+/**
+ * The person, as opposed to the enquiry (migration 0031).
+ *
+ * `leads` is one salesperson's work on one occasion and it ends
+ * (ticket_created, closed); this row outlives it and is shared across
+ * every branch in the group, which is the point — the same man walking
+ * into two showrooms used to become two unrelated records with no way to
+ * answer "what has he bought from us before".
+ *
+ * Readable org-wide by any staff member (customers_select is `is_staff()`
+ * with no branch predicate). The sensitive rows it hangs off — leads,
+ * deal_tickets, contracts, ledger_entries — keep their branch-scoped
+ * policies, so a colleague at another branch can see that this person is
+ * known and nothing about what he paid.
+ */
+export interface Customer {
+  id: string;
+  full_name: string;
+  /** The dedupe key: 14 digits, or null until somebody collects it. Unique. */
+  national_id: string | null;
+  /**
+   * Every number this person has been recorded under, as typed, plus the
+   * canonical `0…` form that makes them findable. Never null — the column
+   * is `not null default '{}'`.
+   */
+  phone_numbers: string[];
+  address: string | null;
+  nationality: string | null;
+  /** The customer-level scrap, distinct from `Lead.client_notes`, which is about one enquiry. */
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Lead {
   id: string;
   branch_id: string | null;
@@ -286,8 +320,19 @@ export interface Lead {
   national_id: string | null;
   /** Free text; conceptually Egyptian by default but null until entered. */
   nationality: string | null;
+  /**
+   * The durable identity behind this enquiry (migration 0031).
+   *
+   * Null on three kinds of row and all three are legitimate: leads from
+   * the public referral form (which never runs the link step — see
+   * lib/customer-link.ts), leads saved while the link lookup was failing,
+   * and every row in a deployment whose database has not had 0031 applied
+   * yet. Read it as `?? null` and render around its absence.
+   */
+  customer_id: string | null;
   created_at: string;
   profiles?: Profile;
+  customers?: Customer | null;
 }
 
 /**

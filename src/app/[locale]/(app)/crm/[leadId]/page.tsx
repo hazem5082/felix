@@ -8,9 +8,17 @@ import { StageBar } from "@/components/ui/stage-bar";
 import { StatButton } from "@/components/ui/stat-button";
 import { Link } from "@/i18n/navigation";
 import { Car, MessagesSquare, History as HistoryIcon } from "lucide-react";
-import type { AuditLogRow, Lead, LeadComment, LeadVehicleInterest, Vehicle } from "@/lib/supabase/types";
+import type {
+  AuditLogRow,
+  Customer,
+  Lead,
+  LeadComment,
+  LeadVehicleInterest,
+  Vehicle,
+} from "@/lib/supabase/types";
 import { interestLabel, vehicleLabel } from "@/lib/demand";
 import { buildLeadHistory, vehicleIdsInHistory } from "@/lib/lead-history";
+import { CustomerCard, type CustomerTicket } from "./customer-card";
 import { CommentForm } from "./comment-form";
 import { InterestEditDialog, InterestFormDialog } from "./interest-form";
 import { InterestStatusSelect } from "./interest-status";
@@ -95,6 +103,56 @@ export default async function LeadDetailPage({
 
   const commentsList = (comments as (LeadComment & { profiles?: { full_name: string } })[]) ?? [];
 
+  // ── The customer behind this enquiry (0031) ────────────────
+  //
+  // Three sequenced queries rather than one embed, because each depends
+  // on the previous one's ids and because every one of them must be able
+  // to come back empty without taking the page with it: a deployment
+  // still on 0030 has no customers table and no leads.customer_id, and
+  // supabase-js hands back `{ data: null, error }` rather than throwing.
+  // The card then renders its "not linked yet" state, which is also the
+  // correct state for a referral lead nobody has opened yet.
+  //
+  // The scope of what comes back is the viewer's own. customers is
+  // readable org-wide on purpose; the leads and tickets below are not,
+  // and no attempt is made here to see past leads_select /
+  // deal_tickets_select. What the salesperson sees is what they were
+  // already entitled to see, gathered in one place.
+  const customerId = l.customer_id ?? null;
+
+  const { data: customerRow } = customerId
+    ? await supabase.from("customers").select("*").eq("id", customerId).maybeSingle()
+    : { data: null };
+  const customer = (customerRow as Customer | null) ?? null;
+
+  const { data: siblingRows } = customer
+    ? await supabase
+        .from("leads")
+        .select("*")
+        .eq("customer_id", customer.id)
+        .order("created_at", { ascending: false })
+        .limit(25)
+    : { data: [] };
+
+  const customerLeads = (siblingRows as Lead[]) ?? [];
+  const otherLeads = customerLeads.filter((other) => other.id !== l.id);
+
+  // Tickets are reached through the leads because a ticket names a lead,
+  // not a customer — 0031 deliberately adds no second path to the same
+  // fact. `l.id` is included so a deal raised on THIS enquiry appears in
+  // the history too, marked as such.
+  const ticketLeadIds = [l.id, ...otherLeads.map((other) => other.id)];
+  const { data: ticketRows } = customer
+    ? await supabase
+        .from("deal_tickets")
+        .select("id, lead_id, status, agreed_price, created_at, vehicles(year, make, model, trim)")
+        .in("lead_id", ticketLeadIds)
+        .order("created_at", { ascending: false })
+        .limit(25)
+    : { data: [] };
+
+  const customerTickets = (ticketRows as unknown as CustomerTicket[]) ?? [];
+
   return (
     <div className="space-y-6">
       <PanelHeader
@@ -150,6 +208,16 @@ export default async function LeadDetailPage({
             </dl>
             <NotePointsView heading={l.client_notes} points={l.client_note_points ?? []} />
           </Panel>
+
+          {/* The person behind the enquiry (0031). Directly under Client
+              Info because that panel is what this lead says about them and
+              this one is what the whole group knows. */}
+          <CustomerCard
+            customer={customer}
+            otherLeads={otherLeads}
+            tickets={customerTickets}
+            currentLeadId={l.id}
+          />
 
           <Panel id="interests">
             <PanelHeader title={interest("title")} action={<InterestFormDialog leadId={l.id} />} />
