@@ -44,6 +44,6 @@ export function Tr({
   );
 }
 
-export function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={cn("px-4 py-2.5 align-middle", className)}>{children}</td>;
+export function Td({ children, className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
+  return <td className={cn("px-4 py-2.5 align-middle", className)} {...props}>{children}</td>;
 }

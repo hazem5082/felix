@@ -324,7 +324,10 @@
     "addComment": "تسجيل تفاعل",
     "referralLink": "رابط الإحالة الخاص بك",
     "copyLink": "نسخ الرابط",
-    "editClient": "تعديل بيانات العميل"
+    "editClient": "تعديل بيانات العميل",
+    "lastContact": "آخر تواصل",
+    "inSystem": "مدة التسجيل",
+    "noContactYet": "لا يوجد تواصل بعد"
   },
   "interest": {
     "title": "السيارات التي يريدها هذا المشتري",

@@ -237,7 +237,10 @@
     "addComment": "Log Interaction",
     "referralLink": "Your Referral Link",
     "copyLink": "Copy Link",
-    "editClient": "Edit client"
+    "editClient": "Edit client",
+    "lastContact": "Last Contact",
+    "inSystem": "In System",
+    "noContactYet": "No contact yet"
   },
   "interest": {
     "title": "Cars this buyer wants",
