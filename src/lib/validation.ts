@@ -1067,6 +1067,19 @@ export const BranchGrantRevokeSchema = z.object({
   branch_id: Uuid,
 });
 
+/**
+ * Requesting a branch-to-branch stock transfer (migration 0035).
+ * from_branch_id is deliberately absent: the server derives it from the
+ * vehicle's own current branch rather than trusting it from the client,
+ * and the database pins it again in enforce_transfer_eligible() —
+ * belt and suspenders on the same fact.
+ */
+export const RequestStockTransferSchema = z.object({
+  vehicleId: Uuid,
+  toBranchId: Uuid,
+  note: optionalText(500),
+});
+
 export const LedgerEntrySchema = z
   .object({
     holder_type: z.enum(["ceo", "investor", "sales_exec"]),
