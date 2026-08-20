@@ -239,6 +239,29 @@ export interface Vehicle {
   sold_at: string | null;
 }
 
+// Branch-to-branch stock movement (migration 0035). 'requested' is the
+// only insertable value; guard_stock_transfer_status() confines every
+// later transition to requested->accepted, requested->cancelled, or the
+// one compensating accepted->requested a failed accept may need.
+export type StockTransferStatus = "requested" | "accepted" | "cancelled";
+
+export interface StockTransfer {
+  id: string;
+  vehicle_id: string;
+  from_branch_id: string;
+  to_branch_id: string;
+  status: StockTransferStatus;
+  requested_by: string | null;
+  /** Stamped by the database the moment status leaves 'requested'. */
+  decided_by: string | null;
+  note: string | null;
+  requested_at: string;
+  decided_at: string | null;
+  // Joined by transfer-actions.ts's loadVehicleTransfers() for the panel.
+  from_branch?: Pick<Branch, "id" | "name">;
+  to_branch?: Pick<Branch, "id" | "name">;
+}
+
 export interface VehicleEquitySplit {
   id: string;
   vehicle_id: string;

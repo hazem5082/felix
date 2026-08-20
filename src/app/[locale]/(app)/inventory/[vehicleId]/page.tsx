@@ -2,7 +2,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { formatMoney } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile, canSeeCost } from "@/lib/auth";
+import { getProfile, canSeeCost, getGrantedBranchIds } from "@/lib/auth";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -17,6 +17,7 @@ import type {
   LeadVehicleInterest,
 } from "@/lib/supabase/types";
 import { ExpenseFormDialog } from "./expense-form";
+import { TransferPanel } from "./transfer-dialog";
 import { PricingDialog } from "../pricing-form";
 import { colorLabel } from "@/lib/vehicle-color";
 import { originLabel } from "@/lib/vehicle-origin";
@@ -45,6 +46,8 @@ export default async function VehicleDetailPage({
     { data: expenses },
     { data: branch },
     { data: interests },
+    { data: branches },
+    grantedBranchIds,
   ] = await Promise.all([
     supabase.from("vehicles").select("*").eq("id", vehicleId).maybeSingle(),
     supabase
@@ -66,6 +69,13 @@ export default async function VehicleDetailPage({
       .eq("vehicle_id", vehicleId)
       .neq("status", "declined")
       .order("budget_amount", { ascending: false, nullsFirst: false }),
+    // Every branch, unnarrowed — the transfer panel's destination picker
+    // (0035). Unlike vehicle intake, requesting a transfer needs no
+    // authority over the DESTINATION, only over the vehicle's current
+    // branch, which TransferPanel checks separately via
+    // canActOnBranchWithGrants().
+    supabase.from("branches").select("*"),
+    getGrantedBranchIds(),
   ]);
 
   if (!vehicle) notFound();
@@ -294,6 +304,22 @@ export default async function VehicleDetailPage({
           </div>
         </Panel>
       </div>
+
+      {/* Branch-to-branch stock movement (0035) — self-contained: it
+          fetches its own transfer history and derives every button's
+          visibility from the same branch-authority rule the server
+          actions and the database re-check. */}
+      {profile && (
+        <TransferPanel
+          vehicleId={v.id}
+          currentBranchId={v.branch_id}
+          vehicleStatus={v.status}
+          branches={(branches as Branch[]) ?? []}
+          role={profile.role}
+          homeBranchId={profile.branch_id}
+          grantedBranchIds={grantedBranchIds}
+        />
+      )}
 
       <Panel>
         <PanelHeader title={interest("buyersTitle")} subtitle={interest("buyersSubtitle")} />

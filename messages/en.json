@@ -354,6 +354,22 @@
     "consignmentNoTerms": "No commission terms were recorded for this car. Unless they are added, the whole sale price will be owed to the consignor.",
     "consignmentExpenseHint": "This car is on consignment. Money spent on it comes out of the showroom's commission — there is no shared profit pool on a car the showroom does not own."
   },
+  "transfers": {
+    "title": "Branch Transfer",
+    "subtitle": "Move this car to another branch",
+    "requestButton": "Request transfer",
+    "destinationBranch": "Destination branch",
+    "selectPlaceholder": "Choose a branch",
+    "note": "Note (optional)",
+    "notePlaceholder": "Why is this car moving?",
+    "noneOpen": "No transfer in progress for this car.",
+    "statusRequested": "Requested",
+    "statusAccepted": "Accepted",
+    "statusCancelled": "Cancelled",
+    "accept": "Accept",
+    "cancel": "Cancel transfer",
+    "history": "Transfer history"
+  },
   "crm": {
     "title": "CRM & Lead Interaction",
     "addLead": "Add Lead",
