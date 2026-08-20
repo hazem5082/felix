@@ -224,6 +224,15 @@ export interface Vehicle {
   consignor_national_id: string | null;
   consignment_commission_type: CommissionType | null;
   consignment_commission_value: number | null;
+  // The reading at intake (migration 0036) — the second question every
+  // used-car buyer asks. Updatable with no decrease guard: cars get
+  // driven, and a lower reading after a correction is real, not a
+  // rollback to police. Nullable: nothing backfilled it for stock taken
+  // in before this migration, including 0032's trade-ins.
+  odometer_km: number | null;
+  // Free text — who or where this car came from ("مزاد القاهرة",
+  // "عميل — أحمد فؤاد", a fleet company). Nullable for the same reason.
+  acquisition_source: string | null;
   // Zero, and only zero, when acquisition_type is 'consignment': a
   // consigned car deploys no capital. The DB CHECK says the same.
   purchase_price: number;
@@ -260,6 +269,24 @@ export interface StockTransfer {
   // Joined by transfer-actions.ts's loadVehicleTransfers() for the panel.
   from_branch?: Pick<Branch, "id" | "name">;
   to_branch?: Pick<Branch, "id" | "name">;
+}
+
+/**
+ * One row per price change (migration 0036) — a plain trigger on
+ * `vehicles` writes these; nothing in the app inserts them directly.
+ * `branch_id` is denormalised off the vehicle at write time so the
+ * SELECT policy is a scalar `can_read_branch(branch_id)` rather than a
+ * per-row subquery into `vehicles` — the 0033 receivables-book pattern.
+ */
+export interface VehiclePriceHistory {
+  id: string;
+  vehicle_id: string;
+  branch_id: string;
+  asking_price: number | null;
+  min_price: number | null;
+  changed_by: string | null;
+  changed_at: string;
+  profiles?: Pick<Profile, "full_name"> | null;
 }
 
 export interface VehicleEquitySplit {

@@ -3,7 +3,10 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-export type SemanticTone = "green" | "red" | "amber" | "blue" | "neutral";
+// "orange" added in 0036 — the ageing chip needs a fourth stop between
+// amber ("watch it") and red ("action needed") for stale-but-not-dead
+// stock. Purely additive: every existing caller keeps its five tones.
+export type SemanticTone = "green" | "red" | "amber" | "blue" | "neutral" | "orange";
 
 const TONE_CLASSES: Record<SemanticTone, string> = {
   green: "bg-[var(--color-accent-green-dim)] text-[var(--color-accent-green)] ring-1 ring-inset ring-[var(--color-accent-green)]/20",
@@ -11,6 +14,7 @@ const TONE_CLASSES: Record<SemanticTone, string> = {
   amber: "bg-[var(--color-accent-amber-dim)] text-[var(--color-accent-amber)] ring-1 ring-inset ring-[var(--color-accent-amber)]/20",
   blue: "bg-[var(--color-accent-blue-dim)] text-[var(--color-accent-blue)] ring-1 ring-inset ring-[var(--color-accent-blue)]/20",
   neutral: "bg-black/[0.04] text-[var(--color-text-muted)] ring-1 ring-inset ring-black/[0.06]",
+  orange: "bg-[var(--color-accent-orange-dim)] text-[var(--color-accent-orange)] ring-1 ring-inset ring-[var(--color-accent-orange)]/20",
 };
 
 export function StatusPill({

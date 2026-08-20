@@ -11,7 +11,8 @@ import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
 import { ViewToggle, type ViewMode } from "@/components/ui/view-toggle";
 import { vehicleStatusTone } from "@/lib/status-tone";
 import { colorLabel, colorSwatch } from "@/lib/vehicle-color";
-import { Car, X } from "lucide-react";
+import { ageBucket, ageTone, daysInStock, formatOdometer, type AgeBucket } from "@/lib/stock-age";
+import { Car, X, ArrowDownWideNarrow } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Vehicle, Branch, VehicleStatus } from "@/lib/supabase/types";
 
@@ -61,6 +62,12 @@ export function InventoryBrowser({
   const [color, setColor] = useState("");
   const [branchId, setBranchId] = useState("");
   const [q, setQ] = useState("");
+  // Ageing (0036). No sorting idiom exists elsewhere in this browser to
+  // extend, so this is the one toggle rather than a generic column-sort
+  // framework — it reorders the CURRENT filtered set, oldest-in-stock
+  // first, and leaves everything else (default creation order) alone.
+  const [staleFirst, setStaleFirst] = useState(false);
+  const now = useMemo(() => new Date(), []);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { all: vehicles.length };
@@ -102,7 +109,7 @@ export function InventoryBrowser({
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return byStatus.filter((v) => {
+    const rows = byStatus.filter((v) => {
       if (make && v.make !== make) return false;
       if (model && v.model !== model) return false;
       if (year && String(v.year) !== year) return false;
@@ -114,7 +121,39 @@ export function InventoryBrowser({
       }
       return true;
     });
-  }, [byStatus, make, model, year, color, branchId, q]);
+    if (!staleFirst) return rows;
+    // A copy, not an in-place sort: `rows` is itself a filter of `byStatus`
+    // (which may be the `vehicles` prop array), and mutating it would
+    // reorder those too on the next render that skips this branch.
+    return [...rows].sort(
+      (a, b) =>
+        daysInStock(b.created_at, b.sold_at, now) - daysInStock(a.created_at, a.sold_at, now)
+    );
+  }, [byStatus, make, model, year, color, branchId, q, staleFirst, now]);
+
+  // The ageing summary strip (0036): count and total purchase value per
+  // bucket, for the vehicles CURRENTLY shown and still in stock — a sold
+  // or reserved car is no longer part of "what's sitting on the floor".
+  // Client-side over rows already loaded, so it costs no extra query and
+  // narrows exactly as the filters above do.
+  const agingSummary = useMemo(() => {
+    const buckets: Record<AgeBucket, { count: number; value: number }> = {
+      fresh: { count: 0, value: 0 },
+      aging: { count: 0, value: 0 },
+      stale: { count: 0, value: 0 },
+      dead: { count: 0, value: 0 },
+    };
+    for (const v of shown) {
+      if (v.status !== "in_stock") continue;
+      const bucket = ageBucket(daysInStock(v.created_at, v.sold_at, now));
+      buckets[bucket].count += 1;
+      // Redacted to 0 server-side for a viewer who may not see cost
+      // (inventory/page.tsx), and a consigned car's cost basis is
+      // genuinely 0 — either way there is nothing to double-guess here.
+      buckets[bucket].value += Number(v.purchase_price) || 0;
+    }
+    return buckets;
+  }, [shown, now]);
 
   const filtersActive = Boolean(make || model || year || color || branchId || q);
 
@@ -135,6 +174,13 @@ export function InventoryBrowser({
     if (v.acquisition_type === "trade_in") return t("acquisitionTradeIn");
     return null;
   }
+
+  const bucketLabels: Record<AgeBucket, string> = {
+    fresh: t("ageFresh"),
+    aging: t("ageAging"),
+    stale: t("ageStale"),
+    dead: t("ageDead"),
+  };
 
   function statusLabel(s: StatusFilter) {
     if (s === "all") return misc("filterAll");
@@ -234,16 +280,58 @@ export function InventoryBrowser({
 
       <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
         <span className="num">{misc("showingCount", { count: shown.length })}</span>
-        {filtersActive && (
+        <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={clearFilters}
-            className="inline-flex items-center gap-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            onClick={() => setStaleFirst((s) => !s)}
+            aria-pressed={staleFirst}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors",
+              staleFirst
+                ? "bg-[var(--color-accent-orange-dim)] text-[var(--color-accent-orange)]"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            )}
           >
-            <X size={12} />
-            {misc("clearFilters")}
+            <ArrowDownWideNarrow size={12} />
+            {t("staleFirst")}
           </button>
-        )}
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            >
+              <X size={12} />
+              {misc("clearFilters")}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Ageing summary strip (0036) — count and, where cost is visible,
+          total purchase value per bucket, for the in-stock cars in the
+          CURRENT filter. Purely a read of `shown`; no extra query. */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {(["fresh", "aging", "stale", "dead"] as const).map((bucket) => (
+          <div
+            key={bucket}
+            className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+          >
+            <span className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+              <StatusPill label={bucketLabels[bucket]} tone={ageTone(bucket)} />
+            </span>
+            <span className="text-end">
+              <span className="num block text-sm font-semibold text-[var(--color-text)]">
+                {agingSummary[bucket].count}
+              </span>
+              {showCost && (
+                <span className="num block text-[10px] text-[var(--color-text-faint)]">
+                  {formatMoney(agingSummary[bucket].value, locale)}
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
       </div>
 
       {shown.length === 0 ? (
@@ -276,12 +364,17 @@ export function InventoryBrowser({
             <Th>{t("make")}</Th>
             <Th>{t("model")}</Th>
             <Th>{t("trim")}</Th>
+            <Th>{t("odometer")}</Th>
             {showCost && <Th>{t("purchasePrice")}</Th>}
             <Th>{t("stickerPrice")}</Th>
+            <Th>{t("daysInStock")}</Th>
             <Th>{common("status")}</Th>
           </THead>
           <TBody>
-            {shown.map((v) => (
+            {shown.map((v) => {
+              const days = daysInStock(v.created_at, v.sold_at, now);
+              const bucket = ageBucket(days);
+              return (
               <Tr key={v.id}>
                 <Td className="num">{v.year}</Td>
                 <Td>
@@ -306,6 +399,7 @@ export function InventoryBrowser({
                   </div>
                 </Td>
                 <Td className="text-[var(--color-text-muted)]">{v.trim || "—"}</Td>
+                <Td className="num text-[var(--color-text-muted)]">{formatOdometer(v.odometer_km, locale)}</Td>
                 {showCost && (
                   <Td className="num">
                     {v.acquisition_type === "consignment" ? (
@@ -325,6 +419,16 @@ export function InventoryBrowser({
                     <span className="text-[var(--color-text-faint)]">{t("notPriced")}</span>
                   )}
                 </Td>
+                <Td className="num">
+                  {/* Coloured only for in-stock cars (0036) — a sold or
+                      reserved car's day count is history, not something
+                      to act on, so it reads as plain muted text. */}
+                  {v.status === "in_stock" ? (
+                    <StatusPill label={misc("daysInStockValue", { days })} tone={ageTone(bucket)} />
+                  ) : (
+                    <span className="text-[var(--color-text-faint)]">{misc("daysInStockValue", { days })}</span>
+                  )}
+                </Td>
                 <Td>
                   <StatusPill
                     label={
@@ -338,7 +442,8 @@ export function InventoryBrowser({
                   />
                 </Td>
               </Tr>
-            ))}
+              );
+            })}
           </TBody>
         </Table>
       )}

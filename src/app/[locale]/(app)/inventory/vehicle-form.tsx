@@ -41,6 +41,9 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   const [model, setModel] = useState("");
   const [trim, setTrim] = useState("");
   const [color, setColor] = useState("");
+  // Recorded at intake, updatable afterwards (0036). Both optional.
+  const [odometerKm, setOdometerKm] = useState("");
+  const [acquisitionSource, setAcquisitionSource] = useState("");
   const [vin, setVin] = useState("");
   const [engineNumber, setEngineNumber] = useState("");
   const [plateNumber, setPlateNumber] = useState("");
@@ -208,6 +211,8 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         model,
         trim,
         color,
+        odometer_km: odometerKm.trim() ? parseFloat(odometerKm) : null,
+        acquisition_source: acquisitionSource,
         description,
         inspection_photos: inspection,
         engine_number: engineNumber,
@@ -347,6 +352,35 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
                 options={colorOptions}
                 placeholder={misc("searchOrType")}
                 emptyLabel={misc("noMatches")}
+              />
+            </div>
+            {/* Recorded at intake, updatable afterwards (0036) — the
+                second question every used-car buyer asks, and where the
+                car came from. Both optional: stock is taken in before
+                either is always known. */}
+            <div>
+              <Label>{t("odometer")}</Label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min={0}
+                  value={odometerKm}
+                  onChange={(e) => setOdometerKm(e.target.value)}
+                  placeholder={common("optional")}
+                  className="pe-9"
+                />
+                <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-xs text-[var(--color-text-faint)]" dir="ltr">
+                  km
+                </span>
+              </div>
+            </div>
+            <div>
+              <Label>{t("acquisitionSource")}</Label>
+              <Input
+                value={acquisitionSource}
+                onChange={(e) => setAcquisitionSource(e.target.value)}
+                placeholder={t("acquisitionSourcePlaceholder")}
+                maxLength={200}
               />
             </div>
             <div>

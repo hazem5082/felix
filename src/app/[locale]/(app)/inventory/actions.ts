@@ -21,6 +21,10 @@ export async function createVehicle(input: {
   model: string;
   trim: string;
   color: string;
+  // Recorded at intake, updatable afterwards (migration 0036). Both
+  // optional: stock is taken in before either is always known.
+  odometer_km: number | null;
+  acquisition_source: string;
   description: string;
   inspection_photos: string[];
   engine_number: string;
@@ -88,6 +92,9 @@ export async function createVehicle(input: {
     p_purchase_price: parsed.data.purchase_price,
     p_photos: parsed.data.photos,
     p_splits: parsed.data.splits,
+    // 0036 widened the RPC 23 → 25, appended after p_splits.
+    p_odometer_km: parsed.data.odometer_km,
+    p_acquisition_source: parsed.data.acquisition_source,
   });
 
   if (error) return toUserError(error);
@@ -140,7 +147,7 @@ export async function setVehiclePrices(input: {
   const v = vehicle as { id: string; branch_id: string } | null;
   if (!v) return { error: "Unknown vehicle." };
 
-  const branchError = assertBranch(auth.profile, v.branch_id);
+  const branchError = await assertBranch(auth.profile, v.branch_id);
   if (branchError) return branchError;
 
   const { error } = await supabase
