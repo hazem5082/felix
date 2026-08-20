@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildSchedule, MAX_PLAN_MONTHS } from "@/lib/receivables";
 
 // Every Server Action is a public HTTP endpoint: any authenticated user can
 // invoke any exported action with hand-crafted arguments, whatever the UI
@@ -655,6 +656,146 @@ export const FinancingRequestStatusSchema = z.object({
 export const OverheadSchema = z.object({
   branchId: Uuid,
   monthlyOpex: money,
+});
+
+// ── The in-house receivable book (migration 0033) ───────────
+//
+// A deal ticket with financing_type 'installments' and NO
+// financing_partner_id is the showroom lending its own money —
+// تقسيط مباشر. These schemas guard the NUMBERS. What they cannot guard
+// is the SHAPE of the ticket a plan hangs off, because that is database
+// state rather than input: the server action re-reads the ticket and
+// enforce_in_house_installment_plan() enforces it a third time, in the
+// one place a hand-crafted POST cannot route around.
+
+/** A calendar day off a `date` input, bounded so a typo'd year is caught. */
+const calendarDate = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Pick a date" })
+  .refine((iso) => {
+    // Rejects 2026-02-30, which `new Date()` silently rolls into March.
+    const [y, m, d] = iso.split("-").map(Number);
+    const probe = new Date(Date.UTC(y, m - 1, d));
+    return (
+      probe.getUTCFullYear() === y && probe.getUTCMonth() === m - 1 && probe.getUTCDate() === d
+    );
+  }, { message: "Not a valid date" })
+  .refine((iso) => {
+    const year = Number(iso.slice(0, 4));
+    return year >= 2000 && year <= 2100;
+  }, { message: "Date must be between 2000 and 2100" });
+
+export const RECEIPT_METHODS = ["cash", "bank_transfer", "cheque", "instapay"] as const;
+
+export const CHEQUE_STATUSES = [
+  "in_safe",
+  "deposited",
+  "cleared",
+  "bounced",
+  "returned_to_customer",
+] as const;
+
+/**
+ * The two states a cheque may be RECORDED in. guard_cheque_status()
+ * refuses any other on insert: a row created straight as 'cleared'
+ * reaches the terminal state without ever having been in the safe,
+ * which is the move the register exists to make impossible.
+ */
+export const CHEQUE_INTAKE_STATUSES = ["in_safe", "deposited"] as const;
+
+export const CreateInstallmentPlanSchema = z
+  .object({
+    ticketId: Uuid,
+    /** The financed amount, AFTER the down payment. */
+    principal: positiveMoney,
+    /** FLAT annual rate. "" means interest-free, not zero-not-decided. */
+    annual_flat_rate: z
+      .string()
+      .trim()
+      .optional()
+      .nullable()
+      .transform((v) => (v ? Number(v) : null))
+      .refine((n) => n === null || (Number.isFinite(n) && n >= 0 && n <= 100), {
+        message: "The rate must be between 0 and 100",
+      }),
+    months: z.number().int().min(1).max(MAX_PLAN_MONTHS),
+    start_date: calendarDate,
+    ownership_retained: z.boolean(),
+    notes: optionalText(1000),
+  })
+  // The schedule builder is the authority on whether these four numbers
+  // produce a writable schedule — it is what the preview renders and
+  // what the action inserts, so anything it refuses must never reach
+  // Postgres and come back as a constraint name.
+  .superRefine((p, ctx) => {
+    try {
+      buildSchedule({
+        principal: p.principal,
+        annualFlatRate: p.annual_flat_rate,
+        months: p.months,
+        startDate: p.start_date,
+      });
+    } catch (err) {
+      ctx.addIssue({
+        code: "custom",
+        message: err instanceof Error ? err.message : "That schedule cannot be built.",
+        path: ["principal"],
+      });
+    }
+  });
+
+export const RecordInstallmentPaymentSchema = z.object({
+  planId: Uuid,
+  amount: positiveMoney,
+  method: z.enum(RECEIPT_METHODS),
+  reference: optionalText(120),
+  payer_name: optionalText(120),
+  note: optionalText(500),
+});
+
+/**
+ * At least one of ticketId / planId is required, so the action can
+ * derive the branch that is physically holding the paper from a row the
+ * caller can already see. The table itself permits a cheque with
+ * neither — a deposit taken to hold a car before any paperwork exists —
+ * but no screen takes one yet, and inventing a branch id from client
+ * input is how a cheque lands in the wrong safe.
+ */
+export const AddChequeSchema = z
+  .object({
+    ticketId: Uuid.nullable(),
+    planId: Uuid.nullable(),
+    cheque_number: text(60),
+    bank_name: text(120),
+    /** Who the bank will pursue — often not the buyer. */
+    drawer_name: text(120),
+    amount: positiveMoney,
+    due_date: calendarDate,
+    status: z.enum(CHEQUE_INTAKE_STATUSES),
+    note: optionalText(500),
+  })
+  .refine((c) => c.ticketId !== null || c.planId !== null, {
+    message: "A cheque must be recorded against a deal or a payment plan",
+    path: ["ticketId"],
+  });
+
+export const UpdateChequeStatusSchema = z.object({
+  chequeId: Uuid,
+  status: z.enum(CHEQUE_STATUSES),
+  note: optionalText(500),
+});
+
+/** Money taken at the counter that is not an instalment payment. */
+export const RecordReceiptSchema = z.object({
+  branchId: Uuid,
+  ticketId: Uuid.nullable(),
+  planId: Uuid.nullable(),
+  amount: positiveMoney,
+  method: z.enum(RECEIPT_METHODS),
+  reference: optionalText(120),
+  payer_name: optionalText(120),
+  note: optionalText(500),
 });
 
 // ── Uploads ─────────────────────────────────────────────────

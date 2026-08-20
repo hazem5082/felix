@@ -9,6 +9,7 @@ import { Waterfall } from "@/components/waterfall";
 import { updateChecklist, approveTicket, rejectTicket, executeSale, fetchWaterfallPreview } from "../actions";
 import type { DealTicket, WaterfallPreview } from "@/lib/supabase/types";
 import { CheckCircle2, FileText, Lock, ShieldCheck } from "lucide-react";
+import { InstallmentsPanel } from "./installments-panel";
 
 export function TicketPanel({
   ticket,
@@ -214,6 +215,12 @@ export function TicketPanel({
           <p className="text-xs text-[var(--color-text-faint)]">{t("settlementNotRecorded")}</p>
         )}
       </Panel>
+
+      {/* The in-house receivable book (0033). Renders nothing unless this
+          ticket is the showroom's own book — on instalments, no bank —
+          and carries its own data loading and permission check, so this
+          is the whole of its footprint here. */}
+      <InstallmentsPanel ticket={ticket} />
 
       {canSeeCost && (
         <Panel className="md:col-span-2">
