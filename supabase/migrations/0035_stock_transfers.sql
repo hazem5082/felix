@@ -454,6 +454,9 @@ create policy "vehicles_select" on vehicles for select
   using (
     is_ceo()
     or is_accountant_or_above()
+    -- 0029: marketing lists the whole showroom's stock across channels,
+    -- so their read is org-wide like the accountant's.
+    or current_role_name() = 'marketing'
     or branch_id = current_branch_id()
     or holds_equity_in_vehicle(vehicles.id)
   );
@@ -473,6 +476,9 @@ create policy "vehicles_select" on vehicles for select
   using (
     is_ceo()
     or is_accountant_or_above()
+    -- 0029: marketing lists the whole showroom's stock across channels,
+    -- so their read is org-wide like the accountant's.
+    or current_role_name() = 'marketing'
     or branch_id = current_branch_id()
     or holds_equity_in_vehicle(vehicles.id)
     -- 0035: the receiving branch may see a car mid-transfer, before it
@@ -705,9 +711,14 @@ begin
     end if;
     v_done := v_done + 1;
 
-    -- 0027's prefix-of-replacement safety, restated. 40 =
-    -- length('create table if not exists stock_transfers').
-    if (length(v_tpl) - length(replace(v_tpl, 'create table if not exists stock_transfers', ''))) <> 40 then
+    -- 0027's prefix-of-replacement safety, restated — but the expected
+    -- delta is COMPUTED, not hand-counted: the original draft wrote 40
+    -- where the probe string is 42 characters long, and the guard then
+    -- refused a perfectly correct single insertion (0032 took the same
+    -- lesson: "duplicate-count probes compare against the probe's own
+    -- length()").
+    if (length(v_tpl) - length(replace(v_tpl, 'create table if not exists stock_transfers', '')))
+       <> length('create table if not exists stock_transfers') then
       raise exception '0035: the template carries more than one stock_transfers table.';
     end if;
 
@@ -874,6 +885,9 @@ create policy "vehicles_select" on vehicles for select
   using (
     is_ceo()
     or is_accountant_or_above()
+    -- 0029: marketing lists the whole showroom's stock across channels,
+    -- so their read is org-wide like the accountant's.
+    or current_role_name() = 'marketing'
     or branch_id = current_branch_id()
     or holds_equity_in_vehicle(vehicles.id)
     or exists (
@@ -1090,7 +1104,12 @@ begin
     if not has_column_privilege(r.role_name, format('%I.vehicles', r.schema_name), 'branch_id', 'update') then
       v_bad := v_bad || (r.schema_name || ' (role cannot update vehicles.branch_id)');
     end if;
-    foreach v_col in array array['status', 'purchase_price', 'vin', 'asking_price', 'sold_at'] loop
+    -- asking_price is NOT in this list: 0028 grants the role a
+    -- column-limited UPDATE on asking_price/min_price on purpose (the
+    -- pricing form writes them directly), and this verify runs against
+    -- real tenants that carry that grant. Assert only the columns 0035
+    -- itself is responsible for keeping closed.
+    foreach v_col in array array['status', 'purchase_price', 'vin', 'sold_at'] loop
       if has_column_privilege(r.role_name, format('%I.vehicles', r.schema_name), v_col, 'update') then
         v_bad := v_bad || format('%s (role can rewrite vehicles.%s)', r.schema_name, v_col);
       end if;

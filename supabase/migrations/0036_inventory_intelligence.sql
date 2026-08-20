@@ -509,36 +509,20 @@ create index if not exists idx_vehicle_price_history_vehicle
 create index if not exists idx_vehicle_price_history_branch
   on vehicle_price_history(branch_id);$b2$;
 
-  -- 2c. the trigger function, between guard_vehicle_status()'s tail and
-  --     the "4.4 EXPENSES" section header — beside the other trigger
-  --     that fires on `vehicles`, and before the table it inserts into
-  --     is out of place: a `language plpgsql` body is not validated at
-  --     CREATE time, so the ordering here is for a human reader, not
-  --     Postgres.
-  c_fn_from text := $c1$  if old.status = 'sold'
-     and (new.purchase_price is distinct from old.purchase_price
-       or new.branch_id      is distinct from old.branch_id
-       or new.vin            is distinct from old.vin) then
-    raise exception 'A sold vehicle''s cost basis is locked (SOLD_FINAL)';
-  end if;
-  return new;
-end;
-$trg$ language plpgsql set search_path = {{SCHEMA}}, extensions;
-
--- ============================================================
+  -- 2c. the trigger function, immediately before the "4.4 EXPENSES"
+  --     section header. The anchor is the HEADER ALONE: the original
+  --     draft anchored on guard_vehicle_status()'s tail + the header as
+  --     one span, and 0035 — authored in parallel — landed first and
+  --     planted its "3-bis. STOCK TRANSFERS" section between exactly
+  --     those two points, so the joined span no longer exists in the
+  --     live template. The three-line header block is unique (one
+  --     "4.4 EXPENSES" title in the whole template), which is all an
+  --     anchor needs; where the new function sits relative to other
+  --     trigger functions is for a human reader, not Postgres.
+  c_fn_from text := $c1$-- ============================================================
 -- 4.4 EXPENSES
 -- ============================================================$c1$;
-  c_fn_to   text := $c2$  if old.status = 'sold'
-     and (new.purchase_price is distinct from old.purchase_price
-       or new.branch_id      is distinct from old.branch_id
-       or new.vin            is distinct from old.vin) then
-    raise exception 'A sold vehicle''s cost basis is locked (SOLD_FINAL)';
-  end if;
-  return new;
-end;
-$trg$ language plpgsql set search_path = {{SCHEMA}}, extensions;
-
--- ============================================================
+  c_fn_to   text := $c2$-- ============================================================
 -- 4.3-bis VEHICLE PRICE HISTORY (0036)
 --
 -- Two moments, one function — see the file header for why the birth-
