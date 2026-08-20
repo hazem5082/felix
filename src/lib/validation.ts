@@ -1159,6 +1159,115 @@ export const ChangePasswordSchema = z.object({
     .max(72, { message: "New password must be at most 72 characters" }),
 });
 
+// ── Attendance (migration 0038) ─────────────────────────────
+
+/**
+ * A coordinate as the browser's geolocation API hands it over.
+ *
+ * These bounds are the CHECK constraints restated, not a security
+ * control: the phone is free to claim any lawful coordinate on earth
+ * and the database decides what that means. What this stops is a
+ * malformed number reaching Postgres and failing far from the call
+ * site.
+ */
+const latitude = z.number().finite().min(-90).max(90);
+const longitude = z.number().finite().min(-180).max(180);
+
+/**
+ * Reported GPS precision, in metres. Accepted up to something absurd
+ * ON PURPOSE — the trigger clamps it to 100 m, so a huge value is
+ * harmless, and rejecting it here would only teach a client to send
+ * a plausible lie instead of an implausible one. Recorded raw so the
+ * report can show a punch that was accurate to half a kilometre for
+ * what it is.
+ */
+const accuracy = z.number().finite().nonnegative().max(1_000_000).nullable().optional();
+
+export const PunchSchema = z.object({
+  kind: z.enum(["in", "break_start", "break_end", "out"]),
+  branch_id: Uuid,
+  // Nullable because a phone may legitimately refuse: permission
+  // denied, indoors with no fix, airplane mode. A punch with no
+  // position is still a punch — it lands with within_geofence null and
+  // the report shows it as unverified rather than silently failing.
+  latitude: latitude.nullable(),
+  longitude: longitude.nullable(),
+  accuracy_m: accuracy,
+  /** Opaque device secret from the phone; hashed before it is stored. */
+  device_secret: z.string().trim().min(16).max(200),
+});
+
+/**
+ * A manager entering or correcting somebody else's day.
+ *
+ * `occurred_at` is free-form here and NOT clamped to the past: a
+ * manager filling in "he arrives at 09:00 tomorrow" is a mistake, but
+ * so is silently rewriting their input. The reason is mandatory — the
+ * CHECK constraint enforces it too — because an adjustment without one
+ * is indistinguishable from a fabrication when it is read back in six
+ * months.
+ */
+export const AttendanceAdjustmentSchema = z.object({
+  profile_id: Uuid,
+  branch_id: Uuid,
+  kind: z.enum(["in", "break_start", "break_end", "out"]),
+  occurred_at: z.string().trim().min(1).max(40),
+  reason: text(300),
+});
+
+export const VoidAttendanceSchema = z.object({
+  event_id: Uuid,
+  void_reason: text(300),
+});
+
+/**
+ * Where a showroom is, and how far from it still counts as being there.
+ * The bounds mirror migration 0038's CHECK: a fence under 25 m is
+ * smaller than GPS error, and one over 5 km is a governorate.
+ */
+export const BranchGeofenceSchema = z.object({
+  branch_id: Uuid,
+  latitude: latitude.nullable(),
+  longitude: longitude.nullable(),
+  geofence_radius_m: z.number().int().min(25).max(5000),
+});
+
+export const EnrolDeviceSchema = z.object({
+  device_secret: z.string().trim().min(16).max(200),
+  user_agent: z.string().trim().max(400).optional(),
+});
+
+export const ConfirmDeviceSchema = z.object({
+  device_secret: z.string().trim().min(16).max(200),
+  code: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{6}$/, { message: "Enter the six-digit code from your email." }),
+});
+
+export const RevokeDeviceSchema = z.object({ device_id: Uuid });
+
+export const SetWorkModeSchema = z.object({
+  profile_id: Uuid,
+  work_mode: z.enum(["on_site", "remote"]),
+});
+
+/**
+ * Changing a SIGN-IN address — the credential itself, not the
+ * notification contact in UpdateNotificationContactsSchema.
+ *
+ * `current_password` is present but optional because it is required for
+ * exactly one path: changing YOUR OWN. A supervisor changing a
+ * subordinate's does not know their password and must not need to; the
+ * authority check in src/lib/hierarchy.ts is what stands in its place.
+ * The action decides which rule applies — see employees/actions.ts.
+ */
+export const ChangeSignInEmailSchema = z.object({
+  profile_id: Uuid,
+  new_email: z.email().max(254).transform((v) => v.toLowerCase()),
+  current_password: z.string().max(200).optional(),
+});
+
 // ── List controls ───────────────────────────────────────────
 
 export const PAGE_SIZE = 25;

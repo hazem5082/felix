@@ -12,6 +12,7 @@ export interface NavItem {
     | "investor"
     | "calendar"
     | "employees"
+    | "attendance"
     | "support"
     | "account";
 }
@@ -26,6 +27,7 @@ export const ALL_NAV: NavItem[] = [
   { href: "/investor", key: "investor" },
   { href: "/calendar", key: "calendar" },
   { href: "/employees", key: "employees" },
+  { href: "/attendance", key: "attendance" },
   { href: "/support", key: "support" },
   { href: "/account", key: "account" },
 ];
@@ -35,15 +37,23 @@ export const ALL_NAV: NavItem[] = [
 // create_meeting() (migration 0006) rather than by this list.
 // Employees is the opposite extreme: CEO-only, and the page +
 // every action behind it re-checks that server-side.
+//
+// Attendance (0038) is carried by everyone who can owe or oversee a
+// day: the four staff roles plus marketing. Investors are excluded —
+// they are outside capital, not staff, and there is no sense in which
+// one attends. The tab still renders for a REMOTE profile: it is where
+// they see their own history and their trusted phones, and the page
+// tells them plainly that no punch is expected of them, which is a
+// better answer than a tab that silently vanishes.
 const NAV_BY_ROLE: Record<Role, NavItem["key"][]> = {
-  ceo: ["ceoDashboard", "inventory", "crm", "deals", "marketing", "accountant", "calendar", "employees", "support", "account"],
-  branch_manager: ["inventory", "crm", "deals", "calendar", "support", "account"],
-  accountant: ["accountant", "inventory", "deals", "calendar", "support", "account"],
-  sales_exec: ["crm", "deals", "calendar", "support", "account"],
+  ceo: ["ceoDashboard", "inventory", "crm", "deals", "marketing", "accountant", "calendar", "employees", "attendance", "support", "account"],
+  branch_manager: ["inventory", "crm", "deals", "calendar", "attendance", "support", "account"],
+  accountant: ["accountant", "inventory", "deals", "calendar", "attendance", "support", "account"],
+  sales_exec: ["crm", "deals", "calendar", "attendance", "support", "account"],
   investor: ["investor", "calendar", "support", "account"],
   // Marketing lists stock across channels: their workspace, the inventory
   // they advertise (cost hidden — 0028), and the tabs everyone carries.
-  marketing: ["marketing", "inventory", "calendar", "support", "account"],
+  marketing: ["marketing", "inventory", "calendar", "attendance", "support", "account"],
 };
 
 export function navForRole(role: Role): NavItem[] {

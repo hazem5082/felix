@@ -85,9 +85,40 @@ export function resolveWindow(
   };
 }
 
-export const REPORT_KINDS = ["operating", "investors", "expenses", "salaries", "vat"] as const;
+export const REPORT_KINDS = [
+  "operating",
+  "investors",
+  "expenses",
+  "salaries",
+  "vat",
+  "attendance",
+] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
 export function isReportKind(s: string): s is ReportKind {
   return (REPORT_KINDS as readonly string[]).includes(s);
 }
+
+/**
+ * Who may open each report.
+ *
+ * Every report before 0038 was a financial document, so one shared
+ * FINANCE_ROLES gate covered the whole suite. Attendance is the first
+ * that is not: it is an HR document, and the person who most needs it —
+ * the branch manager running the floor — has never been allowed near a
+ * P&L and must not be, so the gate had to become per-kind rather than
+ * per-suite.
+ *
+ * The list here is the app's half. The database's half is
+ * `attendance_events_select`, which shows a branch manager only their
+ * own branch's rows — so a manager opening this report gets a document
+ * about their own staff, not a narrower view of everybody's.
+ */
+export const REPORT_ROLES: Record<ReportKind, readonly string[]> = {
+  operating: ["ceo", "accountant"],
+  investors: ["ceo", "accountant"],
+  expenses: ["ceo", "accountant"],
+  salaries: ["ceo", "accountant"],
+  vat: ["ceo", "accountant"],
+  attendance: ["ceo", "accountant", "branch_manager"],
+};

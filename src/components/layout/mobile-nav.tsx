@@ -17,6 +17,7 @@ import {
   LifeBuoy,
   UserCircle2,
   Megaphone,
+  CalendarCheck,
 } from "lucide-react";
 
 const ICONS = {
@@ -29,6 +30,7 @@ const ICONS = {
   investor: Wallet,
   calendar: CalendarDays,
   employees: UserCog,
+  attendance: CalendarCheck,
   support: LifeBuoy,
   account: UserCircle2,
 };

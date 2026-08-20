@@ -3,19 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { authenticate, authorize } from "@/lib/auth";
+import { authenticate, authorize, getGrantedBranchIds } from "@/lib/auth";
 import { temporaryPassword } from "@/lib/passwords";
 import { acceptsBranchGrants } from "@/lib/branch-authority";
 import {
   BranchGrantRevokeSchema,
   BranchGrantSchema,
+  ChangeSignInEmailSchema,
   CreateStaffSchema,
   SetTargetSchema,
+  SetWorkModeSchema,
   UpdateAvatarSchema,
   UpdateStaffSchema,
   Uuid,
   parseInput,
 } from "@/lib/validation";
+import { canChangeSignInEmail } from "@/lib/hierarchy";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import type { ActionError } from "@/lib/validation";
 import { isManagedUploadUrl } from "@/lib/r2";
 import type { Role } from "@/lib/supabase/types";
 import { toUserError } from "@/lib/db-error";
@@ -412,4 +417,168 @@ export async function revokeBranchAccess(input: { profile_id: string; branch_id:
 
   revalidatePath("/[locale]/(app)/employees", "page");
   return { ok: true };
+}
+
+// ── Attendance administration (migration 0038) ──────────────
+
+/**
+ * On-site or remote.
+ *
+ * CEO only, and that is a decision rather than an oversight. Work mode
+ * decides whether a person owes attendance AT ALL, so it is an
+ * employment term and it sits with the other employment terms — a
+ * branch manager cannot change a subordinate's wage, branch or role
+ * today either. `guard_profile_privilege_columns()` (0038) enforces the
+ * same rule inside Postgres, so this guard only supplies the readable
+ * refusal.
+ *
+ * A manager who needs to excuse one DAY rather than one CONTRACT has
+ * the adjustment path in attendance/manage-actions.ts.
+ */
+export async function setWorkMode(input: { profile_id: string; work_mode: string }) {
+  const auth = await authorize(["ceo"]);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(SetWorkModeSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ work_mode: parsed.data.work_mode })
+    .eq("id", parsed.data.profile_id)
+    .select("id");
+
+  if (error) return toUserError(error);
+  if (!data?.length) return { error: "No such employee in this showroom." };
+
+  revalidatePath("/[locale]/(app)/employees", "page");
+  revalidatePath("/[locale]/(app)/attendance", "page");
+  return { ok: true };
+}
+
+/**
+ * Change a SIGN-IN address — the credential itself, not the
+ * notification contact that account/actions.ts edits.
+ *
+ * TWO PATHS, ONE ACTION, DIFFERENT PROOFS
+ *
+ *   Your own      — requires your CURRENT PASSWORD. An email address is
+ *                   the account recovery channel, so changing it is a
+ *                   credential change: a borrowed unlocked laptop must
+ *                   not be enough to redirect somebody's password
+ *                   resets to an attacker's inbox.
+ *   Somebody
+ *   else's        — requires SUPERVISION, per src/lib/hierarchy.ts: the
+ *                   CEO over anyone, a branch manager over the sales and
+ *                   marketing staff of a branch they may act on. No
+ *                   password, because a supervisor does not know one and
+ *                   must not need to — the point of the path is the
+ *                   employee who has LOST access to their inbox.
+ *
+ * WHY THE TENANT FENCE IS NOT THE `authorize` LINE
+ *
+ * `auth.users` is outside every tenant schema, so this necessarily uses
+ * the admin client, which bypasses RLS. What keeps it inside the
+ * showroom is that the target profile is read through the CALLER'S OWN
+ * SESSION first: `profiles_select` returns nothing for another
+ * showroom's id, and nothing outside a branch manager's branch. The
+ * admin key only ever touches an id that RLS has already vouched for —
+ * the same construction resetEmployeePassword() has used since 0009.
+ */
+export async function changeSignInEmail(input: {
+  profile_id: string;
+  new_email: string;
+  current_password?: string;
+}): Promise<{ ok: true; email: string } | ActionError> {
+  const auth = await authenticate();
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(ChangeSignInEmailSchema, input);
+  if (!parsed.ok) return parsed.error;
+  const { profile_id, new_email, current_password } = parsed.data;
+
+  const supabase = await createClient();
+
+  // THE TENANT AND BRANCH FENCE. Read through the caller's session, so
+  // an id from another showroom simply does not exist here.
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("id, role, branch_id, full_name")
+    .eq("id", profile_id)
+    .maybeSingle();
+
+  const subject = target as
+    | { id: string; role: Role; branch_id: string | null; full_name: string }
+    | null;
+  if (!subject) return { error: "No such employee in this showroom." };
+
+  const verdict = canChangeSignInEmail(
+    { id: auth.profile.id, role: auth.profile.role, branch_id: auth.profile.branch_id },
+    subject,
+    await getGrantedBranchIds()
+  );
+
+  if (!verdict.allowed) {
+    return {
+      error:
+        verdict.reason === "other_branch"
+          ? "That employee belongs to another branch."
+          : "You do not have permission to change that person's sign-in email.",
+    };
+  }
+
+  // Changing your own is a credential change; prove you are at the
+  // keyboard. The only way to verify a password with GoTrue is to
+  // attempt a sign-in, and it must happen on a throwaway client —
+  // doing it on the request's own server client would overwrite this
+  // request's session cookie mid-flight. Same shape as changePassword().
+  if (verdict.reason === "self") {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user?.email) return { error: "Your session has expired. Please sign in again." };
+    if (!current_password) {
+      return {
+        error: "Enter your current password to change your sign-in email.",
+        fieldErrors: { current_password: ["Required"] },
+      };
+    }
+    const verifier = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false } }
+    );
+    const { error: signInError } = await verifier.auth.signInWithPassword({
+      email: user.email,
+      password: current_password,
+    });
+    if (signInError) return { error: "Your current password is incorrect." };
+  }
+
+  const admin = createAdminClient();
+
+  // email_confirm: true because this is an ADMINISTRATIVE change made by
+  // somebody who has already been authorized above, not a self-service
+  // one that needs proving. Leaving it false would send a confirmation
+  // link to the NEW address — which is exactly the address the employee
+  // has lost access to in the case this path exists to solve.
+  const { error: updateError } = await admin.auth.admin.updateUserById(subject.id, {
+    email: new_email,
+    email_confirm: true,
+  });
+
+  if (updateError) {
+    // GoTrue's uniqueness error names the conflict across the whole
+    // deployment, which would tell this showroom that another one holds
+    // the address. Collapsed, the way invite_staff() collapses its own.
+    if (/already|exists|registered|duplicate/i.test(updateError.message)) {
+      return { error: "That email address is already in use." };
+    }
+    return { error: `The sign-in email could not be changed: ${updateError.message}` };
+  }
+
+  revalidatePath("/[locale]/(app)/employees", "page");
+  revalidatePath("/[locale]/(app)/account", "page");
+  return { ok: true, email: new_email };
 }

@@ -64,6 +64,17 @@ export interface Branch {
   trade_license_expiry: string | null;
   /** True = premises under a residential building (2027 relocation mandate). Null = not assessed. */
   is_under_residential_building: boolean | null;
+  /**
+   * The attendance geofence (migration 0038). Postgres numerics arrive
+   * over PostgREST as STRINGS, which is why these are widened rather
+   * than typed `number` — `src/lib/geo.ts` coerces. Null latitude or
+   * longitude means the branch has never been placed on the map, and
+   * every punch against it stores `within_geofence: null` ("not
+   * assessed") rather than false.
+   */
+  latitude: number | string | null;
+  longitude: number | string | null;
+  geofence_radius_m: number | string | null;
   created_at: string;
 }
 
@@ -122,10 +133,81 @@ export interface Profile {
   /** Statutory wage basis for NOSI contributions — distinct from ad-hoc ledger payouts. */
   monthly_wage: number | null;
   employment_type: EmploymentType | null;
+  /**
+   * Does this person owe a daily attendance punch (migration 0038)?
+   * 'on_site' does, 'remote' does not. NOT NULL with an 'on_site'
+   * default, so every profile predating the migration is on-site —
+   * the truthful answer for a showroom floor.
+   *
+   * A PRIVILEGE column: guard_profile_privilege_columns() lets only the
+   * CEO change it, because a self-service work mode would make the
+   * attendance report opt-out.
+   */
+  work_mode: WorkMode;
   created_at: string;
 }
 
 export type EmploymentType = "full_time" | "part_time";
+
+// ── Attendance (migration 0038) ─────────────────────────────
+//
+// The punch stream and the phones allowed to write to it. The derived
+// day — arrival, breaks, hours — is computed in src/lib/attendance.ts
+// and stored nowhere.
+
+export type WorkMode = "on_site" | "remote";
+export type PunchKind = "in" | "break_start" | "break_end" | "out";
+/** A punch taken on a phone, or a row a manager entered on someone's behalf. */
+export type AttendanceSource = "device" | "adjustment";
+export type TrustedDeviceStatus = "active" | "revoked";
+
+export interface TrustedDevice {
+  id: string;
+  profile_id: string;
+  /**
+   * SHA-256 of a random secret the app planted on the phone — never of
+   * anything the browser volunteered. See src/lib/device.ts for why a
+   * web app cannot bind to hardware and what this does buy.
+   */
+  device_hash: string;
+  /** "iPhone · Safari". Attacker-controlled text: render, never trust. */
+  label: string | null;
+  platform: string | null;
+  status: TrustedDeviceStatus;
+  enrolled_at: string;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+}
+
+export interface AttendanceEventRow {
+  id: string;
+  profile_id: string;
+  /** The branch being attended — not a copy of the profile's home branch. */
+  branch_id: string;
+  kind: PunchKind;
+  occurred_at: string;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  accuracy_m: number | string | null;
+  /**
+   * Distance from the branch pin and the verdict, both computed by
+   * `stamp_attendance_geofence()` on insert. Anything the client sends
+   * for these two is discarded before it is stored — they are the
+   * database's answer, never the phone's claim.
+   */
+  distance_m: number | string | null;
+  within_geofence: boolean | null;
+  device_id: string | null;
+  source: AttendanceSource;
+  recorded_by: string | null;
+  /** Mandatory for an adjustment, by CHECK constraint. */
+  reason: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
+  void_reason: string | null;
+  created_at: string;
+}
 
 // Metrics a manager can set a monthly target for (migration 0027). The
 // actuals are counted from tables that already exist: 'calls' from

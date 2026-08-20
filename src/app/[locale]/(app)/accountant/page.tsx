@@ -66,7 +66,7 @@ export default async function AccountantPage() {
     <div className="space-y-6">
       <PanelHeader title={t("title")} />
 
-      {isFinance && <ReportsLauncher />}
+      {isFinance && <ReportsLauncher role={profile.role} />}
 
       {/* The in-house receivable book (0033). Self-contained: it loads
           its own data through a server action, scopes itself through

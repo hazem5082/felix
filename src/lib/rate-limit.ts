@@ -29,6 +29,25 @@ export const LIMITS = {
    * sessions in bulk — each call costs a GoTrue generateLink + verifyOtp.
    */
   demoSwitch: { limit: 30, windowSeconds: 60 },
+  /**
+   * Attendance punches per profile. Generous for a real day (arrive,
+   * two breaks, leave, plus retries when the GPS is slow) and useless
+   * for a script trying to bury a bad day under noise.
+   */
+  punch: { limit: 40, windowSeconds: 60 * 60 },
+  /**
+   * Device-enrolment codes per profile. Each one sends a real email, so
+   * this is the throttle that stops the endpoint being turned into a
+   * mail cannon aimed at an employee's inbox.
+   */
+  deviceCode: { limit: 5, windowSeconds: 15 * 60 },
+  /**
+   * Attempts to redeem a code, per profile. Tight because a six-digit
+   * code is only a million guesses — the per-row attempt counter in
+   * device_verifications is the primary defence and this is the second,
+   * covering someone who keeps requesting fresh rows to reset it.
+   */
+  deviceConfirm: { limit: 12, windowSeconds: 15 * 60 },
 } as const;
 
 /**

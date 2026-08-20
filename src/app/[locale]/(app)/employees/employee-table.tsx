@@ -4,18 +4,20 @@ import { useState, useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { formatMoney } from "@/lib/currency";
-import { Building2, KeyRound, Pencil, X } from "lucide-react";
+import { AtSign, Building2, KeyRound, Pencil, X } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/table";
 import { StatusPill, type SemanticTone } from "@/components/ui/status-pill";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
-import type { Branch, EmploymentType, Role } from "@/lib/supabase/types";
+import type { Branch, EmploymentType, Role, WorkMode } from "@/lib/supabase/types";
 import {
+  changeSignInEmail,
   grantBranchAccess,
   resetEmployeePassword,
   revokeBranchAccess,
+  setWorkMode,
   updateEmployee,
 } from "./actions";
 import { CredentialsNote } from "./credentials-note";
@@ -48,6 +50,13 @@ export interface EmployeeRow {
   hire_date: string | null;
   monthly_wage: number | null;
   employment_type: EmploymentType | null;
+  /**
+   * Whether this person owes a daily attendance punch (migration 0038).
+   * CEO-only to change — guard_profile_privilege_columns() enforces the
+   * same rule in Postgres, so the control below is a convenience over a
+   * database rule rather than the rule itself.
+   */
+  work_mode: WorkMode;
   created_at: string;
   is_me: boolean;
 }
@@ -91,6 +100,42 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
   // two can be open at a time — which is already true, both are modals.
   const [scoping, setScoping] = useState<EmployeeRow | null>(null);
   const [grantForm, setGrantForm] = useState({ branch_id: "", note: "" });
+
+  // Sign-in email (migration 0038). Separate from `editing` because it
+  // changes a CREDENTIAL rather than a profile field — a different
+  // action, a different confirmation, and a different failure mode.
+  const [emailing, setEmailing] = useState<EmployeeRow | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailDone, setEmailDone] = useState<string | null>(null);
+
+  function beginEmail(row: EmployeeRow) {
+    setEmailing(row);
+    setNewEmail(row.email ?? "");
+    setEmailDone(null);
+    setError(null);
+  }
+
+  function submitEmail() {
+    if (!emailing) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await changeSignInEmail({ profile_id: emailing.id, new_email: newEmail });
+      if ("error" in res) {
+        setError(res.error);
+        return;
+      }
+      setEmailDone(res.email);
+      setEmailing(null);
+    });
+  }
+
+  function changeWorkMode(row: EmployeeRow, mode: WorkMode) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setWorkMode({ profile_id: row.id, work_mode: mode });
+      if ("error" in res) setError(res.error);
+    });
+  }
 
   function beginEdit(row: EmployeeRow) {
     setEditing(row);
@@ -213,6 +258,7 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
             <Th>{t("hireDate")}</Th>
             <Th>{t("monthlyWage")}</Th>
             <Th>{t("employmentType")}</Th>
+            <Th>{t("workMode")}</Th>
             <Th>{common("actions")}</Th>
           </THead>
           <TBody>
@@ -284,11 +330,30 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
                 <Td className="text-[var(--color-text-muted)]">
                   {r.employment_type ? t(r.employment_type === "full_time" ? "fullTime" : "partTime") : "—"}
                 </Td>
+                {/* Changed inline rather than inside the edit dialog:
+                    marking somebody remote is a one-click decision a CEO
+                    makes while reading the list, and burying it three
+                    clicks deep is how a column ends up never being set. */}
+                <Td>
+                  <Select
+                    value={r.work_mode}
+                    disabled={pending}
+                    onChange={(e) => changeWorkMode(r, e.target.value as WorkMode)}
+                    className="h-8 w-28 text-xs"
+                  >
+                    <option value="on_site">{t("workMode_on_site")}</option>
+                    <option value="remote">{t("workMode_remote")}</option>
+                  </Select>
+                </Td>
                 <Td>
                   <div className="flex gap-1.5">
                     <Button variant="outline" size="sm" onClick={() => beginEdit(r)} disabled={pending}>
                       <Pencil size={12} />
                       {common("edit")}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => beginEmail(r)} disabled={pending}>
+                      <AtSign size={12} />
+                      {t("changeSignInEmail")}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => reset(r)} disabled={pending}>
                       <KeyRound size={12} />
@@ -551,6 +616,40 @@ export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branche
           </DialogContent>
         )}
       </Dialog>
+      {/* Sign-in email. The hierarchy that decides who may open this is
+          in src/lib/hierarchy.ts and is re-checked by the action; the
+          button is rendered for every row because the CEO — the only
+          role that reaches this page — may change anyone's. */}
+      <Dialog open={!!emailing} onOpenChange={(o) => !o && setEmailing(null)}>
+        <DialogContent title={t("changeSignInEmail")}>
+          <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+            {emailing?.full_name}
+          </p>
+          <Label>{t("newEmail")}</Label>
+          <Input
+            type="email"
+            dir="ltr"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            autoComplete="off"
+          />
+          <div className="mt-4 flex gap-2">
+            <Button onClick={submitEmail} disabled={pending || !newEmail.includes("@")}>
+              {common("save")}
+            </Button>
+            <Button variant="ghost" onClick={() => setEmailing(null)}>
+              {common("cancel")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {emailDone && (
+        <p className="mt-3 rounded-md border border-[var(--color-accent-green)]/30 bg-[var(--color-accent-green-dim)] px-3 py-2 text-sm text-[var(--color-accent-green)]">
+          {t("emailChanged")} <span dir="ltr">{emailDone}</span>
+        </p>
+      )}
+
     </>
   );
 }

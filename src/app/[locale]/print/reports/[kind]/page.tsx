@@ -1,12 +1,13 @@
 import { getFormatter, getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { requireActiveTenant, FINANCE_ROLES } from "@/lib/auth";
+import { requireActiveTenant } from "@/lib/auth";
 import { getTenant } from "@/lib/tenant";
-import { resolveWindow, isReportKind, parseOffset } from "@/lib/report-window";
+import { resolveWindow, isReportKind, parseOffset, REPORT_ROLES } from "@/lib/report-window";
 import { formatMoney } from "@/lib/currency";
 import type {
   Branch,
+  Role,
   DealTicket,
   Investor,
   LedgerEntry,
@@ -15,6 +16,12 @@ import type {
   VehicleEquitySplit,
   VehicleExpense,
 } from "@/lib/supabase/types";
+import {
+  formatDuration,
+  localTime,
+  summariseRange,
+  type AttendanceEvent,
+} from "@/lib/attendance";
 import { PrintToolbar } from "../../print-toolbar";
 import { DocFooter, DocHeader } from "../../doc-chrome";
 
@@ -49,7 +56,10 @@ export default async function ReportPage({
   // Not requireRole: these pages sit outside the (app) layout, so they
   // must re-assert the tenant-host binding and the licence status the
   // layout would otherwise have enforced.
-  const profile = await requireActiveTenant(locale, FINANCE_ROLES);
+  // Per-kind since 0038, not per-suite: attendance is an HR document
+  // and the branch manager who needs it must still never reach a P&L.
+  // See REPORT_ROLES in lib/report-window.ts.
+  const profile = await requireActiveTenant(locale, [...REPORT_ROLES[kind]] as Role[]);
 
   const t = await getTranslations("reportDoc");
   const fmt = await getFormatter();
@@ -244,6 +254,189 @@ export default async function ReportPage({
   }
 
   // ── investors ─────────────────────────────────────────────
+  // ── attendance ────────────────────────────────────────────
+  //
+  // The first report in the suite that is not a financial document, and
+  // the only one a branch manager can open. It deliberately reads
+  // WITHOUT a branch filter: `attendance_events_select` already confines
+  // a manager to their own branch and shows the CEO everyone, so a
+  // filter here would restate the rule somewhere it could drift — and
+  // would silently narrow the CEO.
+  //
+  // Every day in the window appears for every on-site person, INCLUDING
+  // the days they did not turn up. A report whose absences are invisible
+  // is not an attendance report, and "no row at all" is exactly what
+  // somebody who never punched would otherwise produce.
+  if (kind === "attendance") {
+    const [{ data: eventRows }, { data: staffRows }, { data: branchRows }] = await Promise.all([
+      supabase
+        .from("attendance_events")
+        .select("*")
+        .gte("occurred_at", from.toISOString())
+        .lt("occurred_at", to.toISOString())
+        .order("occurred_at"),
+      supabase
+        .from("profiles")
+        .select("id, full_name, role, branch_id, work_mode")
+        .neq("role", "investor")
+        .order("full_name"),
+      supabase.from("branches").select("*").order("name"),
+    ]);
+
+    const events = (eventRows as AttendanceEvent[] | null) ?? [];
+    const staff =
+      (staffRows as
+        | { id: string; full_name: string; role: string; branch_id: string | null; work_mode: string }[]
+        | null) ?? [];
+    const branches = (branchRows as Branch[]) ?? [];
+    const branchName = new Map(branches.map((b) => [b.id, b.name]));
+
+    // Remote staff are named with their mode rather than dropped: "who
+    // is remote" is part of the answer to "who was not here", and
+    // omitting them makes the headcount at the top of the page wrong.
+    const onSite = staff.filter((p) => p.work_mode === "on_site");
+    const remote = staff.filter((p) => p.work_mode === "remote");
+
+    const perPerson = onSite.map((person) => {
+      const days = summariseRange(events, {
+        profileId: person.id,
+        from,
+        to,
+        offsetMinutes: offset,
+        now: new Date(),
+      });
+      return {
+        person,
+        days,
+        worked: days.reduce((sum, d) => sum + d.workedMinutes, 0),
+        breaks: days.reduce((sum, d) => sum + d.breakMinutes, 0),
+        present: days.filter((d) => d.events.length > 0).length,
+        absent: days.filter((d) => d.events.length === 0).length,
+        flagged: days.reduce((sum, d) => sum + d.outsideFence, 0),
+        adjusted: days.filter((d) => d.adjusted).length,
+      };
+    });
+
+    const totalFlagged = perPerson.reduce((sum, p) => sum + p.flagged, 0);
+    const totalAdjusted = perPerson.reduce((sum, p) => sum + p.adjusted, 0);
+
+    return chrome(
+      <>
+        <section className="mt-6">
+          <h2 className={sectionTitle}>{t("attendanceSummary")}</h2>
+          <table className="mt-2 w-full border-collapse">
+            <thead>
+              <tr className="border-b-2 border-black">
+                {[
+                  t("person"),
+                  t("branch"),
+                  t("daysPresent"),
+                  t("daysAbsent"),
+                  t("hoursWorked"),
+                  t("breakTime"),
+                  t("flagged"),
+                  t("adjusted"),
+                ].map((h) => (
+                  <th key={h} className={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {perPerson.map(({ person, worked, breaks, present, absent, flagged, adjusted }) => (
+                <tr key={person.id} className="border-b border-black/10">
+                  <td className={td}>{person.full_name}</td>
+                  <td className={`${td} text-black/60`}>
+                    {person.branch_id ? (branchName.get(person.branch_id) ?? "—") : "—"}
+                  </td>
+                  <td className={td}>{present}</td>
+                  <td className={td}>{absent}</td>
+                  <td className={`${td} font-semibold`}>{formatDuration(worked)}</td>
+                  <td className={td}>{formatDuration(breaks)}</td>
+                  {/* Zeroes print as an em dash so the eye lands only on
+                      the numbers that need looking at. */}
+                  <td className={td}>{flagged || "—"}</td>
+                  <td className={td}>{adjusted || "—"}</td>
+                </tr>
+              ))}
+              {perPerson.length === 0 && (
+                <tr>
+                  <td className={`${td} text-black/50`} colSpan={8}>
+                    {t("noAttendance")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        {(totalFlagged > 0 || totalAdjusted > 0) && (
+          <p className="mt-4 text-[12px] text-black/70">
+            {t("attendanceCaveat", { flagged: totalFlagged, adjusted: totalAdjusted })}
+          </p>
+        )}
+
+        {remote.length > 0 && (
+          <section className="mt-8">
+            <h2 className={sectionTitle}>{t("remoteStaff")}</h2>
+            <p className="mt-2 text-[12px] text-black/60">
+              {remote.map((p) => p.full_name).join(", ")}
+            </p>
+          </section>
+        )}
+
+        <section className="mt-8">
+          <h2 className={sectionTitle}>{t("attendanceDetail")}</h2>
+          {perPerson.map(({ person, days }) => {
+            const worked = days.filter((d) => d.events.length > 0);
+            if (worked.length === 0) return null;
+            return (
+              <div key={person.id} className="mt-4 break-inside-avoid">
+                <p className="text-[12px] font-bold text-black">{person.full_name}</p>
+                <table className="mt-1 w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-black">
+                      {[
+                        t("date"),
+                        t("arrived"),
+                        t("left"),
+                        t("hoursWorked"),
+                        t("breakTime"),
+                        t("note"),
+                      ].map((h) => (
+                        <th key={h} className={th}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {worked.map((d) => (
+                      <tr key={d.date} className="border-b border-black/10">
+                        <td className={td}>{d.date}</td>
+                        <td className={td}>{d.firstIn ? localTime(d.firstIn, offset) : "—"}</td>
+                        <td className={td}>{d.lastOut ? localTime(d.lastOut, offset) : "—"}</td>
+                        <td className={td}>{formatDuration(d.workedMinutes)}</td>
+                        <td className={td}>{formatDuration(d.breakMinutes)}</td>
+                        <td className={`${td} text-black/60`}>
+                          {[
+                            d.outsideFence > 0 ? t("outsideCount", { count: d.outsideFence }) : null,
+                            d.adjusted ? t("adjustedNote") : null,
+                            d.open ? t("stillIn") : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </section>
+      </>,
+      t("footerInternal")
+    );
+  }
+
   if (kind === "investors") {
     const [{ data: investorRows }, { data: splitRows }, { data: ledgerRows }] = await Promise.all([
       supabase.from("investors").select("*, profiles(*)"),

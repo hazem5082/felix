@@ -79,6 +79,10 @@ export default async function EmployeesPage({
     hire_date: p.hire_date,
     monthly_wage: p.monthly_wage,
     employment_type: p.employment_type,
+    // 0038. Defaulted here as well as in the column, so a page rendered
+    // against a database where the migration has not run yet shows
+    // 'on-site' rather than an empty select.
+    work_mode: p.work_mode ?? "on_site",
     created_at: p.created_at,
     is_me: p.id === me.id,
   }));

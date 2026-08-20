@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { BarChart3, FileSpreadsheet, HandCoins, Landmark, PiggyBank, Receipt } from "lucide-react";
+import {
+  BarChart3,
+  CalendarCheck,
+  FileSpreadsheet,
+  HandCoins,
+  Landmark,
+  PiggyBank,
+  Receipt,
+} from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Select, Label, Input } from "@/components/ui/input";
 
@@ -35,11 +43,20 @@ function presetRange(preset: Preset, now = new Date()): { from: string; to: stri
 }
 
 const REPORTS = [
-  { kind: "operating", icon: BarChart3 },
-  { kind: "investors", icon: PiggyBank },
-  { kind: "expenses", icon: Receipt },
-  { kind: "salaries", icon: HandCoins },
-  { kind: "vat", icon: Landmark },
+  { kind: "operating", icon: BarChart3, roles: ["ceo", "accountant"] },
+  { kind: "investors", icon: PiggyBank, roles: ["ceo", "accountant"] },
+  { kind: "expenses", icon: Receipt, roles: ["ceo", "accountant"] },
+  { kind: "salaries", icon: HandCoins, roles: ["ceo", "accountant"] },
+  { kind: "vat", icon: Landmark, roles: ["ceo", "accountant"] },
+  // Attendance (0038) is the first non-financial report in the suite,
+  // and the first a branch manager may open — see REPORT_ROLES in
+  // lib/report-window.ts for why the gate had to become per-kind. The
+  // list below is only what gets RENDERED; the print route re-checks.
+  {
+    kind: "attendance",
+    icon: CalendarCheck,
+    roles: ["ceo", "accountant", "branch_manager"],
+  },
 ] as const;
 
 /**
@@ -49,7 +66,7 @@ const REPORTS = [
  * the URL, so any report can be re-opened or shared internally as a
  * link and it renders the same numbers.
  */
-export function ReportsLauncher() {
+export function ReportsLauncher({ role = "accountant" }: { role?: string }) {
   const t = useTranslations("accountant");
   const locale = useLocale();
   const [preset, setPreset] = useState<Preset>("thisMonth");
@@ -108,8 +125,8 @@ export function ReportsLauncher() {
         )}
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        {REPORTS.map(({ kind, icon: Icon }) => (
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {REPORTS.filter((r) => (r.roles as readonly string[]).includes(role)).map(({ kind, icon: Icon }) => (
           <a
             key={kind}
             href={href(kind)}
@@ -121,8 +138,24 @@ export function ReportsLauncher() {
             {t(`report_${kind}`)}
           </a>
         ))}
+        {/* The attendance CSV carries the SAME window as the report
+            above it, so a manager who exports what they just printed
+            gets the same days. The ledger export below is deliberately
+            window-less: it is the whole book. */}
+        {(role === "ceo" || role === "accountant" || role === "branch_manager") && (
+          <a
+            href={`/api/export/attendance?from=${range.from}&to=${range.to}&tz=${tz}`}
+            download
+            className="flex items-center gap-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-all hover:border-[var(--color-border-strong)] hover:bg-black/[0.03]"
+          >
+            <FileSpreadsheet size={15} className="text-[var(--color-text-muted)]" />
+            {t("exportAttendance")}
+          </a>
+        )}
+
         {/* A file download from a route handler, not a page navigation —
             <Link/> would try to client-route a CSV. */}
+        {(role === "ceo" || role === "accountant") && (
         <a
           href="/api/export/ledger"
           download
@@ -131,6 +164,7 @@ export function ReportsLauncher() {
           <FileSpreadsheet size={15} className="text-[var(--color-text-muted)]" />
           {t("exportLedger")}
         </a>
+        )}
       </div>
     </Panel>
   );

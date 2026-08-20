@@ -6,11 +6,16 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { changePassword, updateNotificationContacts } from "./actions";
+import { changeSignInEmail } from "../employees/actions";
 
 export function AccountForms({
+  profileId,
+  signInEmail,
   notificationEmail,
   whatsappNumber,
 }: {
+  profileId: string;
+  signInEmail: string;
   notificationEmail: string | null;
   whatsappNumber: string | null;
 }) {
@@ -19,6 +24,7 @@ export function AccountForms({
 
   return (
     <>
+      <SignInEmailPanel t={t} common={common} profileId={profileId} current={signInEmail} />
       <PasswordPanel t={t} common={common} />
       <NotificationsPanel
         t={t}
@@ -27,6 +33,98 @@ export function AccountForms({
         initialWhatsapp={whatsappNumber ?? ""}
       />
     </>
+  );
+}
+
+/**
+ * Change your own sign-in address.
+ *
+ * REQUIRES THE CURRENT PASSWORD, and that is the point rather than
+ * friction for its own sake. The sign-in address is the account
+ * recovery channel — whoever controls it can request a password reset —
+ * so changing it is a credential change, and a borrowed unlocked laptop
+ * must not be enough to redirect somebody's resets to an attacker's
+ * inbox. `changeSignInEmail` enforces the same rule server-side for the
+ * self path and deliberately does NOT for the supervisor path, where a
+ * manager cannot know the password and the whole point is an employee
+ * who has lost access to their inbox.
+ *
+ * Distinct from the notification address below it, which is a contact
+ * preference and self-editable with no ceremony at all.
+ */
+function SignInEmailPanel({
+  t,
+  common,
+  profileId,
+  current,
+}: {
+  t: ReturnType<typeof useTranslations>;
+  common: ReturnType<typeof useTranslations>;
+  profileId: string;
+  current: string;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [email, setEmail] = useState(current);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  function submit() {
+    setError(null);
+    setSaved(false);
+    startTransition(async () => {
+      const res = await changeSignInEmail({
+        profile_id: profileId,
+        new_email: email,
+        current_password: password,
+      });
+      if ("error" in res) {
+        setError(res.error);
+        return;
+      }
+      setPassword("");
+      setSaved(true);
+    });
+  }
+
+  const unchanged = email.trim().toLowerCase() === current.trim().toLowerCase();
+
+  return (
+    <Panel>
+      <PanelHeader title={t("changeSignInEmail")} subtitle={t("signInEmailHint")} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label>{t("newEmail")}</Label>
+          <Input
+            type="email"
+            dir="ltr"
+            autoComplete="off"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label>{t("currentPassword")}</Label>
+          <Input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+      </div>
+      {error && <p className="mt-2 text-xs text-[var(--color-accent-red)]">{error}</p>}
+      {saved && <p className="mt-2 text-xs text-[var(--color-accent-green)]">{t("emailChanged")}</p>}
+      <div className="mt-4 flex justify-end">
+        <Button
+          variant="accent"
+          onClick={submit}
+          disabled={pending || unchanged || !email.includes("@") || !password}
+        >
+          {common("save")}
+        </Button>
+      </div>
+    </Panel>
   );
 }
 

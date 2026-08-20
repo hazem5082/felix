@@ -42,6 +42,8 @@ export default async function AccountPage({
       </Panel>
 
       <AccountForms
+        profileId={profile.id}
+        signInEmail={user?.email ?? ""}
         notificationEmail={profile.notification_email}
         whatsappNumber={profile.whatsapp_number}
       />
