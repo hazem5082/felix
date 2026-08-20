@@ -1,5 +1,20 @@
 # Legacy importer — runbook
 
+> **Demonstrating this to a showroom?** `demo-legacy/` next to this file
+> holds a ready-made `vehicles.csv` (14 rows) and `customers.csv` (13
+> rows) in the shape an Egyptian showroom's Excel export actually
+> arrives in — Arabic headers, Arabic-Indic digits, `"1,150,000 جنيه"`
+> price formatting — with two deliberately broken cells so the reject
+> report has something real in it. No `--map` needed: every header in
+> them is one the importer recognises out of the box.
+>
+> ```bash
+> node --env-file=.env.local scripts/import-legacy.mjs --tenant felix ./scripts/import/demo-legacy
+> ```
+>
+> Dry run, as always. See `scripts/DEMO_SCRIPT.md` §10 for what to say
+> while it runs.
+
 This is the checklist for bringing a showroom's existing Excel stock list
 and customer book into FELIX. It is written for whoever is running the
 import, not necessarily an engineer — the commands are copy-paste-able.

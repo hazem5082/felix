@@ -44,9 +44,55 @@
 //     product; emailFor() namespaces every address under *.filex.demo,
 //     which resolves nowhere and cannot collide with anything real.
 import { createClient } from "@supabase/supabase-js";
+import { fileURLToPath } from "node:url";
+import { register } from "node:module";
+import { spawnSync } from "node:child_process";
 // The four cars themselves — VINs and photography — are described in one
 // place, because demo-photos.mjs writes to the same rows this script creates.
 import { vinFor, photosFor, seedPipeline } from "./demo-fixtures.mjs";
+// Everything migrations 0030-0036 built, as scenes a person can walk
+// through: a second branch, aged stock, a consignment, a trade-in
+// mid-deal, a live instalment book with cheques, a payout owed to an
+// outside owner, a pending transfer and an accepted e-invoice. Split out
+// for the reason demo-fixtures.mjs is: importing it must stay free of
+// side effects, and this file calls main() at module scope.
+import { seedShowcase } from "./demo-showcase.mjs";
+
+// WHY THIS FILE NOW SELF-RESPAWNS WITH --experimental-strip-types.
+// Verbatim the move scripts/import-legacy.mjs makes, and for the same
+// reason: the showcase scenes in demo-showcase.mjs write an in-house
+// instalment schedule and an ETA document, and BOTH are arithmetic the
+// application already owns — buildSchedule()/allocatePayment() in
+// src/lib/receivables.ts, buildEtaDocument()/MockEtaClient in
+// src/lib/eta/. Restating a flat-rate schedule here would produce a seed
+// that eventually disagrees with the server action that maintains it,
+// silently, in the customer's favour (see receivables.ts's header on why
+// amortising a flat rate halves what is owed). Importing the real thing
+// is the only version that cannot drift.
+//
+// Node can load a .ts file directly and erase its type syntax at import
+// time, but only under a CLI flag and only for THIS process. So: if the
+// flag is not already active, relaunch with it and forward argv. The
+// environment (including anything --env-file loaded) is inherited by the
+// child, and the SEED_PASSWORD guard below is untouched — it simply runs
+// in the child instead, prints the same message and exits the same way.
+const STRIP_TYPES_FLAG = "--experimental-strip-types";
+
+if (!process.execArgv.includes(STRIP_TYPES_FLAG)) {
+  const result = spawnSync(
+    process.execPath,
+    [STRIP_TYPES_FLAG, "--no-warnings", fileURLToPath(import.meta.url), ...process.argv.slice(2)],
+    { stdio: "inherit" }
+  );
+  process.exit(result.status ?? 1);
+}
+
+// Node's native loader does not try appending ".ts" to a relative
+// specifier the way it tries ".js" — see scripts/import/ts-loader.mjs for
+// exactly what that breaks. Registered here, once, for the whole process:
+// demo-showcase.mjs dynamic-imports the .ts modules and needs this hook
+// in place before it does.
+register("./import/ts-loader.mjs", import.meta.url);
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -111,6 +157,12 @@ try {
 }
 
 let TENANT_ID;
+// The showroom's name AS REGISTERED, which is not necessarily --name: a
+// tenant that already exists keeps the name it was provisioned under.
+// The e-invoice issuer is this and not the branch (the tax registration
+// was issued to the group), so the difference is load-bearing by §10 of
+// demo-showcase.mjs.
+let TENANT_NAME = NAME;
 let tenantDb; // built once the schema is known to exist
 
 async function ensureTenant() {
@@ -122,6 +174,7 @@ async function ensureTenant() {
 
   if (existing) {
     console.log(`↷ tenant "${SLUG}" already exists`);
+    TENANT_NAME = existing.name ?? NAME;
     return existing.id;
   }
 
@@ -689,6 +742,21 @@ async function main() {
   }
 
   await seedMeetings(ids);
+
+  // The showcase, last: every scene in it depends on the branches, the
+  // accounts and the cars above already existing, and each one is
+  // probe-guarded so this is additive on a showroom already in use.
+  // `branches` is re-read rather than reused — the showcase adds one.
+  const { data: allBranches } = await tenantDb.from("branches").select("*");
+  await seedShowcase({
+    db: tenantDb,
+    slug: SLUG,
+    branches: allBranches ?? branches,
+    ids,
+    signedInAs,
+    tenantName: TENANT_NAME,
+    log: (line) => console.log(line),
+  });
 
   console.log(`\n— ${NAME} (${SLUG}) — all accounts use password: ${PASSWORD} —`);
   for (const a of ACCOUNTS) {
