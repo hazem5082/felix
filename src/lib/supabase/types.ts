@@ -568,3 +568,102 @@ export interface WaterfallPreview {
   }[];
 }
 
+// ── The in-house receivable book (migration 0033) ───────────
+//
+// What the showroom is owed by its own customers, as opposed to what a
+// bank is owed. A deal ticket with financing_type 'installments' and NO
+// financing_partner_id is the showroom's own book — تقسيط مباشر — and an
+// InstallmentPlan hangs off exactly that shape (a trigger enforces it).
+
+export type InstallmentPlanStatus = "active" | "settled" | "defaulted";
+
+export interface InstallmentPlan {
+  id: string;
+  deal_ticket_id: string;
+  /**
+   * Denormalised from the ticket so every RLS predicate on this table is
+   * a scalar can_read_branch() call rather than a subquery on
+   * deal_tickets. A trigger pins it to the ticket's own branch, so the
+   * copy cannot drift from the source.
+   */
+  branch_id: string;
+  /** The financed amount, i.e. AFTER the down payment. */
+  principal: number;
+  /**
+   * FLAT annual rate as a percentage, NOT reducing-balance:
+   * interest = principal x (rate / 100) x (months / 12), computed once
+   * on the whole principal for the whole term. Null means interest-free.
+   */
+  annual_flat_rate: number | null;
+  months: number;
+  /** ISO date (yyyy-mm-dd). The FIRST instalment falls on this day. */
+  start_date: string;
+  monthly_amount: number;
+  total_payable: number;
+  /** نقل الملكية بعد السداد — the papers stay with the showroom. */
+  ownership_retained: boolean;
+  /** 'defaulted' is a human's judgement; nothing computes it. */
+  status: InstallmentPlanStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  installment_lines?: InstallmentLine[];
+  deal_tickets?: DealTicket;
+}
+
+export interface InstallmentLine {
+  id: string;
+  plan_id: string;
+  seq: number;
+  /** ISO date (yyyy-mm-dd). */
+  due_date: string;
+  amount_due: number;
+  amount_paid: number;
+  paid_at: string | null;
+}
+
+export type ChequeStatus =
+  | "in_safe"
+  | "deposited"
+  | "cleared"
+  | "bounced"
+  | "returned_to_customer";
+
+export interface Cheque {
+  id: string;
+  branch_id: string;
+  deal_ticket_id: string | null;
+  plan_id: string | null;
+  cheque_number: string;
+  bank_name: string;
+  /** Who the bank will pursue — often a relative's or a company's book. */
+  drawer_name: string;
+  amount: number;
+  /** ISO date (yyyy-mm-dd). */
+  due_date: string;
+  status: ChequeStatus;
+  /** Stamped by the database on every move, never by the client. */
+  status_changed_at: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** How money taken at the counter arrived. 0023's channel values. */
+export type ReceiptMethod = "cash" | "bank_transfer" | "cheque" | "instapay";
+
+export interface Receipt {
+  id: string;
+  branch_id: string;
+  deal_ticket_id: string | null;
+  plan_id: string | null;
+  amount: number;
+  method: ReceiptMethod;
+  reference: string | null;
+  payer_name: string | null;
+  note: string | null;
+  received_by: string;
+  received_at: string;
+}
+

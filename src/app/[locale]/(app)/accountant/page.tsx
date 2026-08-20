@@ -11,6 +11,7 @@ import { PartnerFormDialog } from "./partner-form";
 import { OverheadRow } from "./overhead-row";
 import { RequestStatusControl } from "./request-status";
 import { PartnerContractUpload } from "./partner-contract-upload";
+import { ReceivablesPanel } from "./receivables-panel";
 
 export default async function AccountantPage() {
   const t = await getTranslations("accountant");
@@ -39,6 +40,12 @@ export default async function AccountantPage() {
       <PanelHeader title={t("title")} />
 
       {isFinance && <ReportsLauncher />}
+
+      {/* The in-house receivable book (0033). Self-contained: it loads
+          its own data through a server action, scopes itself through
+          can_read_branch(), and renders nothing while the showroom has
+          lent nobody anything. */}
+      <ReceivablesPanel />
 
       <Panel>
         <PanelHeader title={t("financingPartners")} action={<PartnerFormDialog />} />
