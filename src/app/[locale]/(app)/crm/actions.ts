@@ -355,7 +355,7 @@ export async function createDealTicket(input: {
   // back empty, which quietly stamped another branch's vehicle as ours.
   if (!v) return { error: "That vehicle is not available to you." };
 
-  const branchError = assertBranch(auth.profile, v.branch_id);
+  const branchError = await assertBranch(auth.profile, v.branch_id);
   if (branchError) return branchError;
 
   if (v.status !== "in_stock") {

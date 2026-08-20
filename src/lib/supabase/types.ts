@@ -59,6 +59,26 @@ export interface Branch {
   created_at: string;
 }
 
+/**
+ * One branch a profile may act on IN ADDITION to `profiles.branch_id`
+ * (migration 0030). An "area manager" is a branch_manager holding several
+ * of these; nobody's home branch moves.
+ */
+export interface BranchGrant {
+  id: string;
+  profile_id: string;
+  branch_id: string;
+  granted_by: string | null;
+  note: string | null;
+  /**
+   * Non-null once revoked. The row is never deleted — §6f grants DELETE
+   * on nothing, and "who could approve Heliopolis deals in March" must
+   * stay answerable. Re-granting clears this back to null.
+   */
+  revoked_at: string | null;
+  created_at: string;
+}
+
 export interface Profile {
   id: string;
   full_name: string;

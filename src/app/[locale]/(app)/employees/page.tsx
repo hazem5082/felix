@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { PanelHeader } from "@/components/ui/panel";
-import type { Branch, Profile } from "@/lib/supabase/types";
+import { acceptsBranchGrants } from "@/lib/branch-authority";
+import type { Branch, BranchGrant, Profile } from "@/lib/supabase/types";
 import { EmployeeFormDialog } from "./employee-form";
 import { EmployeeTable, type EmployeeRow } from "./employee-table";
 
@@ -19,9 +20,15 @@ export default async function EmployeesPage({
   const t = await getTranslations("employees");
 
   const supabase = await createClient();
-  const [{ data: profiles }, { data: branches }] = await Promise.all([
+  // Live grants only. branch_grants_select admits the CEO to every row in
+  // the showroom, so this one query covers the whole table; a revoked row
+  // stays in the table (and in audit_log) but is not authority any more,
+  // which is exactly what `revoked_at is null` means in the two SQL
+  // predicates migration 0030 widened.
+  const [{ data: profiles }, { data: branches }, { data: grants }] = await Promise.all([
     supabase.from("profiles").select("*").order("created_at"),
     supabase.from("branches").select("*").order("name"),
+    supabase.from("branch_grants").select("*").is("revoked_at", null).order("created_at"),
   ]);
 
   // Emails live in auth.users, which PostgREST does not expose. Looked
@@ -45,12 +52,25 @@ export default async function EmployeesPage({
 
   const branchNames = new Map(((branches as Branch[]) ?? []).map((b) => [b.id, b.name]));
 
+  // profile_id -> the branches granted on top of the home branch.
+  const grantsByProfile = new Map<string, { id: string; name: string; note: string | null }[]>();
+  for (const g of (grants as BranchGrant[]) ?? []) {
+    const list = grantsByProfile.get(g.profile_id) ?? [];
+    list.push({ id: g.branch_id, name: branchNames.get(g.branch_id) ?? "—", note: g.note });
+    grantsByProfile.set(g.profile_id, list);
+  }
+
   const rows: EmployeeRow[] = ((profiles as Profile[]) ?? []).map((p) => ({
     id: p.id,
     full_name: p.full_name,
     role: p.role,
     branch_id: p.branch_id,
     branch_name: p.branch_id ? (branchNames.get(p.branch_id) ?? "—") : null,
+    granted_branches: grantsByProfile.get(p.id) ?? [],
+    // The two org-wide roles and the investor cannot hold grants — see
+    // acceptsBranchGrants(). Deciding it here keeps the table dumb about
+    // the rule and the rule in one place.
+    accepts_grants: acceptsBranchGrants(p.role),
     phone: p.phone,
     email: emails.get(p.id) ?? null,
     // Statutory NOSI fields (0018) — surfaced only on this CEO-only page.

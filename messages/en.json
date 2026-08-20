@@ -191,7 +191,19 @@
     "history": "Last 6 months",
     "historySubtitle": "Recorded activity, with targets where one was set.",
     "month": "Month",
-    "revenue": "Sales revenue"
+    "revenue": "Sales revenue",
+    "branches": "Branches",
+    "manageBranches": "Branch access",
+    "branchAccessFor": "Branch access for {name}",
+    "branchAccessHelp": "Their home branch stays as it is. Extra branches let them work and approve there as well — an area manager is simply a branch manager with several.",
+    "homeBranch": "Home branch",
+    "grantedBranches": "Extra branches",
+    "noGrantedBranches": "No extra branches yet.",
+    "grantBranch": "Add a branch",
+    "grantNote": "Reason",
+    "grantNotePlaceholder": "Covers Heliopolis while Tarek is away",
+    "addBranchAccess": "Grant access",
+    "revokeBranch": "Remove"
   },
   "calendar": {
     "title": "Calendar",

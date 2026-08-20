@@ -734,6 +734,23 @@ export const BranchSchema = z.object({
   address: optionalText(240),
 });
 
+/**
+ * Granting or revoking one branch of extra authority (migration 0030).
+ * The note is where the CEO records WHY — "covers Heliopolis while Tarek
+ * is on leave" — so the authority list stays readable months later.
+ */
+export const BranchGrantSchema = z.object({
+  profile_id: Uuid,
+  branch_id: Uuid,
+  note: optionalText(240),
+});
+
+/** Revoking names the same pair; the row is found by it, not by its id. */
+export const BranchGrantRevokeSchema = z.object({
+  profile_id: Uuid,
+  branch_id: Uuid,
+});
+
 export const LedgerEntrySchema = z
   .object({
     holder_type: z.enum(["ceo", "investor", "sales_exec"]),
