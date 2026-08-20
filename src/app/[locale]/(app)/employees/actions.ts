@@ -5,7 +5,16 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorize } from "@/lib/auth";
 import { temporaryPassword } from "@/lib/passwords";
-import { CreateStaffSchema, UpdateStaffSchema, Uuid, parseInput } from "@/lib/validation";
+import { acceptsBranchGrants } from "@/lib/branch-authority";
+import {
+  BranchGrantRevokeSchema,
+  BranchGrantSchema,
+  CreateStaffSchema,
+  UpdateStaffSchema,
+  Uuid,
+  parseInput,
+} from "@/lib/validation";
+import type { Role } from "@/lib/supabase/types";
 import { toUserError } from "@/lib/db-error";
 
 // Staff management is CEO-only end to end. Every action here re-checks
@@ -177,6 +186,117 @@ export async function updateEmployee(input: {
 
   if (error) return toUserError(error);
   if (!data?.length) return { error: "No such employee in this showroom." };
+
+  revalidatePath("/[locale]/(app)/employees", "page");
+  return { ok: true };
+}
+
+// ── Multi-branch authority (migration 0030) ─────────────────
+//
+// A grant EXTENDS an employee's reach to one more branch. Their home
+// branch stays on profiles.branch_id, so an "area manager" is a
+// branch_manager holding several grants and no new role exists.
+//
+// Both actions are CEO-only twice over: authorize(["ceo"]) here, and
+// branch_grants' insert/update policies, which admit is_ceo() alone. The
+// database check is the one that matters — delegating the power to
+// delegate is how a branch manager would grant themselves the branch
+// next door — and this one is what makes the refusal legible.
+
+/** Shared prologue: the CEO's own session must be able to see the target. */
+async function loadGrantTarget(profileId: string) {
+  const supabase = await createClient();
+  // Visibility through the CEO's session IS the tenant check, as in
+  // resetEmployeePassword above: another showroom's profile returns zero
+  // rows under the isolation policies.
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, full_name, role, branch_id")
+    .eq("id", profileId)
+    .maybeSingle();
+  return data as { id: string; full_name: string; role: Role; branch_id: string | null } | null;
+}
+
+export async function grantBranchAccess(input: {
+  profile_id: string;
+  branch_id: string;
+  note: string;
+}) {
+  const auth = await authorize(["ceo"]);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(BranchGrantSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const target = await loadGrantTarget(parsed.data.profile_id);
+  if (!target) return { error: "No such employee in this showroom." };
+
+  // Refused at the point it is offered rather than quietly stored: a
+  // grant to a CEO or an accountant says nothing they did not already
+  // have org-wide, and an investor's scope is the vehicles they hold
+  // equity in, not a branch.
+  if (!acceptsBranchGrants(target.role)) {
+    return { error: "Only branch managers and sales staff can be granted extra branches." };
+  }
+
+  if (target.branch_id === parsed.data.branch_id) {
+    return { error: "That is already their home branch." };
+  }
+
+  const supabase = await createClient();
+  const { data: branch } = await supabase
+    .from("branches")
+    .select("id")
+    .eq("id", parsed.data.branch_id)
+    .maybeSingle();
+  if (!branch) return { error: "Unknown branch." };
+
+  // UPSERT rather than INSERT: the unique index is on (profile_id,
+  // branch_id) with no revoked_at in it, so re-granting a branch that was
+  // taken away must reuse the row — and the row's whole history stays in
+  // audit_log instead of splitting across two of them.
+  //
+  // granted_by is set from the session, never from the client: the RLS
+  // WITH CHECK pins it to auth.uid() and would reject anything else.
+  const { error } = await supabase.from("branch_grants").upsert(
+    {
+      profile_id: parsed.data.profile_id,
+      branch_id: parsed.data.branch_id,
+      note: parsed.data.note,
+      granted_by: auth.profile.id,
+      revoked_at: null,
+    },
+    { onConflict: "profile_id,branch_id" }
+  );
+  if (error) return toUserError(error);
+
+  revalidatePath("/[locale]/(app)/employees", "page");
+  return { ok: true };
+}
+
+export async function revokeBranchAccess(input: { profile_id: string; branch_id: string }) {
+  const auth = await authorize(["ceo"]);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(BranchGrantRevokeSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+
+  // Stamped, not deleted. §6f grants DELETE on nothing and assertion (j)
+  // inside create_tenant_schema() proves it, but the better reason is
+  // that an authority record is the last one that should vanish: the
+  // revocation, its timestamp and its author are what audit_log keeps.
+  const { data, error } = await supabase
+    .from("branch_grants")
+    .update({ revoked_at: new Date().toISOString(), granted_by: auth.profile.id })
+    .eq("profile_id", parsed.data.profile_id)
+    .eq("branch_id", parsed.data.branch_id)
+    .is("revoked_at", null)
+    .select("id");
+
+  if (error) return toUserError(error);
+  if (!data?.length) return { error: "That branch is not currently granted." };
 
   revalidatePath("/[locale]/(app)/employees", "page");
   return { ok: true };

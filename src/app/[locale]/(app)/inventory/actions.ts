@@ -33,7 +33,7 @@ export async function createVehicle(input: {
   const parsed = parseInput(CreateVehicleSchema, input);
   if (!parsed.ok) return parsed.error;
 
-  const branchError = assertBranch(auth.profile, parsed.data.branch_id);
+  const branchError = await assertBranch(auth.profile, parsed.data.branch_id);
   if (branchError) return branchError;
 
   // Allocating investor equity is a CEO decision — a branch manager may take
@@ -91,7 +91,7 @@ export async function addExpense(input: {
   const v = vehicle as { id: string; branch_id: string; status: string } | null;
   if (!v) return { error: "Unknown vehicle." };
 
-  const branchError = assertBranch(auth.profile, v.branch_id);
+  const branchError = await assertBranch(auth.profile, v.branch_id);
   if (branchError) return branchError;
 
   if (v.status === "sold") {

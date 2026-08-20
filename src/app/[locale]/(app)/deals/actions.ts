@@ -52,7 +52,7 @@ export async function updateChecklist(
   const ticket = await loadTicketScope(id.data);
   if (!ticket) return { error: "Unknown deal ticket." };
 
-  const branchError = assertBranch(auth.profile, ticket.branch_id);
+  const branchError = await assertBranch(auth.profile, ticket.branch_id);
   if (branchError) return branchError;
 
   if (ticket.status !== "submitted") {
@@ -77,7 +77,7 @@ export async function approveTicket(ticketId: string) {
   const ticket = await loadTicketScope(id.data);
   if (!ticket) return { error: "Unknown deal ticket." };
 
-  const branchError = assertBranch(auth.profile, ticket.branch_id);
+  const branchError = await assertBranch(auth.profile, ticket.branch_id);
   if (branchError) return branchError;
 
   // A reviewer approving a deal they raised themselves defeats the point of
@@ -108,7 +108,7 @@ export async function rejectTicket(ticketId: string, reason: string) {
   const ticket = await loadTicketScope(parsed.data.ticketId);
   if (!ticket) return { error: "Unknown deal ticket." };
 
-  const branchError = assertBranch(auth.profile, ticket.branch_id);
+  const branchError = await assertBranch(auth.profile, ticket.branch_id);
   if (branchError) return branchError;
 
   const supabase = await createClient();
@@ -136,7 +136,7 @@ export async function executeSale(ticketId: string) {
   // filter. Migration 0003 re-checks the branch inside the function; this is
   // the matching check on the way in, so the user gets a readable error
   // rather than a raw Postgres exception.
-  const branchError = assertBranch(auth.profile, ticket.branch_id);
+  const branchError = await assertBranch(auth.profile, ticket.branch_id);
   if (branchError) return branchError;
 
   const supabase = await createClient();

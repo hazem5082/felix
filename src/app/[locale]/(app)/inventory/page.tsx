@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/auth";
+import { getProfile, getGrantedBranchIds } from "@/lib/auth";
+import { selectableBranches } from "@/lib/branch-authority";
 import { PanelHeader } from "@/components/ui/panel";
 import type { Vehicle, Branch } from "@/lib/supabase/types";
 import { VehicleFormDialog } from "./vehicle-form";
@@ -18,11 +19,30 @@ export default async function InventoryPage() {
 
   const canAdd = profile && ["ceo", "branch_manager"].includes(profile.role);
 
+  // The intake picker offers exactly what createVehicle() will accept:
+  // the home branch plus whatever branch_grants adds (migration 0030).
+  // It used to offer every branch to a branch manager and then have the
+  // action reject the choice — narrowing here is what makes the dropdown
+  // and the server agree, and it is also how an area manager takes stock
+  // in at a branch that is not their own.
+  //
+  // The InventoryBrowser below keeps the FULL list: its branch control is
+  // a filter over rows RLS has already decided this profile may see, not
+  // a statement of authority.
+  const intakeBranches = profile
+    ? selectableBranches(
+        profile.role,
+        profile.branch_id,
+        await getGrantedBranchIds(),
+        (branches as Branch[]) ?? []
+      )
+    : [];
+
   return (
     <div className="space-y-6">
       <PanelHeader
         title={t("title")}
-        action={canAdd ? <VehicleFormDialog branches={(branches as Branch[]) ?? []} /> : undefined}
+        action={canAdd ? <VehicleFormDialog branches={intakeBranches} /> : undefined}
       />
 
       {/* Rows are filtered in the browser rather than re-queried: RLS has

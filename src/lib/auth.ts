@@ -3,6 +3,7 @@ import { cache } from "react";
 import { createClient, getSessionTenant } from "@/lib/supabase/server";
 import { getTenant, type Tenant } from "@/lib/tenant";
 import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
+import { acceptsBranchGrants, canActOnBranchWithGrants } from "@/lib/branch-authority";
 import type { TenantClaim } from "@/lib/tenant-claim";
 import { redirect } from "@/i18n/navigation";
 import type { Profile, Role } from "@/lib/supabase/types";
@@ -179,17 +180,66 @@ export async function authenticate(): Promise<Authorized> {
 }
 
 /**
- * CEO and accountants operate org-wide; everyone else is confined to the
- * branch on their profile. Mirrors `can_act_on_branch()` in migration 0003
- * so the app and the database agree on what "my branch" means.
+ * The additional branches this session has been granted, beyond the home
+ * branch on its profile. Migration 0030's `branch_grants`.
+ *
+ * Memoized per request like getProfile(), and skipped entirely for the
+ * roles a grant cannot change anything for: the CEO and accountants are
+ * org-wide already, and an investor's scope is the vehicles they hold
+ * equity in rather than a branch. Those three never pay for the round
+ * trip.
+ *
+ * RLS is what makes this safe to read straight from the session:
+ * branch_grants_select admits a caller's own rows and the CEO's, so this
+ * query cannot return somebody else's authority even if the filter below
+ * were dropped. `revoked_at is null` is the same clause the two SQL
+ * predicates carry — a revoked grant must stop authorizing in the app on
+ * the same request it stops authorizing in Postgres.
  */
-export function canActOnBranch(profile: Profile, branchId: string | null): boolean {
-  if (profile.role === "ceo" || profile.role === "accountant") return true;
-  return branchId !== null && branchId === profile.branch_id;
+export const getGrantedBranchIds = cache(async (): Promise<string[]> => {
+  const profile = await getProfile();
+  if (!profile || !acceptsBranchGrants(profile.role)) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("branch_grants")
+    .select("branch_id")
+    .eq("profile_id", profile.id)
+    .is("revoked_at", null);
+
+  return ((data as { branch_id: string }[] | null) ?? []).map((g) => g.branch_id);
+});
+
+/**
+ * CEO and accountants operate org-wide; everyone else is confined to the
+ * branch on their profile PLUS whichever branches they have been granted.
+ * Mirrors `can_act_on_branch()` as migration 0030 leaves it, so the app
+ * and the database agree on what "my branch" means.
+ *
+ * Pure, so the branch pickers in client components can call the same
+ * rule. Pass the ids from getGrantedBranchIds(); omitting them evaluates
+ * the pre-0030 rule, which is the correct narrow answer rather than a
+ * wrong wide one.
+ */
+export function canActOnBranch(
+  profile: Profile,
+  branchId: string | null,
+  grantedBranchIds: readonly string[] = []
+): boolean {
+  return canActOnBranchWithGrants(profile.role, profile.branch_id, branchId, grantedBranchIds);
 }
 
-export function assertBranch(profile: Profile, branchId: string | null): ActionError | null {
-  return canActOnBranch(profile, branchId)
+/**
+ * Async since 0030: the grant list is a per-request database read, and
+ * every call site is already inside an async action. Loading it here
+ * rather than at each call site is what stops one action from being
+ * widened and the next five from silently keeping the old scope.
+ */
+export async function assertBranch(
+  profile: Profile,
+  branchId: string | null
+): Promise<ActionError | null> {
+  return canActOnBranch(profile, branchId, await getGrantedBranchIds())
     ? null
     : { error: "That record belongs to another branch." };
 }

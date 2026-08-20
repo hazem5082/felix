@@ -216,7 +216,19 @@
     "confirmReset": "إنشاء كلمة مرور جديدة لـ {name}؟ ستتوقف كلمة المرور الحالية فورًا.",
     "passwordResetFor": "كلمة المرور الجديدة لـ {name}",
     "editEmployee": "تعديل {name}",
-    "you": "أنت"
+    "you": "أنت",
+    "branches": "الفروع",
+    "manageBranches": "صلاحية الفروع",
+    "branchAccessFor": "صلاحية الفروع لـ {name}",
+    "branchAccessHelp": "الفرع الأساسي بيفضل زي ما هو. الفروع الإضافية بتخلّيه يشتغل ويعتمد فيها كمان — مدير المنطقة هو ببساطة مدير فرع معاه كذا فرع.",
+    "homeBranch": "الفرع الأساسي",
+    "grantedBranches": "فروع إضافية",
+    "noGrantedBranches": "مفيش فروع إضافية لسه.",
+    "grantBranch": "إضافة فرع",
+    "grantNote": "السبب",
+    "grantNotePlaceholder": "يغطّي مصر الجديدة لحد ما طارق يرجع",
+    "addBranchAccess": "منح الصلاحية",
+    "revokeBranch": "إزالة"
   },
   "calendar": {
     "title": "التقويم",

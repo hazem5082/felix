@@ -97,7 +97,7 @@ export async function updateFinancingRequestStatus(requestId: string, status: st
   const r = request as { id: string; deal_tickets?: { branch_id: string } } | null;
   if (!r) return { error: "Unknown financing request." };
 
-  const branchError = assertBranch(auth.profile, r.deal_tickets?.branch_id ?? null);
+  const branchError = await assertBranch(auth.profile, r.deal_tickets?.branch_id ?? null);
   if (branchError) return branchError;
 
   const { error } = await supabase
