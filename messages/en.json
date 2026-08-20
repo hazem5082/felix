@@ -352,7 +352,19 @@
     "commissionRequired": "Set the commission type and value for a consignment",
     "consignorNameRequired": "A consignment needs the consignor's name",
     "consignmentNoTerms": "No commission terms were recorded for this car. Unless they are added, the whole sale price will be owed to the consignor.",
-    "consignmentExpenseHint": "This car is on consignment. Money spent on it comes out of the showroom's commission — there is no shared profit pool on a car the showroom does not own."
+    "consignmentExpenseHint": "This car is on consignment. Money spent on it comes out of the showroom's commission — there is no shared profit pool on a car the showroom does not own.",
+    "odometer": "Odometer",
+    "acquisitionSource": "Source",
+    "acquisitionSourcePlaceholder": "e.g. Cairo auction, trade-in referral, fleet company",
+    "daysInStock": "Days in Stock",
+    "ageFresh": "Fresh",
+    "ageAging": "Ageing",
+    "ageStale": "Stale",
+    "ageDead": "Dead Stock",
+    "staleFirst": "Stale first",
+    "priceHistory": "Price History",
+    "priceHistoryEmpty": "No price changes recorded yet.",
+    "priceHistoryChangedBy": "Changed by"
   },
   "crm": {
     "title": "CRM & Lead Interaction",
@@ -772,6 +784,7 @@
     "searchVehicles": "Search VIN, make, model…",
     "clearFilters": "Clear filters",
     "showingCount": "{count} vehicle(s)",
+    "daysInStockValue": "{days} day(s)",
     "contactTime": "Best time to contact",
     "nationalId": "National ID",
     "nationalIdInvalid": "National ID must be exactly 14 digits.",

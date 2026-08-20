@@ -480,7 +480,19 @@
     "commissionRequired": "حدد نوع العمولة وقيمتها للسيارة بالأمانة",
     "consignorNameRequired": "لا بد من اسم صاحب السيارة في البيع بالأمانة",
     "consignmentNoTerms": "لم تُسجَّل شروط عمولة لهذه السيارة. ما لم تُضَف، سيكون سعر البيع بالكامل مستحقًا لصاحب السيارة.",
-    "consignmentExpenseHint": "هذه السيارة بالأمانة. أي مصروفات عليها تُخصم من عمولة المعرض — لا يوجد وعاء أرباح مشترك في سيارة لا يملكها المعرض."
+    "consignmentExpenseHint": "هذه السيارة بالأمانة. أي مصروفات عليها تُخصم من عمولة المعرض — لا يوجد وعاء أرباح مشترك في سيارة لا يملكها المعرض.",
+    "odometer": "عداد المسافات",
+    "acquisitionSource": "مصدر السيارة",
+    "acquisitionSourcePlaceholder": "مثال: مزاد القاهرة، إحالة تبديل، شركة تأجير",
+    "daysInStock": "أيام في المخزون",
+    "ageFresh": "جديدة",
+    "ageAging": "بدأت تتقادم",
+    "ageStale": "راكدة",
+    "ageDead": "مخزون ميت",
+    "staleFirst": "الأقدم أولاً",
+    "priceHistory": "سجل الأسعار",
+    "priceHistoryEmpty": "لم تُسجَّل أي تغييرات في السعر بعد.",
+    "priceHistoryChangedBy": "غيّره"
   },
   "crm": {
     "title": "العملاء والتفاعل معهم",
@@ -772,6 +784,7 @@
     "searchVehicles": "ابحث برقم الهيكل أو الماركة أو الموديل…",
     "clearFilters": "مسح عوامل التصفية",
     "showingCount": "{count} مركبة",
+    "daysInStockValue": "{days} يوم",
     "contactTime": "أفضل وقت للتواصل",
     "nationalId": "الرقم القومي",
     "nationalIdInvalid": "يجب أن يتكوّن الرقم القومي من 14 رقمًا بالضبط.",

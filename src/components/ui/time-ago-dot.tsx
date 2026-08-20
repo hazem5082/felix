@@ -13,6 +13,7 @@ const DOT_TONE: Record<SemanticTone, string> = {
   amber: "bg-[var(--color-accent-amber)]",
   blue: "bg-[var(--color-accent-blue)]",
   neutral: "bg-[var(--color-text-faint)]",
+  orange: "bg-[var(--color-accent-orange)]",
 };
 
 /**

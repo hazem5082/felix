@@ -106,6 +106,14 @@ export const CreateVehicleSchema = z.object({
   // Free text, not an enum: the picker offers the common colours but a
   // showroom must still be able to record "Nardo Grey" on intake.
   color: z.string().trim().max(40),
+  // The reading at intake (migration 0036), and where the car came from.
+  // Both optional — stock is taken in before either is always known, and
+  // the RPC/column both stay nullable. No upper bound beyond `money`'s
+  // general magnitude cap: a car legitimately arrives with 300,000+ km
+  // on the clock, and the odometer only ever moves forward off a typo
+  // correction, which is exactly what "no decrease guard" means.
+  odometer_km: z.number().finite().nonnegative().max(2_000_000).nullable(),
+  acquisition_source: z.string().trim().max(200),
   // Modifications are the whole point of this field — aftermarket rims, a
   // spoiler, body work. It feeds the contract and the sale listing, so it is
   // roomy but still bounded.

@@ -68,6 +68,7 @@ const TONE_TEXT: Record<SemanticTone, string> = {
   amber: "text-[var(--color-accent-amber)]",
   blue: "text-[var(--color-accent-blue)]",
   neutral: "text-[var(--color-text)]",
+  orange: "text-[var(--color-accent-orange)]",
 };
 
 export function StatCard({

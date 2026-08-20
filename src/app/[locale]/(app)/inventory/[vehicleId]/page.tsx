@@ -13,13 +13,16 @@ import type {
   Vehicle,
   VehicleEquitySplit,
   VehicleExpense,
+  VehiclePriceHistory,
   Branch,
   LeadVehicleInterest,
 } from "@/lib/supabase/types";
 import { ExpenseFormDialog } from "./expense-form";
 import { PricingDialog } from "../pricing-form";
+import { PriceHistoryCard } from "./price-history-card";
 import { colorLabel } from "@/lib/vehicle-color";
 import { originLabel } from "@/lib/vehicle-origin";
+import { ageBucket, ageTone, daysInStock, formatOdometer } from "@/lib/stock-age";
 import { Printer } from "lucide-react";
 
 export default async function VehicleDetailPage({
@@ -32,6 +35,7 @@ export default async function VehicleDetailPage({
   const dealsT = await getTranslations("deals");
   const crm = await getTranslations("crm");
   const interest = await getTranslations("interest");
+  const misc = await getTranslations("misc");
   const common = await getTranslations("common");
   const colors = await getTranslations("colors");
   const origins = await getTranslations("origins");
@@ -45,6 +49,7 @@ export default async function VehicleDetailPage({
     { data: expenses },
     { data: branch },
     { data: interests },
+    { data: priceHistory },
   ] = await Promise.all([
     supabase.from("vehicles").select("*").eq("id", vehicleId).maybeSingle(),
     supabase
@@ -66,6 +71,14 @@ export default async function VehicleDetailPage({
       .eq("vehicle_id", vehicleId)
       .neq("status", "declined")
       .order("budget_amount", { ascending: false, nullsFirst: false }),
+    // The price-history trigger (0036) writes these; RLS scopes them the
+    // same way it scopes the vehicle itself (can_read_branch on the
+    // denormalised branch_id — see the migration header for why).
+    supabase
+      .from("vehicle_price_history")
+      .select("*, profiles(full_name)")
+      .eq("vehicle_id", vehicleId)
+      .order("changed_at", { ascending: false }),
   ]);
 
   if (!vehicle) notFound();
@@ -276,6 +289,20 @@ export default async function VehicleDetailPage({
             )}
             <div className="flex justify-between"><span>{t("branch")}</span><span>{(branchRow as Branch | null)?.name ?? "—"}</span></div>
             <div className="flex justify-between"><span>{t("countryOfOrigin")}</span><span>{originLabel(origins, v.country_of_origin) ?? "—"}</span></div>
+            {/* Odometer, source and ageing (0036) — the same facts block
+                as color/origin above: none of these three is a cost
+                figure, so none is gated behind showCost. */}
+            <div className="flex justify-between"><span>{t("odometer")}</span><span className="num">{formatOdometer(v.odometer_km, locale)}</span></div>
+            <div className="flex justify-between"><span>{t("acquisitionSource")}</span><span>{v.acquisition_source ?? "—"}</span></div>
+            {v.status === "in_stock" && (
+              <div className="flex items-center justify-between">
+                <span>{t("daysInStock")}</span>
+                <StatusPill
+                  label={misc("daysInStockValue", { days: daysInStock(v.created_at, v.sold_at) })}
+                  tone={ageTone(ageBucket(daysInStock(v.created_at, v.sold_at)))}
+                />
+              </div>
+            )}
           </div>
           {/* The identifiers the traffic authority asks for at ownership
               transfer (0021) — kept together so the clerk reads them off
@@ -292,6 +319,10 @@ export default async function VehicleDetailPage({
                 against the portal. */}
             <div className="flex justify-between gap-3"><span>{t("itemCode")}</span><span className="font-mono" dir="ltr">{v.item_code ?? "—"}</span></div>
           </div>
+
+          {/* Self-contained (0036) — the only insertion point this
+              migration makes on this page beyond the facts block above. */}
+          <PriceHistoryCard history={(priceHistory as VehiclePriceHistory[]) ?? []} />
         </Panel>
       </div>
 
