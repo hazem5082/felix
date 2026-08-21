@@ -82,14 +82,14 @@ export function Sidebar({ role }: { role: Role }) {
         ready && "transition-[width] duration-200 ease-out"
       )}
     >
-      {/* Centered logo, sized to 3/4 width to reduce height by 1/4 */}
+      {/* Centered logo, sized to 1/2 width to reduce height by another 1/4 */}
       <div className="mb-3 flex items-center justify-center">
         <Image
           src="/brand/felix-logo.png"
           alt="FELIX"
           width={677}
           height={369}
-          className="h-auto w-3/4"
+          className="h-auto w-1/2"
           priority
         />
       </div>

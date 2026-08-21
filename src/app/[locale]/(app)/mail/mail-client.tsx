@@ -498,6 +498,10 @@ function ComposeForm({
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  // Files the user picked that never made it to storage. Kept separate
+  // from `error`, which any later action would clear — a dropped
+  // attachment has to outlive the message that announced it.
+  const [failedUploads, setFailedUploads] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -506,21 +510,33 @@ function ComposeForm({
     if (!files || files.length === 0) return;
     setUploading(true);
     setError(null);
-    try {
-      for (const file of Array.from(files)) {
+    setFailedUploads([]);
+    // Per file, not one try around the loop: one failure used to abandon
+    // every file after it as well, silently.
+    for (const file of Array.from(files)) {
+      try {
         const result = await uploadMailAttachment(file);
         setAttachments((prev) => [...prev, result]);
+      } catch (err) {
+        setFailedUploads((prev) => [...prev, file.name]);
+        setError(err instanceof Error ? err.message : "Upload failed");
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
     }
+    setUploading(false);
   }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    // A file that failed to upload must not leave quietly. Previously the
+    // upload error was shown and then the send went ahead anyway with
+    // whatever HAD uploaded — so a message written around an attachment
+    // went out without it, and nothing in the sent copy said so.
+    if (failedUploads.length) {
+      setError(t("attachmentFailed", { files: failedUploads.join(", ") }));
+      return;
+    }
 
     const externalAddresses = externalTo
       .split(/[,\n]/)
@@ -630,6 +646,24 @@ function ComposeForm({
           disabled={uploading}
           className="block w-full text-sm text-[var(--color-text-muted)] file:mr-3 file:rounded-md file:border file:border-[var(--color-border-strong)] file:bg-[var(--color-surface)] file:px-3 file:py-1.5 file:text-xs file:text-[var(--color-text)]"
         />
+        {failedUploads.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {failedUploads.map((name) => (
+              <li key={name} className="flex items-center gap-2 text-xs text-[var(--color-accent-red)]">
+                <Paperclip size={12} />
+                <span className="line-through">{name}</span>
+                {t("attachmentNotAttached")}
+                <button
+                  type="button"
+                  onClick={() => setFailedUploads((prev) => prev.filter((x) => x !== name))}
+                  className="hover:underline"
+                >
+                  {t("remove")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {attachments.length > 0 && (
           <ul className="mt-2 space-y-1">
             {attachments.map((a) => (

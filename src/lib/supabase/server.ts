@@ -102,6 +102,41 @@ export const createClient = cache(async () => {
 });
 
 /**
+ * The schema `createClient()` would pin itself to, for the rare caller
+ * that has to NAME the tenant rather than just query through it.
+ *
+ * Exists for the service-role writes that are about a message rather
+ * than by its sender — see sendMail's delivery bookkeeping. Same source
+ * of truth as createClient (the session's own claim, never the
+ * hostname), and the same local decode, so it costs no round trip.
+ */
+export const currentTenantSchema = cache(async (): Promise<string | null> => {
+  const cookieStore = await cookies();
+
+  const anonymous = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        // Read-only: refreshing the session is proxy.ts's job, and this
+        // is only ever called from a request that already has one.
+        setAll() {},
+      },
+    }
+  );
+
+  const {
+    data: { session },
+  } = await anonymous.auth.getSession();
+  if (!session) return null;
+
+  return tenantClaimFromToken(session.access_token)?.schema ?? null;
+});
+
+/**
  * A client pinned to an explicitly-named schema, bypassing the memoized
  * session lookup above.
  *

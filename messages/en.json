@@ -1186,6 +1186,8 @@
     "backToList": "Back to the list",
     "closeMessage": "Close message",
     "externalHint": "For people outside FELIX only. Colleagues have FELIX addresses — pick them in the To / Cc lists above.",
-    "externalNotFelix": "FELIX addresses can't be typed in here. Pick colleagues from the To / Cc lists — you can only mail people in your own showroom."
+    "externalNotFelix": "FELIX addresses can't be typed in here. Pick colleagues from the To / Cc lists — you can only mail people in your own showroom.",
+    "attachmentFailed": "{files} didn't upload, so nothing was sent. Remove it or try attaching it again.",
+    "attachmentNotAttached": "not attached"
   }
 }

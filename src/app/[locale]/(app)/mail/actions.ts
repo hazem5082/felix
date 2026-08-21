@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, currentTenantSchema } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { authenticate } from "@/lib/auth";
 import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import { checkAttachmentBudget, sniff, SNIFF_PREFIX_BYTES } from "@/lib/file-sniff";
 import { deleteObject, readObjectBase64, readObjectPrefix } from "@/lib/r2";
 import { isFelixMailAddress } from "@/lib/mail-address";
-import { isMailSendConfigured, sendExternalMail } from "@/lib/mail-send";
+import { isMailSendConfigured, sendExternalMail, type SendMailOutcome } from "@/lib/mail-send";
 import { MailComposeSchema, MarkMailReadSchema, parseInput } from "@/lib/validation";
 
 /**
@@ -221,14 +222,43 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
     if (error) console.error("[mail] attachment rows failed", { messageId: inserted.id, error });
   }
 
-  let sendOutcome: "sent" | "skipped" | "failed" | null = null;
+  let sendOutcome: SendMailOutcome | null = null;
   if (hasExternal) {
+    // Delivery bookkeeping is written with the service-role client, not
+    // the caller's.
+    //
+    // mail_messages is immutable to tenant roles on purpose (0039: no
+    // update policy, and `grant select, insert` withholds the privilege
+    // even if there were one) — a sent message is not something its
+    // author gets to revise afterwards. But send_status/send_error are
+    // not part of the message: they are what the server learned while
+    // trying to hand it to Resend, and the sender neither wrote them nor
+    // should be able to. Routing them through `supabase` meant every one
+    // of these updates was refused and, because the result was never
+    // checked, refused silently — so the row kept the "skipped" its
+    // INSERT gave it and the UI said "Not delivered" no matter what had
+    // actually happened.
+    const schema = await currentTenantSchema();
+    const bookkeeping = schema ? createAdminClient(schema) : null;
+
+    const record = async (status: SendMailOutcome, sendError: string | null) => {
+      if (!bookkeeping) {
+        console.error("[mail] no tenant schema for send status", { messageId: inserted.id });
+        return;
+      }
+      const { error } = await bookkeeping
+        .from("mail_messages")
+        .update({ send_status: status, send_error: sendError })
+        .eq("id", inserted.id);
+      // Logged, not fatal. The message is stored and the send has
+      // already either happened or not by this point, so losing the
+      // status costs the sender an accurate badge, not the mail.
+      if (error) console.error("[mail] send status update failed", { messageId: inserted.id, error });
+    };
+
     if (!isMailSendConfigured()) {
       sendOutcome = "skipped";
-      await supabase
-        .from("mail_messages")
-        .update({ send_status: "skipped", send_error: "Mail sending is not configured for this deployment." })
-        .eq("id", inserted.id);
+      await record("skipped", "Mail sending is not configured for this deployment.");
     } else {
       const attachmentsForSend = await Promise.all(
         data.attachments.map(async (a) => ({
@@ -248,18 +278,14 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
         attachments: attachmentsForSend,
       });
       sendOutcome = result.ok ? result.outcome : "failed";
-      await supabase
-        .from("mail_messages")
-        .update({
-          send_status: sendOutcome,
-          send_error:
-            sendOutcome === "sent"
-              ? null
-              : result.ok
-                ? "The mail provider could not deliver this message."
-                : "Could not reach the mail service — try again shortly.",
-        })
-        .eq("id", inserted.id);
+      await record(
+        sendOutcome,
+        sendOutcome === "sent"
+          ? null
+          : result.ok
+            ? "The mail provider could not deliver this message."
+            : "Could not reach the mail service — try again shortly."
+      );
     }
   }
 
