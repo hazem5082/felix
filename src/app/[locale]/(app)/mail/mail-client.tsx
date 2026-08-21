@@ -79,9 +79,18 @@ export function MailClient({ sent, received, attachments, colleagues, ownProfile
               <Send size={14} /> {t("compose")}
             </Button>
           </DialogTrigger>
-          <DialogContent title={t("compose")} className="max-w-2xl">
-            <ComposeForm colleagues={colleagues} onSent={() => setComposeOpen(false)} />
-          </DialogContent>
+          {/* DialogContent force-mounts (see components/ui/dialog.tsx) so
+              AnimatePresence can play its own exit animation — it has no
+              CSS gate of its own for the closed state, so IT, not just the
+              Dialog root's `open` prop, must be conditionally rendered.
+              Every other dialog in the app does this; this one didn't,
+              which is why it rendered open from first paint and the X
+              button had nothing to actually unmount. */}
+          {composeOpen && (
+            <DialogContent title={t("compose")} className="max-w-2xl">
+              <ComposeForm colleagues={colleagues} onSent={() => setComposeOpen(false)} />
+            </DialogContent>
+          )}
         </Dialog>
       </div>
 
