@@ -1,30 +1,31 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { Mail, Paperclip, Send, X } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Input, Label, Select, Textarea } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
 import { uploadMailAttachment } from "@/lib/upload-client";
 import { markMailRead, sendMail } from "./actions";
 import type { MailAttachment, MailMessage } from "@/lib/supabase/types";
 
 type ReceivedMessage = MailMessage & { is_read: boolean };
-type Colleague = { id: string; full_name: string; mail_address: string | null };
+type Colleague = { id: string; full_name: string; mail_address: string | null; avatar_url: string | null };
+type OwnProfile = { id: string; full_name: string; avatar_url: string | null; mail_address: string | null };
 
 interface Props {
   sent: MailMessage[];
   received: ReceivedMessage[];
   attachments: MailAttachment[];
   colleagues: Colleague[];
-  ownProfileId: string;
+  ownProfile: OwnProfile;
 }
 
 type Folder = "inbox" | "sent";
 
-export function MailClient({ sent, received, attachments, colleagues, ownProfileId }: Props) {
+export function MailClient({ sent, received, attachments, colleagues, ownProfile }: Props) {
   const t = useTranslations("mail");
   const [folder, setFolder] = useState<Folder>("inbox");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export function MailClient({ sent, received, attachments, colleagues, ownProfile
               button had nothing to actually unmount. */}
           {composeOpen && (
             <DialogContent title={t("compose")} className="max-w-2xl">
-              <ComposeForm colleagues={colleagues} onSent={() => setComposeOpen(false)} />
+              <ComposeForm colleagues={colleagues} ownProfile={ownProfile} onSent={() => setComposeOpen(false)} />
             </DialogContent>
           )}
         </Dialog>
@@ -144,7 +145,7 @@ export function MailClient({ sent, received, attachments, colleagues, ownProfile
           message={selected}
           attachments={attachmentsByMessage.get(selected.id) ?? []}
           onClose={() => setSelectedId(null)}
-          isOwnMessage={selected.sender_profile_id === ownProfileId}
+          isOwnMessage={selected.sender_profile_id === ownProfile.id}
         />
       )}
     </div>
@@ -231,7 +232,158 @@ interface PendingAttachment {
   sizeBytes: number;
 }
 
-function ComposeForm({ colleagues, onSent }: { colleagues: Colleague[]; onSent: () => void }) {
+function initialsOf(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase();
+}
+
+/** Profile photo, or an initials fallback — same pattern as the employee profile page. */
+function Avatar({ name, url, size = 24 }: { name: string; url: string | null; size?: number }) {
+  if (url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={url}
+        alt={name}
+        width={size}
+        height={size}
+        className="shrink-0 rounded-full border border-[var(--color-border)] object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] font-bold text-[var(--color-text-muted)]"
+      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.4) }}
+    >
+      {initialsOf(name) || "?"}
+    </div>
+  );
+}
+
+/**
+ * An input box that filters the colleague list as you type and lets you
+ * pick more than one — replaces the native `<select multiple>`, which
+ * needed a modifier-click to multi-select and had no room for a photo.
+ * Picking a row adds it to the chip list above the input; the dropdown
+ * only ever offers people not already selected.
+ */
+function RecipientPicker({
+  colleagues,
+  selectedIds,
+  onChange,
+  placeholder,
+  emptyLabel,
+}: {
+  colleagues: Colleague[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  placeholder: string;
+  emptyLabel: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const selected = colleagues.filter((c) => selectedIds.includes(c.id));
+  const available = colleagues.filter((c) => !selectedIds.includes(c.id));
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? available.filter(
+        (c) => c.full_name.toLowerCase().includes(q) || (c.mail_address ?? "").toLowerCase().includes(q)
+      )
+    : available;
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  function add(id: string) {
+    onChange([...selectedIds, id]);
+    setQuery("");
+  }
+  function remove(id: string) {
+    onChange(selectedIds.filter((x) => x !== id));
+  }
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="flex min-h-9.5 w-full flex-wrap items-center gap-1.5 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 py-1.5 focus-within:border-[var(--color-accent)] focus-within:ring-2 focus-within:ring-[var(--color-accent)]/15">
+        {selected.map((c) => (
+          <span
+            key={c.id}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-dim)] py-0.5 ps-1 pe-2 text-xs text-[var(--color-text)]"
+          >
+            <Avatar name={c.full_name} url={c.avatar_url} size={18} />
+            {c.full_name}
+            <button
+              type="button"
+              onClick={() => remove(c.id)}
+              className="text-[var(--color-text-muted)] hover:text-[var(--color-accent-red)]"
+            >
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={selected.length === 0 ? placeholder : undefined}
+          className="min-w-24 flex-1 border-none bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-faint)]"
+        />
+      </div>
+
+      {open && (
+        <ul className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-[0_12px_30px_rgba(23,26,33,0.15)]">
+          {matches.length === 0 && (
+            <li className="px-3 py-2 text-xs text-[var(--color-text-faint)]">{emptyLabel}</li>
+          )}
+          {matches.map((c) => (
+            <li
+              key={c.id}
+              // pointerdown, not click: the input would blur first and
+              // close the list before a click ever landed on the row.
+              onPointerDown={(e) => {
+                e.preventDefault();
+                add(c.id);
+              }}
+              className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-black/[0.04]"
+            >
+              <Avatar name={c.full_name} url={c.avatar_url} size={22} />
+              <span className="min-w-0 flex-1 truncate">{c.full_name}</span>
+              <span className="shrink-0 truncate text-xs text-[var(--color-text-faint)]">{c.mail_address}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ComposeForm({
+  colleagues,
+  ownProfile,
+  onSent,
+}: {
+  colleagues: Colleague[];
+  ownProfile: OwnProfile;
+  onSent: () => void;
+}) {
   const t = useTranslations("mail");
   const [toIds, setToIds] = useState<string[]>([]);
   const [ccIds, setCcIds] = useState<string[]>([]);
@@ -242,10 +394,6 @@ function ComposeForm({ colleagues, onSent }: { colleagues: Colleague[]; onSent: 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-
-  function toIdList(select: HTMLSelectElement): string[] {
-    return Array.from(select.selectedOptions).map((o) => o.value);
-  }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -304,26 +452,34 @@ function ComposeForm({ colleagues, onSent }: { colleagues: Colleague[]; onSent: 
         </p>
       )}
 
+      <div className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+        <Avatar name={ownProfile.full_name} url={ownProfile.avatar_url} size={28} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-[var(--color-text)]">{ownProfile.full_name}</p>
+          <p className="truncate text-xs text-[var(--color-text-faint)]">{ownProfile.mail_address}</p>
+        </div>
+      </div>
+
       <div>
         <Label>{t("toColleagues")}</Label>
-        <Select multiple size={4} onChange={(e) => setToIds(toIdList(e.currentTarget))}>
-          {colleagues.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.full_name} — {c.mail_address}
-            </option>
-          ))}
-        </Select>
+        <RecipientPicker
+          colleagues={colleagues}
+          selectedIds={toIds}
+          onChange={setToIds}
+          placeholder={t("pickColleagues")}
+          emptyLabel={t("noMatches")}
+        />
       </div>
 
       <div>
         <Label>{t("ccColleagues")}</Label>
-        <Select multiple size={3} onChange={(e) => setCcIds(toIdList(e.currentTarget))}>
-          {colleagues.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.full_name} — {c.mail_address}
-            </option>
-          ))}
-        </Select>
+        <RecipientPicker
+          colleagues={colleagues}
+          selectedIds={ccIds}
+          onChange={setCcIds}
+          placeholder={t("pickColleagues")}
+          emptyLabel={t("noMatches")}
+        />
       </div>
 
       <div>

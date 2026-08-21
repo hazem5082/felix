@@ -1168,6 +1168,8 @@
     "from": "From",
     "toColleagues": "To — colleagues",
     "ccColleagues": "Cc — colleagues",
+    "pickColleagues": "Type a name…",
+    "noMatches": "No matches",
     "toExternal": "To — outside FELIX (comma-separated)",
     "subject": "Subject",
     "message": "Message",

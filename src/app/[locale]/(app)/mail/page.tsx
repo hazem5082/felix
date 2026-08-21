@@ -41,7 +41,7 @@ export default async function MailPage({ params }: { params: Promise<{ locale: s
       .limit(100),
     supabase
       .from("profiles")
-      .select("id, full_name, mail_address")
+      .select("id, full_name, mail_address, avatar_url")
       .neq("id", profile.id)
       .order("full_name"),
   ]);
@@ -59,7 +59,9 @@ export default async function MailPage({ params }: { params: Promise<{ locale: s
     : { data: [] as MailAttachment[] };
 
   const colleagues = (
-    (colleagueRows as { id: string; full_name: string; mail_address: string | null }[] | null) ?? []
+    (colleagueRows as
+      | { id: string; full_name: string; mail_address: string | null; avatar_url: string | null }[]
+      | null) ?? []
   ).filter((c) => c.mail_address);
 
   return (
@@ -70,7 +72,12 @@ export default async function MailPage({ params }: { params: Promise<{ locale: s
         received={received}
         attachments={(attachmentRows as MailAttachment[] | null) ?? []}
         colleagues={colleagues}
-        ownProfileId={profile.id}
+        ownProfile={{
+          id: profile.id,
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+          mail_address: profile.mail_address,
+        }}
       />
     </div>
   );

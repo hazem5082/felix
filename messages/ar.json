@@ -1168,6 +1168,8 @@
     "from": "من",
     "toColleagues": "إلى — زملاء العمل",
     "ccColleagues": "نسخة إلى — زملاء العمل",
+    "pickColleagues": "اكتب اسمًا…",
+    "noMatches": "لا توجد نتائج",
     "toExternal": "إلى — خارج FELIX (مفصولة بفواصل)",
     "subject": "الموضوع",
     "message": "الرسالة",
