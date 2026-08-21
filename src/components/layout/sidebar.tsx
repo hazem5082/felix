@@ -20,6 +20,7 @@ import {
   UserCircle2,
   Megaphone,
   CalendarCheck,
+  Mail,
 } from "lucide-react";
 
 const ICONS = {
@@ -33,6 +34,7 @@ const ICONS = {
   calendar: CalendarDays,
   employees: UserCog,
   attendance: CalendarCheck,
+  mail: Mail,
   support: LifeBuoy,
   account: UserCircle2,
 };

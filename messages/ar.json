@@ -100,7 +100,8 @@
     "employees": "الموظفون",
     "support": "الدعم",
     "account": "الحساب",
-    "attendance": "الحضور"
+    "attendance": "الحضور",
+    "mail": "البريد"
   },
   "marketing": {
     "title": "التسويق",
@@ -1151,5 +1152,31 @@
     "geofenceNote": "لا يُمنع تسجيل الحضور أبدًا. التسجيل من خارج النطاق يُحفظ ويظهر لك على أنه خارج النطاق.",
     "noBranchTitle": "لا يوجد فرع",
     "noBranchBody": "حسابك غير مرتبط بفرع، لذا لا يوجد مكان لتسجيل الحضور بعد. راجع مديرك."
+  },
+  "mail": {
+    "title": "البريد",
+    "noAddressYet": "جاري إعداد عنوان بريدك.",
+    "inbox": "الوارد",
+    "sent": "المرسل",
+    "compose": "رسالة جديدة",
+    "emptyInbox": "لا توجد رسائل بعد.",
+    "emptySent": "لم ترسل أي شيء بعد.",
+    "noSubject": "(بدون موضوع)",
+    "noRecipients": "(بدون مستلمين)",
+    "to": "إلى",
+    "cc": "نسخة إلى",
+    "from": "من",
+    "toColleagues": "إلى — زملاء العمل",
+    "ccColleagues": "نسخة إلى — زملاء العمل",
+    "toExternal": "إلى — خارج FELIX (مفصولة بفواصل)",
+    "subject": "الموضوع",
+    "message": "الرسالة",
+    "attachments": "المرفقات",
+    "remove": "إزالة",
+    "send": "إرسال",
+    "sending": "جارٍ الإرسال…",
+    "sendStatus_sent": "تم الإرسال",
+    "sendStatus_skipped": "لم يتم التسليم",
+    "sendStatus_failed": "فشل الإرسال"
   }
 }

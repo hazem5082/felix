@@ -48,6 +48,13 @@ export const LIMITS = {
    * covering someone who keeps requesting fresh rows to reset it.
    */
   deviceConfirm: { limit: 12, windowSeconds: 15 * 60 },
+  /**
+   * Messages sent per profile. Internal mail is a free DB write, but
+   * every message with an external recipient spends a real Resend send
+   * — this is the throttle that stops FELIX being used as a mail
+   * cannon aimed at the outside world.
+   */
+  mailSend: { limit: 60, windowSeconds: 60 * 60 },
 } as const;
 
 /**

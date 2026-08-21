@@ -100,7 +100,8 @@
     "employees": "Employees",
     "support": "Support",
     "account": "Account",
-    "attendance": "Attendance"
+    "attendance": "Attendance",
+    "mail": "Mail"
   },
   "marketing": {
     "title": "Marketing",
@@ -1151,5 +1152,31 @@
     "geofenceNote": "Attendance is never blocked. A punch from outside this area is still recorded, and shown to you as outside.",
     "noBranchTitle": "No branch assigned",
     "noBranchBody": "Your account is not assigned to a branch, so there is nowhere to record attendance yet. Ask your manager."
+  },
+  "mail": {
+    "title": "Mail",
+    "noAddressYet": "Your mail address is still being set up.",
+    "inbox": "Inbox",
+    "sent": "Sent",
+    "compose": "Compose",
+    "emptyInbox": "No mail yet.",
+    "emptySent": "You haven't sent anything yet.",
+    "noSubject": "(no subject)",
+    "noRecipients": "(no recipients)",
+    "to": "To",
+    "cc": "Cc",
+    "from": "From",
+    "toColleagues": "To — colleagues",
+    "ccColleagues": "Cc — colleagues",
+    "toExternal": "To — outside FELIX (comma-separated)",
+    "subject": "Subject",
+    "message": "Message",
+    "attachments": "Attachments",
+    "remove": "Remove",
+    "send": "Send",
+    "sending": "Sending…",
+    "sendStatus_sent": "Sent",
+    "sendStatus_skipped": "Not delivered",
+    "sendStatus_failed": "Failed"
   }
 }

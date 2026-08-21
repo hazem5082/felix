@@ -13,6 +13,7 @@ export interface NavItem {
     | "calendar"
     | "employees"
     | "attendance"
+    | "mail"
     | "support"
     | "account";
 }
@@ -28,6 +29,7 @@ export const ALL_NAV: NavItem[] = [
   { href: "/calendar", key: "calendar" },
   { href: "/employees", key: "employees" },
   { href: "/attendance", key: "attendance" },
+  { href: "/mail", key: "mail" },
   { href: "/support", key: "support" },
   { href: "/account", key: "account" },
 ];
@@ -45,15 +47,19 @@ export const ALL_NAV: NavItem[] = [
 // they see their own history and their trusted phones, and the page
 // tells them plainly that no punch is expected of them, which is a
 // better answer than a tab that silently vanishes.
+// Mail (0039) is carried by every role, investors included — unlike
+// attendance, it is generic correspondence rather than a staff
+// obligation, and an investor's own felixmail address is exactly as
+// real as anyone else's.
 const NAV_BY_ROLE: Record<Role, NavItem["key"][]> = {
-  ceo: ["ceoDashboard", "inventory", "crm", "deals", "marketing", "accountant", "calendar", "employees", "attendance", "support", "account"],
-  branch_manager: ["inventory", "crm", "deals", "calendar", "attendance", "support", "account"],
-  accountant: ["accountant", "inventory", "deals", "calendar", "attendance", "support", "account"],
-  sales_exec: ["crm", "deals", "calendar", "attendance", "support", "account"],
-  investor: ["investor", "calendar", "support", "account"],
+  ceo: ["ceoDashboard", "inventory", "crm", "deals", "marketing", "accountant", "calendar", "employees", "attendance", "mail", "support", "account"],
+  branch_manager: ["inventory", "crm", "deals", "calendar", "attendance", "mail", "support", "account"],
+  accountant: ["accountant", "inventory", "deals", "calendar", "attendance", "mail", "support", "account"],
+  sales_exec: ["crm", "deals", "calendar", "attendance", "mail", "support", "account"],
+  investor: ["investor", "calendar", "mail", "support", "account"],
   // Marketing lists stock across channels: their workspace, the inventory
   // they advertise (cost hidden — 0028), and the tabs everyone carries.
-  marketing: ["marketing", "inventory", "calendar", "attendance", "support", "account"],
+  marketing: ["marketing", "inventory", "calendar", "attendance", "mail", "support", "account"],
 };
 
 export function navForRole(role: Role): NavItem[] {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProfile } from "@/lib/auth";
 import { createPresignedUpload, FOLDER_ROLES } from "@/lib/r2";
-import { PresignSchema } from "@/lib/validation";
+import { MAX_UPLOAD_BYTES, PresignSchema } from "@/lib/validation";
 import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
@@ -54,6 +54,15 @@ export async function POST(request: Request) {
   }
   if (contentType !== "application/pdf" && folder === "financing-contracts") {
     return NextResponse.json({ error: "Bank contracts must be PDF" }, { status: 400 });
+  }
+
+  // PresignSchema's own cap is the widest of any folder's (mail's 25MB) —
+  // every other folder keeps its real, tighter limit here.
+  if (folder !== "mail" && size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: `File must be under ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB` },
+      { status: 400 }
+    );
   }
 
   try {

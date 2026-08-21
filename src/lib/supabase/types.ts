@@ -144,6 +144,13 @@ export interface Profile {
    * attendance report opt-out.
    */
   work_mode: WorkMode;
+  /**
+   * firstname.lastname.<tenant>@felixmail.508.world — assigned once by
+   * handle_new_user() (migration 0039) and immutable after: no UI
+   * anywhere may offer to edit this, and the database would refuse the
+   * write if one tried (guard_profile_privilege_columns()).
+   */
+  mail_address: string | null;
   created_at: string;
 }
 
@@ -206,6 +213,62 @@ export interface AttendanceEventRow {
   voided_at: string | null;
   voided_by: string | null;
   void_reason: string | null;
+  created_at: string;
+}
+
+// ── Mail (migration 0039) ───────────────────────────────────
+//
+// 'internal' never touches the 508.world Worker — see mail-send.ts and
+// the migration's own file header. sender_profile_id is null for
+// exactly 'inbound'; mail_recipients is the internal fan-out only, kept
+// separate from to_addresses/cc_addresses (the full display list,
+// internal and external mixed) so an external address never needs a
+// profile row that does not exist.
+
+export type MailDirection = "internal" | "outbound" | "inbound";
+export type MailSendStatus = "sent" | "skipped" | "failed";
+export type MailRecipientKind = "to" | "cc";
+
+export interface MailMessage {
+  id: string;
+  sender_profile_id: string | null;
+  direction: MailDirection;
+  from_address: string;
+  from_name: string | null;
+  to_addresses: string[];
+  cc_addresses: string[];
+  subject: string | null;
+  body_text: string | null;
+  body_html: string | null;
+  snippet: string | null;
+  thread_key: string | null;
+  message_id: string | null;
+  in_reply_to: string | null;
+  send_status: MailSendStatus | null;
+  send_error: string | null;
+  occurred_at: string;
+  created_at: string;
+}
+
+export interface MailRecipient {
+  id: string;
+  message_id: string;
+  profile_id: string;
+  kind: MailRecipientKind;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface MailAttachment {
+  id: string;
+  message_id: string;
+  filename: string;
+  /** Claimed at upload time — never trust this over file-sniff.ts's own read. */
+  mime_type: string | null;
+  size_bytes: number;
+  r2_key: string;
+  is_inline: boolean;
+  content_id: string | null;
   created_at: string;
 }
 

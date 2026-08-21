@@ -954,6 +954,7 @@ export const UPLOAD_FOLDERS = [
   "financing-contracts",
   "avatars",
   "financing-requests",
+  "mail",
 ] as const;
 
 export const UPLOAD_CONTENT_TYPES = [
@@ -961,6 +962,22 @@ export const UPLOAD_CONTENT_TYPES = [
   "image/png",
   "image/webp",
   "application/pdf",
+  // The rest of mail's allowlist (src/lib/file-sniff.ts's MIME_BY_KIND) —
+  // widening this enum does not widen what any OTHER folder accepts: the
+  // route in src/app/api/upload/route.ts still checks folder-specific
+  // rules for vehicles/financing-contracts, and mail's real gate is the
+  // post-upload magic-byte sniff, not this claimed Content-Type.
+  "image/gif",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "text/csv",
+  // Browsers commonly report an empty or generic type for these two.
+  "application/octet-stream",
 ] as const;
 
 /** 15 MB — comfortably above a phone photo, well below a Worker's patience. */
@@ -979,7 +996,11 @@ export const PresignSchema = z.object({
     }),
   contentType: z.enum(UPLOAD_CONTENT_TYPES),
   folder: z.enum(UPLOAD_FOLDERS),
-  size: z.number().int().positive().max(MAX_UPLOAD_BYTES),
+  // The widest cap across every folder — mail's 25MB (file-sniff.ts's
+  // MAX_ATTACHMENT_BYTES). Folders with a tighter real limit enforce it
+  // themselves in src/app/api/upload/route.ts, the same place that
+  // already special-cases vehicles/financing-contracts by content type.
+  size: z.number().int().positive().max(25 * 1024 * 1024),
 });
 
 // ── Administration ──────────────────────────────────────────
@@ -1266,6 +1287,50 @@ export const ChangeSignInEmailSchema = z.object({
   profile_id: Uuid,
   new_email: z.email().max(254).transform((v) => v.toLowerCase()),
   current_password: z.string().max(200).optional(),
+});
+
+// ── Mail (0039) ─────────────────────────────────────────────
+
+/**
+ * One attachment already sitting in the private mail R2 bucket —
+ * uploaded via the presigned PUT flow before compose is ever called.
+ * `key` is trusted only as far as "an object exists there"; the compose
+ * action re-reads its bytes and sniffs them (src/lib/file-sniff.ts)
+ * rather than trusting `mime_type` here, which is only what the
+ * browser's File.type said at select-time.
+ */
+export const MailAttachmentRefSchema = z.object({
+  key: z.string().trim().min(1).max(500),
+  filename: z.string().trim().min(1).max(255),
+  mime_type: z.string().trim().max(200),
+  size_bytes: z.number().int().positive().max(30 * 1024 * 1024),
+});
+
+export const MailComposeSchema = z.object({
+  /** Colleagues picked from the internal dropdown. */
+  to_profile_ids: z.array(Uuid).max(50).default([]),
+  cc_profile_ids: z.array(Uuid).max(50).default([]),
+  /** Free-text addresses outside the tenant. */
+  to_external: z.array(z.email().max(254)).max(50).default([]),
+  cc_external: z.array(z.email().max(254)).max(50).default([]),
+  subject: z.string().trim().min(1).max(300),
+  body: z.string().trim().min(1).max(50_000),
+  attachments: z.array(MailAttachmentRefSchema).max(10).default([]),
+  reply_to_id: Uuid.optional(),
+}).refine((v) => v.to_profile_ids.length + v.to_external.length > 0, {
+  message: "Add at least one recipient.",
+  path: ["to_profile_ids"],
+});
+
+export const MarkMailReadSchema = z.object({
+  message_ids: z.array(Uuid).min(1).max(200),
+  is_read: z.boolean().default(true),
+});
+
+export const MailUploadPresignSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  contentType: z.string().trim().max(200),
+  size: z.number().int().positive().max(25 * 1024 * 1024),
 });
 
 // ── List controls ───────────────────────────────────────────
