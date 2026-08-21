@@ -33,7 +33,9 @@
     "noFollowUps": "No follow-ups logged yet.",
     "noActivePartners": "No active financing partners yet — see the Accountant Hub.",
     "dealTicket": "Deal Ticket",
-    "invested": "Invested"
+    "invested": "Invested",
+    "collapseNav": "Collapse menu",
+    "expandNav": "Expand menu"
   },
   "errors": {
     "title": "Something went wrong",
@@ -1179,6 +1181,11 @@
     "sending": "Sending…",
     "sendStatus_sent": "Sent",
     "sendStatus_skipped": "Not delivered",
-    "sendStatus_failed": "Failed"
+    "sendStatus_failed": "Failed",
+    "selectMessage": "Pick a message to read it here.",
+    "backToList": "Back to the list",
+    "closeMessage": "Close message",
+    "externalHint": "For people outside FELIX only. Colleagues have FELIX addresses — pick them in the To / Cc lists above.",
+    "externalNotFelix": "FELIX addresses can't be typed in here. Pick colleagues from the To / Cc lists — you can only mail people in your own showroom."
   }
 }

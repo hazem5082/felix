@@ -6,6 +6,7 @@ import { authenticate } from "@/lib/auth";
 import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import { checkAttachmentBudget, sniff, SNIFF_PREFIX_BYTES } from "@/lib/file-sniff";
 import { deleteObject, readObjectBase64, readObjectPrefix } from "@/lib/r2";
+import { isFelixMailAddress } from "@/lib/mail-address";
 import { isMailSendConfigured, sendExternalMail } from "@/lib/mail-send";
 import { MailComposeSchema, MarkMailReadSchema, parseInput } from "@/lib/validation";
 
@@ -82,6 +83,29 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
   const parsed = parseInput(MailComposeSchema, input);
   if (!parsed.ok) return parsed.error;
   const data = parsed.data;
+
+  // Mail stays inside the showroom that sent it.
+  //
+  // The two internal id lists are already tenant-bound: they are resolved
+  // below through the caller's own RLS-scoped `profiles`, which is this
+  // tenant's schema and no other, and a count mismatch there rejects the
+  // whole send. The free-text external lists are the gap that leaves — a
+  // FELIX address typed by hand would be handed to Resend, delivered to
+  // felixmail.508.world, and picked up by the inbound webhook as another
+  // tenant's mail. That is a cross-showroom channel the per-tenant schema
+  // split (0011) exists specifically to make impossible, so it is refused
+  // here rather than relayed.
+  //
+  // Refused, not silently rerouted to the matching profile: the sender
+  // may well mean a colleague whose address they typed instead of picked,
+  // but they may equally mean a stranger at another showroom, and only
+  // the first of those is something FELIX should quietly do for them.
+  const crossTenant = [...data.to_external, ...data.cc_external].filter(isFelixMailAddress);
+  if (crossTenant.length) {
+    return {
+      error: `FELIX addresses cannot be typed in as outside recipients (${crossTenant.join(", ")}). Pick colleagues from the To / Cc lists — you can only mail people in your own showroom.`,
+    };
+  }
 
   const throttle = await consume(`mail-send:${profile.id}`, LIMITS.mailSend);
   if (!throttle.allowed) return { error: retryMessage(throttle.retryAfter) };

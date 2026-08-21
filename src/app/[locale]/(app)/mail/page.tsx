@@ -2,7 +2,7 @@ import { getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { PanelHeader } from "@/components/ui/panel";
-import type { MailAttachment, MailMessage, MailRecipient } from "@/lib/supabase/types";
+import type { MailAttachment, MailMessage, MailRecipient, Role } from "@/lib/supabase/types";
 import { MailClient } from "./mail-client";
 
 /**
@@ -39,9 +39,16 @@ export default async function MailPage({ params }: { params: Promise<{ locale: s
       .eq("profile_id", profile.id)
       .order("created_at", { ascending: false })
       .limit(100),
+    // Colleagues, and ONLY colleagues. This client is pinned to the
+    // session's own tenant schema (see supabase/server.ts), so `profiles`
+    // here is this showroom's staff list and cannot reach another
+    // tenant's — the address book is corporation-scoped by construction,
+    // not by a filter that could be forgotten. `role` rides along so the
+    // picker can label each address the way people actually think of
+    // their colleagues ("CEO — alex.carter.demo@felixmail.508.world").
     supabase
       .from("profiles")
-      .select("id, full_name, mail_address, avatar_url")
+      .select("id, full_name, role, mail_address, avatar_url")
       .neq("id", profile.id)
       .order("full_name"),
   ]);
@@ -60,7 +67,13 @@ export default async function MailPage({ params }: { params: Promise<{ locale: s
 
   const colleagues = (
     (colleagueRows as
-      | { id: string; full_name: string; mail_address: string | null; avatar_url: string | null }[]
+      | {
+          id: string;
+          full_name: string;
+          role: Role;
+          mail_address: string | null;
+          avatar_url: string | null;
+        }[]
       | null) ?? []
   ).filter((c) => c.mail_address);
 
@@ -75,6 +88,7 @@ export default async function MailPage({ params }: { params: Promise<{ locale: s
         ownProfile={{
           id: profile.id,
           full_name: profile.full_name,
+          role: profile.role,
           avatar_url: profile.avatar_url,
           mail_address: profile.mail_address,
         }}
