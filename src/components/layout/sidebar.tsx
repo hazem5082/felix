@@ -82,18 +82,14 @@ export function Sidebar({ role }: { role: Role }) {
         ready && "transition-[width] duration-200 ease-out"
       )}
     >
-      {/* Edge to edge, at whatever width the rail currently is. No
-          padding of its own: the PNG is a wordmark with generous
-          transparent margins already baked in, so an inset here would
-          only stack air on air — which is also why the bottom margin is
-          small rather than the mb-6 the old fixed-height logo needed. */}
-      <div className="mb-3 flex items-center">
+      {/* Centered logo, sized to 3/4 width to reduce height by 1/4 */}
+      <div className="mb-3 flex items-center justify-center">
         <Image
           src="/brand/felix-logo.png"
           alt="FELIX"
           width={677}
           height={369}
-          className="h-auto w-full"
+          className="h-auto w-3/4"
           priority
         />
       </div>
