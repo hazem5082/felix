@@ -6,11 +6,13 @@ import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
-import { Plus, Trash2, Upload, FolderUp, X } from "lucide-react";
+import { Plus, Trash2, Upload, FolderUp, X, Sparkles } from "lucide-react";
 import { YEARS, fetchMakes, fetchModels, COMMON_TRIMS, COMMON_COLORS } from "@/lib/nhtsa";
+import { decodeVin } from "@/lib/vin-decode";
 import { uploadFile } from "@/lib/upload-client";
 import { colorSwatch } from "@/lib/vehicle-color";
 import { COMMON_ORIGINS, originKey } from "@/lib/vehicle-origin";
+import { flagForOrigin } from "@/lib/country-flag";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { createVehicle, fetchInvestorsForPicker } from "./actions";
 import type { Branch } from "@/lib/supabase/types";
@@ -48,6 +50,16 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   const [engineNumber, setEngineNumber] = useState("");
   const [plateNumber, setPlateNumber] = useState("");
   const [origin, setOrigin] = useState("");
+  // VIN-decoded details (migration 0040) — filled by handleDecodeVin(),
+  // never typed directly. See lib/vin-decode.ts for why colour and top
+  // speed are not among them: neither is encoded in a VIN.
+  const [decoding, setDecoding] = useState(false);
+  const [decodeNote, setDecodeNote] = useState<{ kind: "ok" | "warn" | "empty"; message: string } | null>(null);
+  const [bodyType, setBodyType] = useState("");
+  const [engineInfo, setEngineInfo] = useState("");
+  const [driveType, setDriveType] = useState("");
+  const [doors, setDoors] = useState<number | null>(null);
+  const [plantCountry, setPlantCountry] = useState("");
   const [features, setFeatures] = useState<string[]>([]);
   const [itemCode, setItemCode] = useState("");
   // How the showroom is taking this car in (0032). 'trade_in' is
@@ -128,6 +140,42 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   // Mirrors VinSchema in lib/validation.ts and the DB CHECK from 0021.
   const vinInvalid = vin.trim() !== "" && !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin.trim());
 
+  // Decodes the VIN via NHTSA's free vPIC API (lib/vin-decode.ts) and
+  // fills make/model/year/trim/origin plus the read-only decoded-details
+  // block. An explicit button, not an on-blur auto-trigger: the user
+  // asked for this once, on purpose, rather than firing a network call
+  // on every keystroke that happens to land on 17 characters.
+  async function handleDecodeVin() {
+    const v = vin.trim();
+    if (!v || vinInvalid) return;
+    setDecoding(true);
+    setDecodeNote(null);
+    try {
+      const result = await decodeVin(v);
+      if (!result || !result.decoded) {
+        setDecodeNote({ kind: "empty", message: t("vinDecodeEmpty") });
+        return;
+      }
+      if (result.year) setYear(result.year);
+      if (result.make) setMake(result.make);
+      if (result.model) setModel(result.model);
+      if (result.trim) setTrim(result.trim);
+      if (result.countryOfOrigin) setOrigin(result.countryOfOrigin);
+      setBodyType(result.bodyType ?? "");
+      setEngineInfo(result.engineInfo ?? "");
+      setDriveType(result.driveType ?? "");
+      setDoors(result.doors);
+      setPlantCountry(result.countryOfOrigin ?? "");
+      setDecodeNote(
+        result.checksumOk
+          ? { kind: "ok", message: t("vinDecodeApplied") }
+          : { kind: "warn", message: t("vinChecksumWarning") }
+      );
+    } finally {
+      setDecoding(false);
+    }
+  }
+
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     setUploading(true);
@@ -155,7 +203,12 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
   }));
   const originOptions: ComboboxOption[] = COMMON_ORIGINS.map((o) => {
     const key = originKey(o);
-    return { value: o, label: key ? origins(key) : o };
+    const flag = flagForOrigin(o);
+    return {
+      value: o,
+      label: key ? origins(key) : o,
+      icon: flag ? <span aria-hidden>{flag}</span> : undefined,
+    };
   });
 
   async function handleInspectionUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -218,6 +271,11 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         engine_number: engineNumber,
         plate_number: plateNumber,
         country_of_origin: origin,
+        body_type: bodyType,
+        engine_info: engineInfo,
+        drive_type: driveType,
+        doors,
+        plant_country: plantCountry,
         features,
         item_code: itemCode,
         acquisition_type: mode,
@@ -298,6 +356,32 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               />
               {vinInvalid && (
                 <p className="mt-1 text-[11px] text-[var(--color-accent-amber)]">{t("vinInvalid")}</p>
+              )}
+              {!vinInvalid && vin.trim() !== "" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-1.5"
+                  onClick={handleDecodeVin}
+                  disabled={decoding}
+                >
+                  <Sparkles size={13} />
+                  {decoding ? common("loading") : t("decodeVin")}
+                </Button>
+              )}
+              {decodeNote && (
+                <p
+                  className={`mt-1 text-[11px] ${
+                    decodeNote.kind === "warn"
+                      ? "text-[var(--color-accent-amber)]"
+                      : decodeNote.kind === "empty"
+                        ? "text-[var(--color-text-faint)]"
+                        : "text-[var(--color-accent-green)]"
+                  }`}
+                >
+                  {decodeNote.message}
+                </p>
               )}
             </div>
             <div>
@@ -445,6 +529,30 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               <Input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
             </div>
           </div>
+
+          {/* What the VIN decode found (0040) — read-only, never typed
+              directly. Shown only once there is something to show, since
+              most of this showroom's stock is outside vPIC's US-centric
+              coverage and an empty panel would just be noise. */}
+          {(bodyType || engineInfo || driveType || doors !== null) && (
+            <div className="mt-4 rounded-lg border border-[var(--color-accent-green)]/30 bg-[var(--color-accent-green-dim)] p-3 text-xs">
+              <p className="mb-2 font-medium text-[var(--color-text)]">{t("vinDecodedDetails")}</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[var(--color-text-muted)]">
+                {bodyType && (
+                  <div className="flex justify-between gap-2"><span>{t("bodyType")}</span><span className="font-medium text-[var(--color-text)]">{bodyType}</span></div>
+                )}
+                {engineInfo && (
+                  <div className="flex justify-between gap-2"><span>{t("engineInfo")}</span><span className="font-medium text-[var(--color-text)]">{engineInfo}</span></div>
+                )}
+                {driveType && (
+                  <div className="flex justify-between gap-2"><span>{t("driveType")}</span><span className="font-medium text-[var(--color-text)]">{driveType}</span></div>
+                )}
+                {doors !== null && (
+                  <div className="flex justify-between gap-2"><span>{t("doors")}</span><span className="font-medium text-[var(--color-text)]">{doors}</span></div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* The consignor and the terms (0032). These ARE the deal:
               without them execute_vehicle_sale() has nothing to pay the

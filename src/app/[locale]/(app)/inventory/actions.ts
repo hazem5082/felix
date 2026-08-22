@@ -30,6 +30,12 @@ export async function createVehicle(input: {
   engine_number: string;
   plate_number: string;
   country_of_origin: string;
+  // VIN-decoded details (migration 0040) — see lib/vin-decode.ts.
+  body_type: string;
+  engine_info: string;
+  drive_type: string;
+  doors: number | null;
+  plant_country: string;
   features: string[];
   item_code: string;
   // How the showroom came to have this car (0032). 'trade_in' is not
@@ -95,6 +101,12 @@ export async function createVehicle(input: {
     // 0036 widened the RPC 23 → 25, appended after p_splits.
     p_odometer_km: parsed.data.odometer_km,
     p_acquisition_source: parsed.data.acquisition_source,
+    // 0040 widened the RPC 25 → 30, appended after p_acquisition_source.
+    p_body_type: parsed.data.body_type,
+    p_engine_info: parsed.data.engine_info,
+    p_drive_type: parsed.data.drive_type,
+    p_doors: parsed.data.doors,
+    p_plant_country: parsed.data.plant_country,
   });
 
   if (error) return toUserError(error);

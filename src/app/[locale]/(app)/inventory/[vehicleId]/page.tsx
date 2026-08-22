@@ -23,6 +23,7 @@ import { PricingDialog } from "../pricing-form";
 import { PriceHistoryCard } from "./price-history-card";
 import { colorLabel } from "@/lib/vehicle-color";
 import { originLabel } from "@/lib/vehicle-origin";
+import { flagForOrigin } from "@/lib/country-flag";
 import { ageBucket, ageTone, daysInStock, formatOdometer } from "@/lib/stock-age";
 import { Printer } from "lucide-react";
 
@@ -298,7 +299,30 @@ export default async function VehicleDetailPage({
               </>
             )}
             <div className="flex justify-between"><span>{t("branch")}</span><span>{(branchRow as Branch | null)?.name ?? "—"}</span></div>
-            <div className="flex justify-between"><span>{t("countryOfOrigin")}</span><span>{originLabel(origins, v.country_of_origin) ?? "—"}</span></div>
+            <div className="flex justify-between">
+              <span>{t("countryOfOrigin")}</span>
+              <span>
+                {flagForOrigin(v.country_of_origin) && (
+                  <span className="me-1" aria-hidden>{flagForOrigin(v.country_of_origin)}</span>
+                )}
+                {originLabel(origins, v.country_of_origin) ?? "—"}
+              </span>
+            </div>
+            {/* VIN-decoded details (0040) — shown only when present, since
+                most stock predates the decoder or is outside vPIC's
+                US-centric coverage. */}
+            {v.body_type && (
+              <div className="flex justify-between"><span>{t("bodyType")}</span><span>{v.body_type}</span></div>
+            )}
+            {v.engine_info && (
+              <div className="flex justify-between"><span>{t("engineInfo")}</span><span>{v.engine_info}</span></div>
+            )}
+            {v.drive_type && (
+              <div className="flex justify-between"><span>{t("driveType")}</span><span>{v.drive_type}</span></div>
+            )}
+            {v.doors !== null && (
+              <div className="flex justify-between"><span>{t("doors")}</span><span className="num">{v.doors}</span></div>
+            )}
             {/* Odometer, source and ageing (0036) — the same facts block
                 as color/origin above: none of these three is a cost
                 figure, so none is gated behind showCost. */}

@@ -128,6 +128,16 @@ export const CreateVehicleSchema = z.object({
   // legible. The RPC collapses "" to NULL.
   engine_number: z.string().trim().max(60),
   plate_number: z.string().trim().max(20),
+  // VIN-decoded details (migration 0040) — captured automatically from
+  // the NHTSA vPIC decode at intake (lib/vin-decode.ts) when the car
+  // carries a recognisable VIN. Free text, blank allowed: decode
+  // coverage varies by market and most of this showroom's stock is
+  // outside vPIC's US-centric database.
+  body_type: z.string().trim().max(60),
+  engine_info: z.string().trim().max(120),
+  drive_type: z.string().trim().max(40),
+  doors: z.number().int().min(0).max(10).nullable(),
+  plant_country: z.string().trim().max(60),
   // CPA Decision 115/2021 windshield-sticker fields (migration 0025).
   // Origin is free text, blank allowed — grey-import paperwork names it
   // inconsistently, and the RPC collapses "" to NULL. Features are the

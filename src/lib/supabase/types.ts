@@ -349,6 +349,15 @@ export interface Vehicle {
   // site needs a coalesce (the photos/client_note_points precedent).
   country_of_origin: string | null;
   features: string[];
+  // VIN-decoded details (migration 0040) — captured automatically from
+  // the NHTSA vPIC decode at intake (lib/vin-decode.ts). All nullable:
+  // decode coverage varies by market, and rows predating this migration
+  // or taken in without a VIN carry nulls throughout.
+  body_type: string | null;
+  engine_info: string | null;
+  drive_type: string | null;
+  doors: number | null;
+  plant_country: string | null;
   // ETA e-invoicing product code (migration 0026) — the EGS
   // (EG-{tax reg}-{internal code}) or GS1 code the showroom registered
   // for this vehicle class on the ETA portal. Nullable — stock is taken
