@@ -358,17 +358,20 @@ export function InventoryBrowser({
           ))}
         </div>
       ) : (
-        <Table>
+        <Table className="text-xs md:text-sm">
           <THead>
-            <Th>{t("year")}</Th>
-            <Th>{t("make")}</Th>
-            <Th>{t("model")}</Th>
-            <Th>{t("trim")}</Th>
-            <Th>{t("odometer")}</Th>
-            {showCost && <Th>{t("purchasePrice")}</Th>}
-            <Th>{t("stickerPrice")}</Th>
-            <Th>{t("daysInStock")}</Th>
-            <Th>{common("status")}</Th>
+            <Th className="px-2 md:px-4">{t("year")}</Th>
+            <Th className="px-2 md:px-4">{t("make")}</Th>
+            <Th className="px-2 md:px-4">{t("model")}</Th>
+            {/* Trim, odometer, and cost are one tap away on the detail page —
+                hidden below md purely to keep the mobile table from needing
+                a 2×-width horizontal scroll to reach price/status. */}
+            <Th className="hidden px-2 md:table-cell md:px-4">{t("trim")}</Th>
+            <Th className="hidden px-2 md:table-cell md:px-4">{t("odometer")}</Th>
+            {showCost && <Th className="hidden px-2 md:table-cell md:px-4">{t("purchasePrice")}</Th>}
+            <Th className="px-2 md:px-4">{t("stickerPrice")}</Th>
+            <Th className="px-2 md:px-4">{t("daysInStock")}</Th>
+            <Th className="px-2 md:px-4">{common("status")}</Th>
           </THead>
           <TBody>
             {shown.map((v) => {
@@ -376,8 +379,8 @@ export function InventoryBrowser({
               const bucket = ageBucket(days);
               return (
               <Tr key={v.id}>
-                <Td className="num">{v.year}</Td>
-                <Td>
+                <Td className="num px-2 md:px-4">{v.year}</Td>
+                <Td className="px-2 md:px-4">
                   <div className="flex items-center gap-1.5">
                     <BrandMark make={v.make} size={14} />
                     <Link href={`/inventory/${v.id}`} className="hover:underline">
@@ -385,7 +388,7 @@ export function InventoryBrowser({
                     </Link>
                   </div>
                 </Td>
-                <Td>
+                <Td className="px-2 md:px-4">
                   <div className="flex items-center gap-1.5">
                     {v.model}
                     {/* 0032: the chip the grid shows in the corner of the
@@ -398,10 +401,10 @@ export function InventoryBrowser({
                     )}
                   </div>
                 </Td>
-                <Td className="text-[var(--color-text-muted)]">{v.trim || "—"}</Td>
-                <Td className="num text-[var(--color-text-muted)]">{formatOdometer(v.odometer_km, locale)}</Td>
+                <Td className="hidden px-2 text-[var(--color-text-muted)] md:table-cell md:px-4">{v.trim || "—"}</Td>
+                <Td className="num hidden px-2 text-[var(--color-text-muted)] md:table-cell md:px-4">{formatOdometer(v.odometer_km, locale)}</Td>
                 {showCost && (
-                  <Td className="num">
+                  <Td className="num hidden px-2 md:table-cell md:px-4">
                     {v.acquisition_type === "consignment" ? (
                       // No capital was deployed, so there is no cost to
                       // read. A confident 0 in a money column is worse
@@ -412,14 +415,14 @@ export function InventoryBrowser({
                     )}
                   </Td>
                 )}
-                <Td className="num">
+                <Td className="num px-2 md:px-4">
                   {v.asking_price != null ? (
                     formatMoney(v.asking_price, locale)
                   ) : (
                     <span className="text-[var(--color-text-faint)]">{t("notPriced")}</span>
                   )}
                 </Td>
-                <Td className="num">
+                <Td className="num px-2 md:px-4">
                   {/* Coloured only for in-stock cars (0036) — a sold or
                       reserved car's day count is history, not something
                       to act on, so it reads as plain muted text. */}
@@ -429,7 +432,7 @@ export function InventoryBrowser({
                     <span className="text-[var(--color-text-faint)]">{misc("daysInStockValue", { days })}</span>
                   )}
                 </Td>
-                <Td>
+                <Td className="px-2 md:px-4">
                   <StatusPill
                     label={
                       v.status === "sold"
@@ -507,8 +510,9 @@ function VehicleCard({
         </span>
       )}
 
-      {/* Minimal details, revealed on hover/focus. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-black/92 via-black/70 to-transparent p-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+      {/* Always visible on touch (below md there is no :hover to reveal
+          it), revealed on hover/focus once there is a pointer for that. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-0 bg-gradient-to-t from-black/92 via-black/70 to-transparent p-3 opacity-100 transition-all duration-200 md:translate-y-2 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-focus-within:translate-y-0 md:group-focus-within:opacity-100">
         <div className="flex items-center gap-1.5">
           <BrandMark make={v.make} size={15} />
           <p className="truncate text-xs font-medium text-white">
