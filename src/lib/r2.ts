@@ -29,12 +29,26 @@ export const FOLDER_ROLES: Record<UploadFolder, Role[]> = {
 };
 
 /**
- * Folders whose bytes are personal, not marketing material: no public
- * custom domain is bound to this bucket, so a key here is unreachable
- * except through this module's own signed-URL/GetObject calls. Every
- * other folder above uses the public bucket via publicOrigin() and
- * getClient(); mail uses these instead. Same account, a second bucket —
- * see .env.local's R2_MAIL_BUCKET_NAME.
+ * Folders whose bytes are personal, not marketing material. This module
+ * never hands a caller a public URL for one, so nothing downstream can
+ * store a mail attachment's address and treat it like a vehicle photo:
+ * the only way to read one is createSignedDownloadUrl() or a server-side
+ * GetObject, both behind the access check in
+ * /api/mail/attachment/[id].
+ *
+ * THAT IS AN APPLICATION RULE, NOT A STORAGE ONE. These objects live in
+ * the shared 508.world bucket alongside the public folders, and that
+ * bucket is served in full by R2_PUBLIC_URL's r2.dev domain — r2.dev
+ * public access is bucket-wide and cannot be scoped to a prefix. So a
+ * key under mail/ IS fetchable by anyone holding it, without signing in.
+ * What protects it is that the key is never published: it is a random
+ * v4 UUID, it is returned only to the uploader, and mail_attachments.
+ * r2_key is readable only by the message's sender and recipients under
+ * RLS.
+ *
+ * To make it a storage rule again, set R2_MAIL_BUCKET_NAME to a bucket
+ * with no public domain bound — bucketFor() prefers it when present and
+ * nothing else has to change.
  */
 const PRIVATE_FOLDERS = new Set<UploadFolder>(["mail"]);
 
@@ -74,7 +88,14 @@ function safeFileName(fileName: string): string {
 }
 
 function bucketFor(folder: UploadFolder): string {
-  if (PRIVATE_FOLDERS.has(folder)) return requiredEnv("R2_MAIL_BUCKET_NAME");
+  // One bucket by default — the shared 508.world company bucket, where
+  // each project owns a top-level prefix and mail/ is simply another
+  // one. R2_MAIL_BUCKET_NAME stays as an opt-in override so a private
+  // bucket can be introduced later without touching any call site; see
+  // PRIVATE_FOLDERS for what that would buy.
+  if (PRIVATE_FOLDERS.has(folder) && process.env.R2_MAIL_BUCKET_NAME) {
+    return process.env.R2_MAIL_BUCKET_NAME;
+  }
   return process.env.R2_BUCKET_NAME || "filex";
 }
 

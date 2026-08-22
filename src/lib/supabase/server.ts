@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { tenantClaimFromToken } from "@/lib/tenant-claim";
+import { tenantClaimFromToken, type TenantClaim } from "@/lib/tenant-claim";
 
 // Use inside Server Components, Server Actions, and Route Handlers.
 //
@@ -102,15 +102,17 @@ export const createClient = cache(async () => {
 });
 
 /**
- * The schema `createClient()` would pin itself to, for the rare caller
- * that has to NAME the tenant rather than just query through it.
+ * The session's own tenant claim, for the rare caller that has to NAME
+ * the tenant rather than just query through it.
  *
- * Exists for the service-role writes that are about a message rather
- * than by its sender — see sendMail's delivery bookkeeping. Same source
- * of truth as createClient (the session's own claim, never the
- * hostname), and the same local decode, so it costs no round trip.
+ * Exists for two things sendMail needs: the schema, for the service-role
+ * writes that are about a message rather than by its sender; and the
+ * slug, to look that tenant up in the shared `public` registry the
+ * Agentic portal writes (see mail-policy.ts). Same source of truth as
+ * createClient — the session's own claim, never the hostname — and the
+ * same local decode, so it costs no round trip.
  */
-export const currentTenantSchema = cache(async (): Promise<string | null> => {
+export const currentTenantClaim = cache(async (): Promise<TenantClaim | null> => {
   const cookieStore = await cookies();
 
   const anonymous = createServerClient(
@@ -133,8 +135,13 @@ export const currentTenantSchema = cache(async (): Promise<string | null> => {
   } = await anonymous.auth.getSession();
   if (!session) return null;
 
-  return tenantClaimFromToken(session.access_token)?.schema ?? null;
+  return tenantClaimFromToken(session.access_token);
 });
+
+/** Just the schema half of {@link currentTenantClaim}. */
+export async function currentTenantSchema(): Promise<string | null> {
+  return (await currentTenantClaim())?.schema ?? null;
+}
 
 /**
  * A client pinned to an explicitly-named schema, bypassing the memoized

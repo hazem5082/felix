@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient, currentTenantSchema } from "@/lib/supabase/server";
+import { createClient, currentTenantClaim } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authenticate } from "@/lib/auth";
 import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import { checkAttachmentBudget, sniff, SNIFF_PREFIX_BYTES } from "@/lib/file-sniff";
 import { deleteObject, readObjectBase64, readObjectPrefix } from "@/lib/r2";
 import { isFelixMailAddress } from "@/lib/mail-address";
+import { externalMailPolicy } from "@/lib/mail-policy";
 import { isMailSendConfigured, sendExternalMail, type SendMailOutcome } from "@/lib/mail-send";
 import { MailComposeSchema, MarkMailReadSchema, parseInput } from "@/lib/validation";
 
@@ -132,6 +133,26 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
 
   const hasExternal = data.to_external.length + data.cc_external.length > 0;
 
+  // The Agentic portal's per-showroom switch for mail leaving FELIX.
+  // Checked before anything is written, so a blocked send leaves no
+  // half-message in Sent — unlike a delivery failure, which is a real
+  // message that genuinely did not arrive and should be recorded as such.
+  //
+  // Only external recipients are gated. A message to colleagues never
+  // reaches this branch, so a showroom switched off still has working
+  // internal mail.
+  const claim = await currentTenantClaim();
+  if (hasExternal && claim) {
+    const policy = await externalMailPolicy(claim.slug);
+    if (!policy.allowed) {
+      return {
+        error:
+          policy.message ??
+          "Mailing addresses outside FELIX is switched off for this showroom. You can still mail colleagues. Contact 508.world if this is unexpected.",
+      };
+    }
+  }
+
   if (data.attachments.length) {
     const budget = checkAttachmentBudget(
       data.attachments.map((a) => a.size_bytes),
@@ -238,8 +259,7 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
     // checked, refused silently — so the row kept the "skipped" its
     // INSERT gave it and the UI said "Not delivered" no matter what had
     // actually happened.
-    const schema = await currentTenantSchema();
-    const bookkeeping = schema ? createAdminClient(schema) : null;
+    const bookkeeping = claim ? createAdminClient(claim.schema) : null;
 
     const record = async (status: SendMailOutcome, sendError: string | null) => {
       if (!bookkeeping) {
