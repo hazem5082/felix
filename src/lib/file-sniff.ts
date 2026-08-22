@@ -168,6 +168,39 @@ export function sniff(prefix: Uint8Array, filename: string): SniffResult {
   };
 }
 
+/**
+ * Kinds a browser can render from a URL on its own, for the mail reading
+ * pane's inline preview.
+ *
+ * Not "kinds that are safe" — every kind in AttachmentKind is safe,
+ * because HTML and SVG have never been on the allowlist and so cannot be
+ * stored. This is the narrower question of what a browser will actually
+ * DISPLAY rather than drop into the downloads bar.
+ *
+ * The three OOXML kinds are excluded deliberately. No browser renders a
+ * .docx or .xlsx natively, so serving one inline would produce a
+ * download with extra steps; the reading pane fetches those bytes and
+ * unpacks them itself instead (see office-preview.ts). Excluding them
+ * here keeps the inline Content-Type header to things that header
+ * actually means something for.
+ */
+const PREVIEWABLE_KINDS = new Set<AttachmentKind>([
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "pdf",
+  "mp4",
+  "mov",
+  "webm",
+  "txt",
+  "csv",
+]);
+
+export function isPreviewable(kind: AttachmentKind): boolean {
+  return PREVIEWABLE_KINDS.has(kind);
+}
+
 /** Batch check for a compose or inbound message's whole attachment set. */
 export function checkAttachmentBudget(
   sizes: number[],

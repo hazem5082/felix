@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { isFelixMailAddress } from "@/lib/mail-address";
+import { AttachmentPreview } from "./attachment-preview";
 import { uploadMailAttachment } from "@/lib/upload-client";
 import { markMailRead, sendMail } from "./actions";
 import type { MailAttachment, MailMessage, Role } from "@/lib/supabase/types";
@@ -242,6 +243,10 @@ function MessageDetail({
   isOwnMessage: boolean;
 }) {
   const t = useTranslations("mail");
+  // Which attachment the viewer is showing, or null for none. Held here
+  // rather than in the chip so opening a second one replaces the first
+  // instead of stacking dialogs.
+  const [previewing, setPreviewing] = useState<MailAttachment | null>(null);
   return (
     <Panel className="flex h-full flex-col overflow-hidden">
       <div className="mb-3 flex items-start justify-between gap-3 border-b border-[var(--color-border)] pb-3">
@@ -294,18 +299,26 @@ function MessageDetail({
 
       {attachments.length > 0 && (
         <div className="mt-4 flex shrink-0 flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">
+          {/* A button, not a link: the first thing you want from an
+              attachment is to see it, and downloading is one click further
+              in (inside the viewer) rather than the only option. */}
           {attachments.map((a) => (
-            <a
+            <button
               key={a.id}
-              href={`/api/mail/attachment/${a.id}`}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-black/[0.03]"
+              type="button"
+              onClick={() => setPreviewing(a)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-black/[0.03]"
             >
               <Paperclip size={12} />
               {a.filename}
               <span className="text-[var(--color-text-faint)]">({Math.ceil(a.size_bytes / 1024)} KB)</span>
-            </a>
+            </button>
           ))}
         </div>
+      )}
+
+      {previewing && (
+        <AttachmentPreview attachment={previewing} onClose={() => setPreviewing(null)} />
       )}
     </Panel>
   );

@@ -208,22 +208,44 @@ export async function deleteObject(folder: UploadFolder, key: string): Promise<v
  * browser follows the redirect immediately" and useless to anyone who
  * captured the URL for later.
  *
- * ResponseContentDisposition forces a download rather than an inline
- * render — the same reasoning as the Agent Portal's mail.js
- * attachment route: an "attachment" that is actually HTML must never
- * render same-origin-adjacent in a browser tab.
+ * DISPOSITION IS A SECURITY DECISION, WHICH IS WHY `inline` IS NOT A
+ * PLAIN BOOLEAN A CALLER CAN JUST FLIP.
+ *
+ * Serving `attachment` is always safe: the browser saves the bytes and
+ * renders nothing. Serving `inline` asks the browser to INTERPRET them,
+ * which is only acceptable once something authoritative has said what
+ * they are — an "attachment" that is really HTML must never render in a
+ * tab, the same reasoning as the Agent Portal's mail.js route.
+ *
+ * So the inline variant cannot be constructed without a contentType, and
+ * the one route that passes it gets that string from file-sniff.ts's own
+ * read of the object's magic bytes — never from
+ * mail_attachments.mime_type, which is whatever the uploading client
+ * claimed (see that column's own comment) and therefore precisely the
+ * value an attacker would choose.
  */
+export type DownloadDisposition =
+  | { inline: false }
+  | { inline: true; contentType: string };
+
 export async function createSignedDownloadUrl(
   folder: UploadFolder,
   key: string,
-  downloadFilename: string
+  downloadFilename: string,
+  disposition: DownloadDisposition = { inline: false }
 ): Promise<string> {
   const client = getClient();
   const ascii = downloadFilename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_") || "file";
+  const shown = disposition.inline ? "inline" : "attachment";
   const command = new GetObjectCommand({
     Bucket: bucketFor(folder),
     Key: key,
-    ResponseContentDisposition: `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`,
+    ResponseContentDisposition: `${shown}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`,
+    // Only ever the sniffed type. R2 stores whatever content-type the
+    // presigned PUT carried, which is the browser's guess from the
+    // uploader's file extension; overriding it here makes the response
+    // say what the bytes actually are.
+    ...(disposition.inline ? { ResponseContentType: disposition.contentType } : {}),
   });
   return getSignedUrl(client, command, { expiresIn: 60 });
 }

@@ -1188,6 +1188,13 @@
     "externalHint": "For people outside FELIX only. Colleagues have FELIX addresses — pick them in the To / Cc lists above.",
     "externalNotFelix": "FELIX addresses can't be typed in here. Pick colleagues from the To / Cc lists — you can only mail people in your own showroom.",
     "attachmentFailed": "{files} didn't upload, so nothing was sent. Remove it or try attaching it again.",
-    "attachmentNotAttached": "not attached"
+    "attachmentNotAttached": "not attached",
+    "download": "Download",
+    "previewLoading": "Opening…",
+    "previewFailed": "This file couldn't be previewed. Download it to open it.",
+    "previewTooLarge": "Too large to preview here — download it to open it.",
+    "previewUnavailable": "There's no preview for this kind of file. Download it to open it.",
+    "previewNoText": "No text found in this file.",
+    "slide": "Slide"
   }
 }
