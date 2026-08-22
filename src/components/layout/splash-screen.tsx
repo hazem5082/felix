@@ -5,41 +5,24 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 
-const TYPE_MS = 1100;
-const HOLD_MS = 350;
-const EXIT_MS = 450;
+const SHOW_MS = 1200;
+const EXIT_MS = 400;
 
 /**
- * Replayed on every full page load, this splash was the single biggest
- * "the app is broken" generator in production: a fullscreen z-[999]
- * overlay WITHOUT pointer-events-none sat over the page for ~5.5s per
- * navigation, silently eating every click. The page underneath looked
- * ready — buttons visible, forms rendered — so users clicked, nothing
- * happened, and every input appeared dead. (Verified live: the same
- * click that did nothing during the overlay creates a lead once it's
- * gone.)
- *
- * Three rules keep it harmless now:
- *  1. pointer-events-none, always. It is decoration; it may never
- *     intercept input, not even for one frame.
- *  2. Once per browser session. A brand moment on arrival is polish;
- *     replaying it on every hard navigation is a 5-second toll booth.
- *  3. Short. The old 4.75s was longer than most page loads.
+ * Replayed on first visit per session, harmless and fast:
+ *  1. pointer-events-none, always so it never intercepts clicks.
+ *  2. Once per browser session to prevent redundant delays.
+ *  3. Short, clean transition matching the light UI theme.
  */
 const SEEN_KEY = "felix-splash-seen";
 
-type Phase = "typing" | "hidden";
+type Phase = "showing" | "hidden";
 
 export function SplashScreen({ children }: { children: React.ReactNode }) {
-  // Server and first client render agree on "typing" (no hydration
-  // mismatch); the effect below hides it immediately when this session
-  // has already seen it.
-  const [phase, setPhase] = useState<Phase>("typing");
+  const [phase, setPhase] = useState<Phase>("showing");
   const pathname = usePathname();
 
-  // Print views (contracts, reports) open in a new tab headed straight
-  // for the print dialog — a branding animation there is at best a
-  // flash and at worst ends up ON the printed page.
+  // Print views open in a new tab headed straight for the print dialog
   const isPrintRoute = pathname?.includes("/print/") ?? false;
 
   useEffect(() => {
@@ -48,14 +31,13 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
       seen = sessionStorage.getItem(SEEN_KEY) === "1";
       sessionStorage.setItem(SEEN_KEY, "1");
     } catch {
-      // Storage blocked (private mode etc.) — worst case the splash
-      // replays; it can't block anything either way.
+      // Storage blocked (private mode etc.)
     }
     if (seen) {
       setPhase("hidden");
       return;
     }
-    const t = setTimeout(() => setPhase("hidden"), TYPE_MS + HOLD_MS);
+    const t = setTimeout(() => setPhase("hidden"), SHOW_MS);
     return () => clearTimeout(t);
   }, []);
 
@@ -65,72 +47,58 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
       <AnimatePresence>
         {phase !== "hidden" && !isPrintRoute && (
           <motion.div
-            className="pointer-events-none fixed inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden bg-[#060709]"
-            exit={{ opacity: 0, scale: 1.02, filter: "blur(10px)" }}
+            className="pointer-events-none fixed inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden bg-white"
+            exit={{ opacity: 0, scale: 1.01, filter: "blur(8px)" }}
             transition={{ duration: EXIT_MS / 1000, ease: [0.4, 0, 0.2, 1] }}
           >
-            {/* Single centered white light source in the background */}
+            {/* Ambient Pink Spotlights */}
+            <div
+              className="pointer-events-none absolute -top-28 -left-28 h-[480px] w-[480px] rounded-full bg-gradient-to-br from-pink-400/20 via-pink-300/10 to-transparent blur-[100px]"
+              aria-hidden="true"
+            />
+            <div
+              className="pointer-events-none absolute -bottom-28 -right-28 h-[480px] w-[480px] rounded-full bg-gradient-to-tl from-pink-500/18 via-rose-300/10 to-transparent blur-[100px]"
+              aria-hidden="true"
+            />
+            <div
+              className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full bg-gradient-to-r from-pink-200/20 via-rose-100/15 to-transparent blur-[120px]"
+              aria-hidden="true"
+            />
+
+            {/* Subtle radial center highlight */}
             <div
               className="pointer-events-none absolute inset-0"
               style={{
                 background:
-                  "radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 40%, transparent 70%)",
+                  "radial-gradient(circle at 50% 50%, rgba(253, 242, 248, 0.6) 0%, rgba(255, 255, 255, 0) 70%)",
               }}
-            />
-
-            {/* Subtle starlight noise grid */}
-            <div
-              className="pointer-events-none absolute inset-0 opacity-[0.2]"
-              style={{
-                backgroundImage:
-                  "radial-gradient(1px 1px at 15% 25%, white, transparent)," +
-                  "radial-gradient(1px 1px at 85% 15%, white, transparent)," +
-                  "radial-gradient(1px 1px at 28% 80%, white, transparent)," +
-                  "radial-gradient(1.5px 1.5px at 70% 70%, white, transparent)," +
-                  "radial-gradient(1px 1px at 90% 55%, white, transparent)," +
-                  "radial-gradient(1px 1px at 45% 15%, white, transparent)",
-              }}
+              aria-hidden="true"
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0, scale: 0.96, y: 4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
               className="relative z-10 flex flex-col items-center gap-8"
             >
               <div className="relative">
-                {/* Typed logo reveal */}
-                <motion.div
-                  initial={{ clipPath: "inset(0 100% 0 0)" }}
-                  animate={{ clipPath: "inset(0 0% 0 0)" }}
-                  transition={{ duration: TYPE_MS / 1000, ease: [0.65, 0, 0.35, 1] }}
-                >
-                  <Image
-                    src="/brand/felix-logo.png"
-                    alt="FELIX"
-                    width={560}
-                    height={180}
-                    priority
-                    className="h-auto w-[min(80vw,480px)] drop-shadow-[0_0_40px_rgba(255,255,255,0.35)]"
-                  />
-                </motion.div>
-
-                {/* Sweeping caret */}
-                <motion.div
-                  className="absolute bottom-0 top-0 w-[3.5px] rounded-full bg-white shadow-[0_0_16px_4px_rgba(255,255,255,0.95)]"
-                  initial={{ left: "0%" }}
-                  animate={{ left: "100%" }}
-                  transition={{ duration: TYPE_MS / 1000, ease: [0.65, 0, 0.35, 1] }}
+                <Image
+                  src="/brand/felix-logo.png"
+                  alt="FELIX"
+                  width={620}
+                  height={200}
+                  priority
+                  className="h-auto w-[min(85vw,540px)] object-contain drop-shadow-[0_12px_28px_rgba(244,114,182,0.14)]"
                 />
               </div>
 
-              {/* Progress bar */}
-              <div className="relative h-[2.5px] w-56 overflow-hidden rounded-full bg-white/15">
+              {/* Minimal Progress Bar */}
+              <div className="relative h-[2.5px] w-56 overflow-hidden rounded-full bg-pink-100/80">
                 <motion.div
-                  className="h-full rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)]"
+                  className="h-full rounded-full bg-gradient-to-r from-pink-500 via-rose-400 to-pink-500 shadow-[0_0_10px_rgba(244,114,182,0.6)]"
                   initial={{ width: "0%" }}
                   animate={{ width: "100%" }}
-                  transition={{ duration: (TYPE_MS + HOLD_MS) / 1000, ease: "linear" }}
+                  transition={{ duration: SHOW_MS / 1000, ease: [0.25, 0.1, 0.25, 1] }}
                 />
               </div>
             </motion.div>
@@ -140,3 +108,4 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
     </>
   );
 }
+
