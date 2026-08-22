@@ -137,10 +137,10 @@
   "support": {
     "title": "Customer Support",
     "subtitle": "Help, questions, and emergencies — for every FELIX user.",
-    "tagline": "Our greatest feature: directly contacting the CEO & developer for emergencies.",
+    "tagline": "Our greatest feature: direct CTO access for emergencies.",
     "callNow": "Call now",
     "whatsapp": "WhatsApp",
-    "emergencyNote": "This line reaches the CEO & developer directly. For emergencies it is answered at any hour; for everything else you will hear back the same day.",
+    "emergencyNote": "This line reaches the CTO directly. For emergencies it is answered at any hour; for everything else you will hear back the same day.",
     "aboutTitle": "About FELIX",
     "aboutBody": "FELIX is a licensed showroom management platform covering inventory, CRM, deal approvals, contracts, finance and reporting. Your showroom's data is isolated end-to-end and every financial action is recorded in an append-only audit log.",
     "provenance": "FELIX — built by dev.508.world · licensed by empi.508.world"

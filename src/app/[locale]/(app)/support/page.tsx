@@ -3,7 +3,7 @@ import { requireProfile } from "@/lib/auth";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { LifeBuoy, MessageCircle, Phone, ShieldCheck } from "lucide-react";
 
-// The emergency line — the CEO & developer directly, by design.
+// The emergency line — the CTO directly, by design.
 const EMERGENCY_PHONE_DISPLAY = "+20 101 178 2780";
 const EMERGENCY_PHONE_TEL = "+201011782780";
 const WHATSAPP_URL = "https://wa.me/201011782780";
