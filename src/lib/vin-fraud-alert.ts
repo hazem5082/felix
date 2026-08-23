@@ -75,7 +75,7 @@ export async function sendSuspiciousVinAlert(input: SuspiciousVinAlertInput): Pr
   const recordedVehicle = `${input.recordedMake} ${input.recordedModel}`.trim();
   const decodedVehicle = [input.decodedMake, input.decodedModel].filter(Boolean).join(" ");
 
-  await sendExternalMail({
+  const result = await sendExternalMail({
     from: FRAUD_RADAR_FROM,
     fromName: FRAUD_RADAR_NAME,
     to: recipients,
@@ -85,6 +85,18 @@ export async function sendSuspiciousVinAlert(input: SuspiciousVinAlertInput): Pr
     text: buildText({ ...input, link, recordedVehicle, decodedVehicle }),
     attachments: [],
   });
+
+  // sendExternalMail() reports failure as a result, not a thrown
+  // exception — a bare await here would let a "skipped" (mail channel
+  // unconfigured) or "failed" (Resend rejected it) outcome disappear
+  // with no trace, which defeats the point of a fraud alert existing.
+  if (!result.ok) {
+    console.error(`[vin-fraud-alert] send failed for vehicle ${input.vehicleId}: ${result.error}`);
+  } else if (result.outcome !== "sent") {
+    console.warn(`[vin-fraud-alert] send outcome "${result.outcome}" for vehicle ${input.vehicleId}`);
+  } else {
+    console.log(`[vin-fraud-alert] sent for vehicle ${input.vehicleId} to ${recipients.join(", ")}`);
+  }
 }
 
 function buildHtml(args: {
