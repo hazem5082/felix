@@ -33,14 +33,22 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <LoginForm
-        locale={locale}
-        showroomName={tenant?.name ?? null}
-        // Non-null only on the flagship demo with the demo switched on.
-        // The addresses stay on the server; only labels cross the wire.
-        demoPersonas={demo ? demoPersonas() : null}
-      />
+    <main className="relative flex min-h-screen items-center justify-center p-4 sm:p-6 lg:p-8 bg-[var(--color-bg)]">
+      {/* Background ambient lighting */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 h-96 w-[36rem] rounded-full bg-gradient-to-tr from-amber-200/20 via-indigo-100/30 to-blue-200/20 blur-3xl" />
+        <div className="absolute -bottom-32 right-1/4 h-80 w-96 rounded-full bg-gradient-to-br from-amber-100/20 to-orange-100/10 blur-3xl" />
+      </div>
+
+      <div className="relative z-10 w-full flex justify-center">
+        <LoginForm
+          locale={locale}
+          showroomName={tenant?.name ?? null}
+          // Non-null only on the flagship demo with the demo switched on.
+          // The addresses stay on the server; only labels cross the wire.
+          demoPersonas={demo ? demoPersonas() : null}
+        />
+      </div>
     </main>
   );
 }

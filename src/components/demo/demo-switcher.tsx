@@ -2,10 +2,74 @@
 
 import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
-import { FlaskConical } from "lucide-react";
+import {
+  FlaskConical,
+  Crown,
+  Building2,
+  MapPin,
+  Calculator,
+  Car,
+  Megaphone,
+  PieChart,
+  TrendingUp,
+  ChevronRight,
+  Loader2,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { switchDemoRole, type DemoSwitchState } from "@/app/[locale]/demo/actions";
 import type { DemoAccountKey, DemoPersona } from "@/lib/demo-accounts";
+
+const PERSONA_CONFIG: Record<
+  DemoAccountKey,
+  {
+    icon: LucideIcon;
+    iconColor: string;
+    iconBg: string;
+  }
+> = {
+  ceo: {
+    icon: Crown,
+    iconColor: "text-amber-800",
+    iconBg: "bg-amber-100",
+  },
+  manager: {
+    icon: Building2,
+    iconColor: "text-blue-800",
+    iconBg: "bg-blue-100",
+  },
+  manager2: {
+    icon: MapPin,
+    iconColor: "text-teal-800",
+    iconBg: "bg-teal-100",
+  },
+  accountant: {
+    icon: Calculator,
+    iconColor: "text-emerald-800",
+    iconBg: "bg-emerald-100",
+  },
+  sales: {
+    icon: Car,
+    iconColor: "text-orange-800",
+    iconBg: "bg-orange-100",
+  },
+  marketing: {
+    icon: Megaphone,
+    iconColor: "text-purple-800",
+    iconBg: "bg-purple-100",
+  },
+  investor1: {
+    icon: PieChart,
+    iconColor: "text-indigo-800",
+    iconBg: "bg-indigo-100",
+  },
+  investor2: {
+    icon: TrendingUp,
+    iconColor: "text-cyan-800",
+    iconBg: "bg-cyan-100",
+  },
+};
 
 /**
  * The persona switcher.
@@ -89,8 +153,8 @@ export function DemoSwitcher({
         className={cn(
           "shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-progress disabled:opacity-50",
           active
-            ? "border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/25 text-[var(--color-accent-amber)]"
-            : "border-white/12 bg-white/[0.04] text-[var(--color-text-muted)] hover:border-white/25 hover:text-white"
+            ? "border-[var(--color-accent-amber)] bg-[var(--color-accent-amber)] text-white shadow-xs font-semibold"
+            : "border-[var(--color-accent-amber)]/25 bg-white/80 text-[var(--color-text)] hover:border-[var(--color-accent-amber)]/60 hover:bg-white hover:text-[var(--color-text)]"
         )}
       >
         {busy ? t("switching") : t(`personas.${persona.key}`)}
@@ -100,43 +164,92 @@ export function DemoSwitcher({
 
   if (variant === "login") {
     return (
-      <div className="mt-5 rounded-2xl border border-[var(--color-accent-amber)]/25 bg-[var(--color-accent-amber-dim)] p-3">
-        <p className="mb-2 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-accent-amber)]">
-          <FlaskConical size={12} aria-hidden />
-          {t("badge")}
-        </p>
-        <p className="mb-2.5 text-center text-xs text-[var(--color-text-muted)]">
-          {t("loginHint")}
-        </p>
-        <div className="grid grid-cols-2 gap-1.5">
-          {personas.map((persona) => (
-            <button
-              key={persona.key}
-              type="button"
-              onClick={() => pick(persona.key)}
-              disabled={pending}
-              className="flex min-w-0 flex-col items-center rounded-lg border border-white/12 bg-white/[0.04] px-2 py-1.5 text-xs font-medium text-white transition-colors hover:border-white/25 hover:bg-white/[0.08] disabled:cursor-progress disabled:opacity-50"
-            >
-              <span className="w-full truncate">
-                {persona.key === busyKey ? t("switching") : t(`personas.${persona.key}`)}
-              </span>
-              <span className="w-full truncate text-[10px] font-normal text-[var(--color-text-faint)]">
-                {persona.name}
-              </span>
-            </button>
-          ))}
-        </div>
-        {error && (
-          <p role="alert" className="mt-2 text-center text-xs text-[var(--color-accent-red)]">
-            {error}
+      <div className="panel panel-raised overflow-hidden rounded-2xl border border-[var(--color-border)] p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col items-center border-b border-[var(--color-border)] pb-4 text-center">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-accent-amber)]/30 bg-[var(--color-accent-amber-dim)] px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-accent-amber)] shadow-xs">
+            <FlaskConical className="h-3.5 w-3.5" aria-hidden />
+            <span>{t("badge")}</span>
+          </div>
+          <p className="mt-3 text-sm font-semibold text-[var(--color-text)]">
+            {t("loginHint")}
           </p>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+            {t("hint")}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2.5 pt-4 sm:grid-cols-2">
+          {personas.map((persona) => {
+            const config = PERSONA_CONFIG[persona.key] ?? {
+              icon: ShieldCheck,
+              iconColor: "text-[var(--color-text-muted)]",
+              iconBg: "bg-gray-100",
+            };
+            const Icon = config.icon;
+            const isBusy = persona.key === busyKey;
+
+            return (
+              <button
+                key={persona.key}
+                type="button"
+                onClick={() => pick(persona.key)}
+                disabled={pending}
+                className={cn(
+                  "group relative flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5 text-start transition-all duration-150",
+                  "hover:border-[var(--color-accent-amber)]/50 hover:bg-[var(--color-accent-amber-dim)]/30 hover:shadow-xs active:scale-[0.99]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-amber)]/50",
+                  "disabled:pointer-events-none disabled:opacity-60",
+                  isBusy && "border-[var(--color-accent-amber)] bg-[var(--color-accent-amber-dim)]/50"
+                )}
+              >
+                <div
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-105",
+                    config.iconBg,
+                    config.iconColor
+                  )}
+                >
+                  {isBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-[var(--color-accent-amber)]" />
+                  ) : (
+                    <Icon className="h-4 w-4" aria-hidden />
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1">
+                    <p className="truncate text-xs font-semibold text-[var(--color-text)]">
+                      {isBusy ? t("switching") : t(`personas.${persona.key}`)}
+                    </p>
+                  </div>
+                  <p className="truncate text-[11px] text-[var(--color-text-muted)]">
+                    {persona.name}
+                  </p>
+                </div>
+
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-[var(--color-text-faint)] opacity-40 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100 group-hover:text-[var(--color-accent-amber)] rtl:rotate-180 rtl:group-hover:-translate-x-0.5"
+                  aria-hidden
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-[var(--color-accent-red)]/20 bg-[var(--color-accent-red-dim)] p-2.5 text-center text-xs font-medium text-[var(--color-accent-red)]"
+          >
+            {error}
+          </div>
         )}
       </div>
     );
   }
 
   return (
-    <div className="shrink-0 border-b border-[var(--color-accent-amber)]/25 bg-[var(--color-accent-amber-dim)] backdrop-blur-2xl">
+    <div className="shrink-0 border-b border-[var(--color-accent-amber)]/25 bg-[var(--color-accent-amber-dim)]/80 backdrop-blur-md">
       <div className="flex items-center gap-2.5 px-3 py-1.5 md:px-5">
         <span className="hidden shrink-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-accent-amber)] sm:flex">
           <FlaskConical size={13} aria-hidden />
@@ -152,7 +265,7 @@ export function DemoSwitcher({
             {error}
           </span>
         ) : (
-          <span className="hidden shrink-0 text-xs text-[var(--color-text-faint)] lg:inline">
+          <span className="hidden shrink-0 text-xs text-[var(--color-text-muted)] lg:inline">
             {t("hint")}
           </span>
         )}

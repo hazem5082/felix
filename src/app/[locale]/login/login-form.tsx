@@ -9,6 +9,7 @@ import { Panel } from "@/components/ui/panel";
 import { Input, Label } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DemoSwitcher } from "@/components/demo/demo-switcher";
+import { cn } from "@/lib/utils";
 import type { DemoPersona } from "@/lib/demo-accounts";
 
 export function LoginForm({
@@ -41,7 +42,10 @@ export function LoginForm({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full max-w-sm"
+      className={cn(
+        "w-full transition-all duration-300",
+        activeDemoPersonas ? "max-w-xl" : "max-w-sm"
+      )}
     >
       <div className="mb-6 text-center">
         <Image
@@ -49,18 +53,23 @@ export function LoginForm({
           alt="FELIX"
           width={420}
           height={140}
-          className="mx-auto mb-4 h-10 w-auto"
+          className="mx-auto mb-4 h-11 w-auto object-contain"
           priority
         />
-        <h1 className="text-lg font-semibold text-[var(--color-text)]">{t("signInTitle")}</h1>
+        <h1 className="text-xl font-bold tracking-tight text-[var(--color-text)]">
+          {t("signInTitle")}
+        </h1>
         {/* Which licensed showroom this subdomain belongs to. Makes it
             obvious at a glance that you're at the right client's door. */}
         {showroomName ? (
-          <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">{showroomName}</p>
+          <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-0.5 text-xs font-medium text-[var(--color-text-muted)] shadow-xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent-amber)]" />
+            {showroomName}
+          </div>
         ) : (
           <p className="mt-1 text-xs text-[var(--color-accent-red)]">{t("unknownTenant")}</p>
         )}
-        <p className="mt-1 text-xs text-[var(--color-text-faint)]">{t("signInSubtitle")}</p>
+        <p className="mt-1.5 text-xs text-[var(--color-text-faint)]">{t("signInSubtitle")}</p>
       </div>
 
       {activeDemoPersonas ? (
@@ -118,3 +127,4 @@ export function LoginForm({
     </motion.div>
   );
 }
+
