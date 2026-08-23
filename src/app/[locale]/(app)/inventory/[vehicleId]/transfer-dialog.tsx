@@ -62,13 +62,40 @@ export function TransferPanel({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  /**
+   * `finally`, and it is load-bearing (0043).
+   *
+   * loadVehicleTransfers() is a Server Action, so this is a POST across
+   * the network: it does not merely RETURN an error, it can THROW one —
+   * a dropped connection, a restarted server, a redeploy mid-session.
+   * The original body awaited it bare and set `loaded` on the line
+   * after, so any throw skipped that line, left `loaded` false forever,
+   * and pinned the panel on "Loading…" with no message and no retry.
+   * That is the whole visible symptom of "transfers don't work": the
+   * request may well have succeeded server-side, but this panel could
+   * never say so.
+   *
+   * So: `loaded` is set in `finally` — the panel always leaves its
+   * loading state — and a failure is SURFACED rather than swallowed.
+   * The returned-error case is now shown too; it used to be dropped on
+   * the floor, rendering "no transfer in progress" for what was really
+   * "we could not find out".
+   */
   const refresh = useCallback(async () => {
-    const result = await loadVehicleTransfers(vehicleId);
-    if (!("error" in result)) {
-      setTransfers(result);
+    try {
+      const result = await loadVehicleTransfers(vehicleId);
+      if ("error" in result) {
+        setError(result.error);
+      } else {
+        setTransfers(result);
+        setError(null);
+      }
+    } catch {
+      setError(t("loadFailed"));
+    } finally {
+      setLoaded(true);
     }
-    setLoaded(true);
-  }, [vehicleId]);
+  }, [vehicleId, t]);
 
   useEffect(() => {
     void refresh();
@@ -79,6 +106,15 @@ export function TransferPanel({
 
   const canActHere = canActOnBranchWithGrants(role, homeBranchId, currentBranchId, grantedBranchIds);
   const canRequest = loaded && !openTransfer && vehicleStatus !== "sold" && canActHere;
+  // The two ends of the OPEN request, evaluated once — the decide
+  // buttons below and cancelTransfer() on the server derive the same
+  // accept/decline/cancel split from exactly this pair.
+  const onSource =
+    !!openTransfer &&
+    canActOnBranchWithGrants(role, homeBranchId, openTransfer.from_branch_id, grantedBranchIds);
+  const onDestination =
+    !!openTransfer &&
+    canActOnBranchWithGrants(role, homeBranchId, openTransfer.to_branch_id, grantedBranchIds);
   const destinationBranches = branches.filter((b) => b.id !== currentBranchId);
 
   function submitRequest() {
@@ -184,19 +220,36 @@ export function TransferPanel({
           {openTransfer.note && (
             <p className="text-xs text-[var(--color-text-muted)]">{openTransfer.note}</p>
           )}
+          {/* Which end you stand on decides what you may do (0043), and
+              this mirrors cancelTransfer()'s own split exactly — the
+              receiving branch DECLINES, the sending branch CANCELS, and
+              an org-wide role (true at both ends) reads as the sender,
+              so the CEO gets accept + cancel rather than a "decline"
+              that would mail the wrong branch. */}
           <div className="flex gap-2">
-            {canActOnBranchWithGrants(role, homeBranchId, openTransfer.to_branch_id, grantedBranchIds) && (
+            {onDestination && (
               <Button variant="success" size="sm" onClick={() => doAccept(openTransfer.id)} disabled={pending}>
                 {t("accept")}
               </Button>
             )}
-            {canActOnBranchWithGrants(role, homeBranchId, openTransfer.from_branch_id, grantedBranchIds) && (
+            {onDestination && !onSource && (
+              <Button variant="danger" size="sm" onClick={() => doCancel(openTransfer.id)} disabled={pending}>
+                {t("decline")}
+              </Button>
+            )}
+            {onSource && (
               <Button variant="danger" size="sm" onClick={() => doCancel(openTransfer.id)} disabled={pending}>
                 {t("cancel")}
               </Button>
             )}
           </div>
         </div>
+      ) : error ? (
+        // "No transfer in progress" is a FACT about this car, and it is
+        // only true if the lookup actually answered. When it failed, the
+        // error below stands alone rather than under a confident claim
+        // the panel is in no position to make.
+        null
       ) : (
         <p className="text-sm text-[var(--color-text-muted)]">{t("noneOpen")}</p>
       )}

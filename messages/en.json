@@ -408,7 +408,9 @@
     "statusAccepted": "Accepted",
     "statusCancelled": "Cancelled",
     "accept": "Accept",
+    "decline": "Decline",
     "cancel": "Cancel transfer",
+    "loadFailed": "Could not load this car's transfers. Reload the page to try again.",
     "history": "Transfer history"
   },
   "crm": {

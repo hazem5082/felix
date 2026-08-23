@@ -4,7 +4,14 @@ import { headers } from "next/headers";
 import { getLocale } from "next-intl/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { authenticate, authorize, assertBranch, REVIEWER_ROLES } from "@/lib/auth";
+import {
+  authenticate,
+  authorize,
+  assertBranch,
+  canActOnBranch,
+  getGrantedBranchIds,
+  REVIEWER_ROLES,
+} from "@/lib/auth";
 import { RequestStockTransferSchema, Uuid, parseInput } from "@/lib/validation";
 import { toUserError } from "@/lib/db-error";
 import { sendMail } from "../../mail/actions";
@@ -116,7 +123,7 @@ async function notifyTransfer(
   vehicleLabel: string,
   fromBranchName: string,
   toBranchName: string,
-  kind: "requested" | "accepted" | "cancelled",
+  kind: "requested" | "accepted" | "cancelled" | "declined",
   note: string | null,
   toIds: string[],
   ccIds: string[]
@@ -131,16 +138,20 @@ async function notifyTransfer(
       ? `Stock transfer requested: ${vehicleLabel} → ${toBranchName}`
       : kind === "accepted"
         ? `Stock transfer accepted: ${vehicleLabel} is now at ${toBranchName}`
-        : `Stock transfer cancelled: ${vehicleLabel} stays at ${fromBranchName}`;
+        : kind === "declined"
+          ? `Stock transfer declined: ${toBranchName} will not take ${vehicleLabel}`
+          : `Stock transfer cancelled: ${vehicleLabel} stays at ${fromBranchName}`;
 
   const bodyLines = [
     kind === "requested"
       ? `${vehicleLabel} has been requested to move from ${fromBranchName} to ${toBranchName}.`
       : kind === "accepted"
         ? `The transfer of ${vehicleLabel} from ${fromBranchName} to ${toBranchName} has been accepted.`
-        : `The transfer of ${vehicleLabel} from ${fromBranchName} to ${toBranchName} has been cancelled.`,
+        : kind === "declined"
+          ? `${toBranchName} has declined the transfer of ${vehicleLabel}. The car stays at ${fromBranchName}.`
+          : `The transfer of ${vehicleLabel} from ${fromBranchName} to ${toBranchName} has been cancelled.`,
     note ? `\nNote: ${note}` : null,
-    kind === "requested" ? `\nOpen the car to accept or cancel this request:\n${url}` : `\nOpen the car:\n${url}`,
+    kind === "requested" ? `\nOpen the car to accept or decline this request:\n${url}` : `\nOpen the car:\n${url}`,
   ].filter((line): line is string => line !== null);
 
   const result = await sendMail({
@@ -263,10 +274,27 @@ export async function requestTransfer(input: {
 }
 
 /**
- * The sending branch (or the CEO) stands down. REVIEWER_ROLES at the app
- * layer; RLS admits either end's actor at the write, and
- * guard_stock_transfer_status() is what actually confines a cancel to a
- * 'requested' row.
+ * Standing a transfer down — from EITHER end (0043).
+ *
+ * The sending branch CANCELS ("never mind, it is not coming"); the
+ * receiving branch DECLINES ("no thanks, we do not want it"). Both land
+ * the row on the same 'cancelled' status, because the database has only
+ * ever had one way out of 'requested' that is not an accept — but they
+ * are different acts by different people, so the notification below is
+ * routed to whichever end did NOT make the call.
+ *
+ * RLS admitted both ends from the start (stock_transfers_update, 0035:
+ * `can_act_on_branch(from_branch_id) or can_act_on_branch(to_branch_id)`)
+ * and guard_stock_transfer_status() confines the move to a 'requested'
+ * row either way. The APP layer used to be the narrower one, asserting
+ * the source branch and refusing everyone else — which left the
+ * receiving branch a request it could accept but never refuse. That is
+ * not a decision, it is a queue.
+ *
+ * The CEO is org-wide, so canActOnBranch() is true for them at both
+ * ends and they read as the sending side: a CEO standing a transfer
+ * down is a cancel, and the mail goes to the branch that was expecting
+ * the car. That is the right framing and the right audience.
  */
 export async function cancelTransfer(transferId: string) {
   const auth = await authorize(REVIEWER_ROLES);
@@ -282,8 +310,15 @@ export async function cancelTransfer(transferId: string) {
     return { error: "This transfer has already been decided." };
   }
 
-  const branchError = await assertBranch(auth.profile, transfer.from_branch_id);
-  if (branchError) return branchError;
+  const granted = await getGrantedBranchIds();
+  const onSource = canActOnBranch(auth.profile, transfer.from_branch_id, granted);
+  const onDestination = canActOnBranch(auth.profile, transfer.to_branch_id, granted);
+  if (!onSource && !onDestination) {
+    return { error: "That record belongs to another branch." };
+  }
+  // Only the end you actually stand on decides which act this is; see
+  // the header for why a CEO (true at both ends) reads as the sender.
+  const declined = !onSource && onDestination;
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -293,18 +328,36 @@ export async function cancelTransfer(transferId: string) {
     .eq("status", "requested");
   if (error) return toUserError(error);
 
-  // 0043: the branch that would have received this car is told it is
-  // standing down — cc'd to the CEO and, when someone other than the
-  // original requester made the call (e.g. the CEO stood it down), back
-  // to the requester too.
-  const [{ vehicleLabel, fromBranchName, toBranchName }, toMgrs, ceos] = await Promise.all([
+  // Tell the end that did NOT make this call. A decline goes back to
+  // the branch that asked (and the person who raised it); a cancel goes
+  // forward to the branch that was expecting the car. The CEO is cc'd
+  // on both, as they are on every other transfer event.
+  const [{ vehicleLabel, fromBranchName, toBranchName }, mgrs, ceos] = await Promise.all([
     transferLabels(supabase, transfer.vehicle_id, transfer.from_branch_id, transfer.to_branch_id),
-    branchManagerIds(supabase, transfer.to_branch_id),
+    branchManagerIds(supabase, declined ? transfer.from_branch_id : transfer.to_branch_id),
     ceoIds(supabase),
   ]);
+
+  const to = [...mgrs];
   const cc = [...ceos];
-  if (transfer.requested_by && transfer.requested_by !== auth.profile.id) cc.push(transfer.requested_by);
-  await notifyTransfer(supabase, transfer.vehicle_id, vehicleLabel, fromBranchName, toBranchName, "cancelled", null, toMgrs, cc);
+  if (transfer.requested_by && transfer.requested_by !== auth.profile.id) {
+    // The requester hears about it either way — as the addressee when
+    // their own request was refused, as a copy when somebody else stood
+    // their request down.
+    (declined ? to : cc).push(transfer.requested_by);
+  }
+
+  await notifyTransfer(
+    supabase,
+    transfer.vehicle_id,
+    vehicleLabel,
+    fromBranchName,
+    toBranchName,
+    declined ? "declined" : "cancelled",
+    null,
+    to,
+    cc
+  );
 
   revalidateVehicle();
   return { ok: true };
