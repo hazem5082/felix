@@ -263,6 +263,11 @@ async function upsertFinancingPartner() {
 const ACCOUNTS = [
   { key: "ceo", role: "ceo", name: "Alex Carter", branch: null },
   { key: "manager", role: "branch_manager", name: "Dana Reyes", branch: "downtown" },
+  // The Airport Road counterpart to "manager" — without this, no branch
+  // manager exists to receive/accept a stock-transfer request out of
+  // Downtown, and the destination-branch mail notification (0042) has
+  // nobody at that branch to address.
+  { key: "manager2", role: "branch_manager", name: "Riley Nasser", branch: "airport" },
   { key: "accountant", role: "accountant", name: "Sam Nguyen", branch: "downtown" },
   { key: "sales", role: "sales_exec", name: "Jordan Blake", branch: "downtown" },
   // Org-wide, like the CEO and the investors: marketing advertises the
@@ -636,10 +641,12 @@ async function main() {
   await upsertCommissionTiers();
   const partnerId = await upsertFinancingPartner();
 
+  const branchIdFor = (key) =>
+    key === "downtown" ? downtown.id : key === "airport" ? airport.id : null;
+
   const ids = {};
   for (const a of ACCOUNTS) {
-    ids[a.key] = await createUser(
-      a.key, a.role, a.name, a.branch === "downtown" ? downtown.id : null);
+    ids[a.key] = await createUser(a.key, a.role, a.name, branchIdFor(a.branch));
   }
   const salesId = ids.sales;
   const investor1Id = ids.investor1;

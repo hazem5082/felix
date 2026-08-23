@@ -25,6 +25,7 @@ import type { Role } from "./supabase/types";
 export type DemoAccountKey =
   | "ceo"
   | "manager"
+  | "manager2"
   | "accountant"
   | "sales"
   | "marketing"
@@ -53,6 +54,10 @@ export type DemoAccount = {
 export const DEMO_ACCOUNTS: Record<DemoAccountKey, DemoAccount> = {
   ceo: { email: "ceo@filex.demo", role: "ceo", name: "Alex Carter" },
   manager: { email: "manager@filex.demo", role: "branch_manager", name: "Dana Reyes" },
+  // Airport Road Branch's manager (0042) — the peer Dana Reyes requests
+  // and receives stock transfers with. Without this second account there
+  // is nobody but the CEO who can ever accept a transfer into that branch.
+  manager2: { email: "manager2@filex.demo", role: "branch_manager", name: "Riley Nasser" },
   accountant: { email: "accountant@filex.demo", role: "accountant", name: "Sam Nguyen" },
   sales: { email: "sales@filex.demo", role: "sales_exec", name: "Jordan Blake" },
   marketing: { email: "marketing@filex.demo", role: "marketing", name: "Farah Adel" },

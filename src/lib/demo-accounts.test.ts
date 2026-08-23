@@ -12,13 +12,14 @@ import {
 import { FLAGSHIP_SLUG } from "./tenant-host";
 
 describe("the demo persona allowlist", () => {
-  it("matches the seven accounts scripts/seed-demo.mjs creates", () => {
+  it("matches the eight accounts scripts/seed-demo.mjs creates", () => {
     // If the seed's ACCOUNTS array changes, this is the test that says so.
     // Nothing derives one from the other at runtime, so drift here means
     // buttons that sign nobody in.
     expect(DEMO_ACCOUNT_KEYS).toEqual([
       "ceo",
       "manager",
+      "manager2",
       "accountant",
       "sales",
       "marketing",
@@ -32,6 +33,7 @@ describe("the demo persona allowlist", () => {
       name: "Alex Carter",
     });
     expect(DEMO_ACCOUNTS.manager.role).toBe("branch_manager");
+    expect(DEMO_ACCOUNTS.manager2.role).toBe("branch_manager");
     expect(DEMO_ACCOUNTS.accountant.role).toBe("accountant");
     expect(DEMO_ACCOUNTS.sales.role).toBe("sales_exec");
     expect(DEMO_ACCOUNTS.marketing.role).toBe("marketing");
@@ -53,7 +55,7 @@ describe("the demo persona allowlist", () => {
     expect(new Set(emails).size).toBe(emails.length);
   });
 
-  it("accepts exactly the seven keys and nothing else", () => {
+  it("accepts exactly the eight keys and nothing else", () => {
     for (const key of DEMO_ACCOUNT_KEYS) expect(isDemoAccountKey(key)).toBe(true);
 
     expect(isDemoAccountKey("admin")).toBe(false);

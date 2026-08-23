@@ -1,10 +1,13 @@
 "use server";
 
+import { headers } from "next/headers";
+import { getLocale } from "next-intl/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authenticate, authorize, assertBranch, REVIEWER_ROLES } from "@/lib/auth";
 import { RequestStockTransferSchema, Uuid, parseInput } from "@/lib/validation";
 import { toUserError } from "@/lib/db-error";
+import { sendMail } from "../../mail/actions";
 import type { StockTransfer } from "@/lib/supabase/types";
 import type { ActionError } from "@/lib/validation";
 
@@ -17,22 +20,138 @@ function revalidateVehicle() {
   revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
 }
 
+/** The RLS-scoped, tenant-schema-pinned client createClient() hands back. */
+type TenantClient = Awaited<ReturnType<typeof createClient>>;
+
 type TransferScope = {
   id: string;
   vehicle_id: string;
   from_branch_id: string;
   to_branch_id: string;
   status: string;
+  requested_by: string | null;
 };
 
 async function loadTransferScope(transferId: string): Promise<TransferScope | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("stock_transfers")
-    .select("id, vehicle_id, from_branch_id, to_branch_id, status")
+    .select("id, vehicle_id, from_branch_id, to_branch_id, status, requested_by")
     .eq("id", transferId)
     .maybeSingle();
   return data as TransferScope | null;
+}
+
+/**
+ * The link a notification mail sends the recipient back to — the
+ * vehicle's own page, where the Branch Transfer panel's Accept/Cancel
+ * buttons already live. There is no site-wide base URL configured
+ * anywhere in this app (each showroom is reached at its own host), so
+ * this reads the host the CALLER'S OWN REQUEST arrived on rather than
+ * guessing — the same request that is about to send this mail is, by
+ * definition, addressed to this tenant's real hostname.
+ */
+async function vehicleUrl(vehicleId: string): Promise<string> {
+  const h = await headers();
+  const host = h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const locale = await getLocale();
+  return `${proto}://${host}/${locale}/inventory/${vehicleId}`;
+}
+
+async function branchManagerIds(supabase: TenantClient, branchId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("role", "branch_manager")
+    .eq("branch_id", branchId);
+  return ((data as { id: string }[] | null) ?? []).map((p) => p.id);
+}
+
+async function ceoIds(supabase: TenantClient): Promise<string[]> {
+  const { data } = await supabase.from("profiles").select("id").eq("role", "ceo");
+  return ((data as { id: string }[] | null) ?? []).map((p) => p.id);
+}
+
+/** The three human-readable strings every transfer notification needs. */
+async function transferLabels(
+  supabase: TenantClient,
+  vehicleId: string,
+  fromBranchId: string,
+  toBranchId: string
+): Promise<{ vehicleLabel: string; fromBranchName: string; toBranchName: string }> {
+  const [{ data: vehicleRow }, { data: branchRows }] = await Promise.all([
+    supabase.from("vehicles").select("year, make, model").eq("id", vehicleId).maybeSingle(),
+    supabase.from("branches").select("id, name").in("id", [fromBranchId, toBranchId]),
+  ]);
+  const v = vehicleRow as { year: number; make: string; model: string } | null;
+  const rows = (branchRows as { id: string; name: string }[] | null) ?? [];
+  const branchName = (id: string) => rows.find((b) => b.id === id)?.name ?? "—";
+  return {
+    vehicleLabel: v ? `${v.year} ${v.make} ${v.model}` : "this vehicle",
+    fromBranchName: branchName(fromBranchId),
+    toBranchName: branchName(toBranchId),
+  };
+}
+
+/**
+ * Sends the internal mail a stock-transfer event generates — the
+ * "notification" half of 0043's transfer/mail work. Plain internal
+ * mail, not a bespoke channel: it is sent AS the profile that just
+ * performed the action (requestTransfer/acceptTransfer/cancelTransfer
+ * already run inside that profile's own authenticated session), so it
+ * lands in the recipient's ordinary FELIX Mail inbox and any back-and-
+ * forth after this is just replying to it — no separate accept/decline
+ * mechanism lives inside mail itself; the buttons on the vehicle page
+ * remain the one place a transfer is actually decided.
+ *
+ * Never allowed to fail the caller's transfer: a mail-send hiccup must
+ * not undo (or even appear to undo) a transfer decision that already
+ * committed to the database, so every failure here is logged and
+ * swallowed.
+ */
+async function notifyTransfer(
+  supabase: TenantClient,
+  vehicleId: string,
+  vehicleLabel: string,
+  fromBranchName: string,
+  toBranchName: string,
+  kind: "requested" | "accepted" | "cancelled",
+  note: string | null,
+  toIds: string[],
+  ccIds: string[]
+) {
+  const to = Array.from(new Set(toIds)).filter(Boolean);
+  const cc = Array.from(new Set(ccIds)).filter((id) => Boolean(id) && !to.includes(id));
+  if (!to.length && !cc.length) return;
+
+  const url = await vehicleUrl(vehicleId);
+  const subject =
+    kind === "requested"
+      ? `Stock transfer requested: ${vehicleLabel} → ${toBranchName}`
+      : kind === "accepted"
+        ? `Stock transfer accepted: ${vehicleLabel} is now at ${toBranchName}`
+        : `Stock transfer cancelled: ${vehicleLabel} stays at ${fromBranchName}`;
+
+  const bodyLines = [
+    kind === "requested"
+      ? `${vehicleLabel} has been requested to move from ${fromBranchName} to ${toBranchName}.`
+      : kind === "accepted"
+        ? `The transfer of ${vehicleLabel} from ${fromBranchName} to ${toBranchName} has been accepted.`
+        : `The transfer of ${vehicleLabel} from ${fromBranchName} to ${toBranchName} has been cancelled.`,
+    note ? `\nNote: ${note}` : null,
+    kind === "requested" ? `\nOpen the car to accept or cancel this request:\n${url}` : `\nOpen the car:\n${url}`,
+  ].filter((line): line is string => line !== null);
+
+  const result = await sendMail({
+    to_profile_ids: to.length ? to : cc,
+    cc_profile_ids: to.length ? cc : [],
+    subject,
+    body: bodyLines.join("\n"),
+  });
+  if (result && "error" in result) {
+    console.error("[transfers] notification mail failed", { vehicleId, kind, error: result.error });
+  }
 }
 
 /**
@@ -117,6 +236,28 @@ export async function requestTransfer(input: {
   });
   if (error) return toUserError(error);
 
+  // 0043: tell the receiving branch a car is coming — to its
+  // manager(s), cc'd to the CEO and back to the requester as a
+  // confirmation copy. Falls back to the CEO as the "to" if the
+  // destination branch has no manager on record, rather than the mail
+  // silently having nobody to reach.
+  const [{ vehicleLabel, fromBranchName, toBranchName }, toMgrs, ceos] = await Promise.all([
+    transferLabels(supabase, v.id, v.branch_id, parsed.data.toBranchId),
+    branchManagerIds(supabase, parsed.data.toBranchId),
+    ceoIds(supabase),
+  ]);
+  await notifyTransfer(
+    supabase,
+    v.id,
+    vehicleLabel,
+    fromBranchName,
+    toBranchName,
+    "requested",
+    parsed.data.note || null,
+    toMgrs,
+    [...ceos, auth.profile.id]
+  );
+
   revalidateVehicle();
   return { ok: true };
 }
@@ -151,6 +292,19 @@ export async function cancelTransfer(transferId: string) {
     .eq("id", id.data)
     .eq("status", "requested");
   if (error) return toUserError(error);
+
+  // 0043: the branch that would have received this car is told it is
+  // standing down — cc'd to the CEO and, when someone other than the
+  // original requester made the call (e.g. the CEO stood it down), back
+  // to the requester too.
+  const [{ vehicleLabel, fromBranchName, toBranchName }, toMgrs, ceos] = await Promise.all([
+    transferLabels(supabase, transfer.vehicle_id, transfer.from_branch_id, transfer.to_branch_id),
+    branchManagerIds(supabase, transfer.to_branch_id),
+    ceoIds(supabase),
+  ]);
+  const cc = [...ceos];
+  if (transfer.requested_by && transfer.requested_by !== auth.profile.id) cc.push(transfer.requested_by);
+  await notifyTransfer(supabase, transfer.vehicle_id, vehicleLabel, fromBranchName, toBranchName, "cancelled", null, toMgrs, cc);
 
   revalidateVehicle();
   return { ok: true };
@@ -227,6 +381,14 @@ export async function acceptTransfer(transferId: string) {
       ? toUserError(acceptError, "acceptTransfer:accept")
       : { error: "This transfer was already decided by someone else. The vehicle move was reverted." };
   }
+
+  // 0043: tell the requester their car has arrived, cc'd to the CEO.
+  const [{ vehicleLabel, fromBranchName, toBranchName }, ceos] = await Promise.all([
+    transferLabels(supabase, transfer.vehicle_id, transfer.from_branch_id, transfer.to_branch_id),
+    ceoIds(supabase),
+  ]);
+  const to = transfer.requested_by ? [transfer.requested_by] : [];
+  await notifyTransfer(supabase, transfer.vehicle_id, vehicleLabel, fromBranchName, toBranchName, "accepted", null, to, ceos);
 
   revalidateVehicle();
   return { ok: true };

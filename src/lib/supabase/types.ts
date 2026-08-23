@@ -248,6 +248,11 @@ export interface MailMessage {
   send_error: string | null;
   occurred_at: string;
   created_at: string;
+  // A message with no human sender — FraudRadar's VIN-mismatch alert,
+  // today (migration 0042). Only service_role can ever set this true;
+  // see the migration header for why the grant, not RLS, is what
+  // enforces that. Rendered with its own colour/icon in mail-client.tsx.
+  is_system: boolean;
 }
 
 export interface MailRecipient {

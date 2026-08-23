@@ -75,6 +75,7 @@
     "personas": {
       "ceo": "الرئيس التنفيذي",
       "manager": "مدير الفرع",
+      "manager2": "مدير فرع الطريق الدائري",
       "accountant": "المحاسب",
       "sales": "المبيعات",
       "marketing": "التسويق",
@@ -532,7 +533,12 @@
     "staleFirst": "الأقدم أولاً",
     "priceHistory": "سجل الأسعار",
     "priceHistoryEmpty": "لم تُسجَّل أي تغييرات في السعر بعد.",
-    "priceHistoryChangedBy": "غيّره"
+    "priceHistoryChangedBy": "غيّره",
+    "saleDetails": "تفاصيل البيع",
+    "soldTo": "بيعت إلى",
+    "soldOn": "تاريخ البيع",
+    "openDealTicket": "فتح تذكرة الصفقة",
+    "saleRecordMissing": "هذه السيارة مسجَّلة كمباعة، لكن تعذر العثور على تذكرة الصفقة الخاصة بها."
   },
   "transfers": {
     "title": "نقل بين الفروع",
@@ -1192,6 +1198,7 @@
     "sendStatus_skipped": "لم يتم التسليم",
     "sendStatus_failed": "فشل الإرسال",
     "selectMessage": "اختر رسالة لقراءتها هنا.",
+    "systemAlert": "تنبيه تلقائي — FELIX FraudRadar",
     "backToList": "العودة إلى القائمة",
     "closeMessage": "إغلاق الرسالة",
     "externalHint": "لمن هم خارج فيلكس فقط. زملاؤك لديهم عناوين فيلكس — اخترهم من قائمتي «إلى» و«نسخة» أعلاه.",

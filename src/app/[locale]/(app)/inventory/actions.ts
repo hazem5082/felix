@@ -14,6 +14,7 @@ import { toUserError } from "@/lib/db-error";
 import { getTenant } from "@/lib/tenant";
 import { vinMakeMismatch } from "@/lib/vin-match";
 import { sendSuspiciousVinAlert } from "@/lib/vin-fraud-alert";
+import { decodeVin } from "@/lib/vin-decode";
 
 export interface EquitySplitInput {
   holder_type: "ceo" | "investor";
@@ -45,8 +46,6 @@ export async function createVehicle(input: {
   drive_type: string;
   doors: number | null;
   plant_country: string;
-  // What the VIN decoded to, at decode time — see FraudRadar note below.
-  decoded_make: string;
   locale: string;
   features: string[];
   item_code: string;
@@ -123,35 +122,37 @@ export async function createVehicle(input: {
 
   if (error) return toUserError(error);
 
-  // FraudRadar (0041-era feature): the VIN this car was decoded under
-  // named a different manufacturer than what actually got saved as its
-  // make — whether because the intake clerk overrode the auto-filled
-  // value or typed a make before ever running the decode. Either way
-  // the chassis number and the paperwork disagree, which is worth the
-  // CEO's attention before the car is ever offered for sale. Fired
-  // AFTER the insert succeeds, off the real vehicle id, and never
-  // allowed to fail the intake itself — a mail outage must not block a
-  // car from being taken into stock.
-  if (parsed.data.decoded_make && vinMakeMismatch(parsed.data.decoded_make, parsed.data.make)) {
-    const tenant = await getTenant();
-    if (tenant) {
-      // Awaited, not fire-and-forget: this app runs on Workers via
-      // OpenNext, where a promise left running after the action returns
-      // is not guaranteed to finish. This only executes on the rare
-      // mismatch path, so the extra latency here is not felt on an
-      // ordinary intake. Failure is logged, never surfaced to the
-      // clerk — a mail outage must not block a car from being taken in.
-      await sendSuspiciousVinAlert({
-        schemaName: tenant.schema_name,
-        tenantSlug: tenant.slug,
-        vehicleId: data as string,
-        vin: parsed.data.vin,
-        recordedMake: parsed.data.make,
-        recordedModel: parsed.data.model,
-        decodedMake: parsed.data.decoded_make,
-        decodedModel: null,
-        locale: input.locale === "ar" ? "ar" : "en",
-      }).catch((err) => console.error("[inventory] FraudRadar alert failed", err));
+  // FraudRadar — fully automatic, server-authoritative. A client is
+  // NEVER trusted to self-report what a VIN decoded to (an earlier
+  // version of this feature did exactly that via a decoded_make field
+  // the client computed and sent — a manipulated request could simply
+  // omit or fake it and suppress its own fraud alert). Instead the
+  // server re-decodes the VIN itself, off the real, just-inserted
+  // vehicle id, whether or not the intake form's own "Decode VIN"
+  // button was ever clicked. Never allowed to fail the intake itself —
+  // a mail outage or a slow NHTSA response must not block a car from
+  // being taken into stock.
+  if (parsed.data.vin) {
+    try {
+      const decoded = await decodeVin(parsed.data.vin);
+      if (decoded?.decoded && decoded.make && vinMakeMismatch(decoded.make, parsed.data.make)) {
+        const tenant = await getTenant();
+        if (tenant) {
+          await sendSuspiciousVinAlert({
+            schemaName: tenant.schema_name,
+            tenantSlug: tenant.slug,
+            vehicleId: data as string,
+            vin: parsed.data.vin,
+            recordedMake: parsed.data.make,
+            recordedModel: parsed.data.model,
+            decodedMake: decoded.make,
+            decodedModel: decoded.model,
+            locale: parsed.data.locale,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[inventory] FraudRadar check failed", err);
     }
   }
 
@@ -226,16 +227,7 @@ export async function setVehiclePrices(input: {
  * existing row policy (CEO, or a manager on their own branch) — same
  * shape as setVehiclePrices() above, no RPC ceremony.
  */
-export async function saveVinDecodedDetails(input: {
-  vehicle_id: string;
-  body_type: string;
-  engine_info: string;
-  drive_type: string;
-  doors: number | null;
-  plant_country: string;
-  decoded_make: string;
-  locale: string;
-}) {
+export async function saveVinDecodedDetails(input: { vehicle_id: string; locale: string }) {
   const auth = await authorize(INTAKE_ROLES);
   if (!auth.ok) return auth.error;
 
@@ -251,38 +243,43 @@ export async function saveVinDecodedDetails(input: {
     .maybeSingle();
   const v = vehicle as { id: string; branch_id: string; make: string; model: string; vin: string | null } | null;
   if (!v) return { error: "Unknown vehicle." };
+  if (!v.vin) return { error: "This vehicle has no VIN on record." };
 
   const branchError = await assertBranch(auth.profile, v.branch_id);
   if (branchError) return branchError;
 
+  // Fully server-driven, off the VIN actually on record — never off a
+  // client-reported decode. See the identical note in createVehicle().
+  const decoded = await decodeVin(v.vin);
+  if (!decoded?.decoded) {
+    return { error: "No data came back for this VIN — it may be outside the decoder's coverage." };
+  }
+
   const { error } = await supabase
     .from("vehicles")
     .update({
-      body_type: parsed.data.body_type || null,
-      engine_info: parsed.data.engine_info || null,
-      drive_type: parsed.data.drive_type || null,
-      doors: parsed.data.doors,
-      plant_country: parsed.data.plant_country || null,
+      body_type: decoded.bodyType,
+      engine_info: decoded.engineInfo,
+      drive_type: decoded.driveType,
+      doors: decoded.doors,
+      plant_country: decoded.countryOfOrigin,
     })
     .eq("id", parsed.data.vehicle_id);
   if (error) return toUserError(error);
 
-  // FraudRadar — see the identical note in createVehicle() above. Here
-  // the comparison is against the make already on record, since a
-  // re-decode never touches make/model itself.
-  if (input.decoded_make && vinMakeMismatch(input.decoded_make, v.make)) {
+  if (decoded.make && vinMakeMismatch(decoded.make, v.make)) {
     const tenant = await getTenant();
     if (tenant) {
       await sendSuspiciousVinAlert({
         schemaName: tenant.schema_name,
         tenantSlug: tenant.slug,
         vehicleId: v.id,
-        vin: v.vin ?? "",
+        vin: v.vin,
         recordedMake: v.make,
         recordedModel: v.model,
-        decodedMake: input.decoded_make,
-        decodedModel: null,
-        locale: input.locale === "ar" ? "ar" : "en",
+        decodedMake: decoded.make,
+        decodedModel: decoded.model,
+        locale: parsed.data.locale,
       }).catch((err) => console.error("[inventory] FraudRadar alert failed", err));
     }
   }

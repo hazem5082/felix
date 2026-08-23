@@ -75,6 +75,7 @@
     "personas": {
       "ceo": "CEO",
       "manager": "Branch Manager",
+      "manager2": "Branch Manager (Airport Rd.)",
       "accountant": "Accountant",
       "sales": "Sales",
       "marketing": "Marketing",
@@ -387,7 +388,12 @@
     "staleFirst": "Stale first",
     "priceHistory": "Price History",
     "priceHistoryEmpty": "No price changes recorded yet.",
-    "priceHistoryChangedBy": "Changed by"
+    "priceHistoryChangedBy": "Changed by",
+    "saleDetails": "Sale Details",
+    "soldTo": "Sold to",
+    "soldOn": "Sold on",
+    "openDealTicket": "Open Deal Ticket",
+    "saleRecordMissing": "This car is marked sold, but its deal ticket could not be found."
   },
   "transfers": {
     "title": "Branch Transfer",
@@ -1192,6 +1198,7 @@
     "sendStatus_skipped": "Not delivered",
     "sendStatus_failed": "Failed",
     "selectMessage": "Pick a message to read it here.",
+    "systemAlert": "System Alert — FELIX FraudRadar",
     "backToList": "Back to the list",
     "closeMessage": "Close message",
     "externalHint": "For people outside FELIX only. Colleagues have FELIX addresses — pick them in the To / Cc lists above.",

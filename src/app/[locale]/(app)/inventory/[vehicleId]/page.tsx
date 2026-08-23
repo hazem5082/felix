@@ -16,6 +16,8 @@ import type {
   VehiclePriceHistory,
   Branch,
   LeadVehicleInterest,
+  DealTicket,
+  Lead,
 } from "@/lib/supabase/types";
 import { ExpenseFormDialog } from "./expense-form";
 import { TransferPanel } from "./transfer-dialog";
@@ -27,7 +29,7 @@ import { colorLabel } from "@/lib/vehicle-color";
 import { originLabel } from "@/lib/vehicle-origin";
 import { flagForOrigin } from "@/lib/country-flag";
 import { ageBucket, ageTone, daysInStock, formatOdometer } from "@/lib/stock-age";
-import { Printer } from "lucide-react";
+import { Printer, FileText } from "lucide-react";
 
 export default async function VehicleDetailPage({
   params,
@@ -101,6 +103,25 @@ export default async function VehicleDetailPage({
     ? await supabase.from("branches").select("*").eq("id", (branch as { branch_id: string }).branch_id).maybeSingle()
     : { data: null };
 
+  // The deal that sold this car (0042). Only ever one 'executed' ticket
+  // per vehicle — a rejected or superseded ticket never consumes it — so
+  // a single maybeSingle() read is enough. RLS scopes deal_tickets the
+  // same way it scopes the vehicle, so a viewer who can open this page
+  // at all can read the ticket that sold it; a missing row (pre-0042
+  // data, or RLS denying it) degrades to a plain notice rather than a
+  // crash.
+  const { data: saleTicket } =
+    v.status === "sold"
+      ? await supabase
+          .from("deal_tickets")
+          .select("id, agreed_price, discount_amount, financing_type, executed_at, leads(id, client_name, phone_number)")
+          .eq("vehicle_id", v.id)
+          .eq("status", "executed")
+          .order("executed_at", { ascending: false })
+          .maybeSingle()
+      : { data: null };
+  const sale = saleTicket as (Pick<DealTicket, "id" | "agreed_price" | "discount_amount" | "financing_type" | "executed_at"> & { leads: Lead | null }) | null;
+
   // Gated inside the showCost-only Expenses panel below, so a branch
   // manager (no longer cost-visible) never reaches this even though the
   // server action still authorizes them — the button just isn't offered.
@@ -153,6 +174,59 @@ export default async function VehicleDetailPage({
           </div>
         }
       />
+
+      {/* Everything about the sale, up front — this is the first thing
+          worth reading about a car that is no longer on the floor. */}
+      {v.status === "sold" && (
+        <Panel>
+          <PanelHeader title={t("saleDetails")} />
+          {sale ? (
+            <>
+              <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+                <DetailRow
+                  label={t("soldTo")}
+                  value={sale.leads?.client_name ?? "—"}
+                  href={sale.leads ? `/crm/${sale.leads.id}` : undefined}
+                />
+                <DetailRow label={crm("phone")} value={sale.leads?.phone_number ?? "—"} ltr />
+                <DetailRow label={dealsT("agreedPrice")} value={formatMoney(sale.agreed_price, locale)} />
+                {Number(sale.discount_amount) > 0 && (
+                  <DetailRow label={dealsT("discount")} value={formatMoney(sale.discount_amount, locale)} />
+                )}
+                <DetailRow
+                  label={dealsT("financingType")}
+                  value={sale.financing_type === "cash" ? dealsT("cash") : dealsT("installments")}
+                />
+                <DetailRow
+                  label={t("soldOn")}
+                  value={sale.executed_at ? new Date(sale.executed_at).toLocaleDateString(locale) : "—"}
+                />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href={`/deals/${sale.id}`}>
+                  <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-black/[0.04]">
+                    <FileText size={14} />
+                    {t("openDealTicket")}
+                  </span>
+                </Link>
+                {/* Plain anchor, not the i18n Link: the print view opens
+                    in its own tab, same as the sticker link above. */}
+                <a
+                  href={`/${locale}/print/contracts/${sale.id}`}
+                  target="_blank"
+                  rel="noopener"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-black/[0.04]"
+                >
+                  <FileText size={14} />
+                  {dealsT("viewContract")}
+                </a>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-[var(--color-text-faint)]">{t("saleRecordMissing")}</p>
+          )}
+        </Panel>
+      )}
 
       <div className="grid gap-6 md:grid-cols-3">
         <Panel className="md:col-span-2">
@@ -361,7 +435,7 @@ export default async function VehicleDetailPage({
           {/* Retrofit path for every car intaken before the VIN decoder
               existed (0041) — canPrice is the same CEO/branch-manager
               audience the server action itself re-checks. */}
-          {canPrice && v.vin && <VinRedecodeButton vehicleId={v.id} vin={v.vin} />}
+          {canPrice && v.vin && <VinRedecodeButton vehicleId={v.id} />}
 
           {/* Self-contained (0036) — the only insertion point this
               migration makes on this page beyond the facts block above. */}
@@ -513,17 +587,36 @@ export default async function VehicleDetailPage({
 }
 
 /**
- * One line of the consignor block (0032). `ltr` for the national ID, on
- * the same reasoning the VIN and the item code carry it: a digit string
- * read off a card is a Latin technical value even in the Arabic UI.
+ * One line of the consignor block (0032), reused by the sale-details
+ * block (0042). `ltr` for the national ID and phone number, on the same
+ * reasoning the VIN and the item code carry it: a digit string read off
+ * a card is a Latin technical value even in the Arabic UI. `href`, when
+ * given, makes the value a link to the buyer's CRM record instead of
+ * plain text.
  */
-function DetailRow({ label, value, ltr }: { label: string; value: string; ltr?: boolean }) {
+function DetailRow({
+  label,
+  value,
+  ltr,
+  href,
+}: {
+  label: string;
+  value: string;
+  ltr?: boolean;
+  href?: string;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <span className="text-[var(--color-text-secondary)]">{label}</span>
-      <span className="num font-medium" dir={ltr ? "ltr" : undefined}>
-        {value}
-      </span>
+      {href ? (
+        <Link href={href} className="num font-medium hover:underline" dir={ltr ? "ltr" : undefined}>
+          {value}
+        </Link>
+      ) : (
+        <span className="num font-medium" dir={ltr ? "ltr" : undefined}>
+          {value}
+        </span>
+      )}
     </div>
   );
 }

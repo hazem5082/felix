@@ -1,6 +1,12 @@
-"use client";
-
-// VIN validation + decode. Two independent layers:
+// VIN validation + decode. No "use client"/"server-only" marker on
+// purpose: this runs in BOTH places. vehicle-form.tsx and
+// vin-redecode-button.tsx call it client-side for instant form autofill;
+// inventory/actions.ts calls it again server-side as the authoritative
+// source for the FraudRadar mismatch check (lib/vin-fraud-alert.ts) — a
+// client is never trusted to self-report what a VIN decoded to, since
+// that would let a manipulated request suppress its own fraud alert.
+//
+// Two independent layers:
 //
 //   1. CHECKSUM — the ISO 3779 / SAE J853 position-9 check digit, computed
 //      locally (no network call). This is a REAL algorithm, not a guess,

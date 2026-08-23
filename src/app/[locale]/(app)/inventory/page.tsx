@@ -60,6 +60,7 @@ export default async function InventoryPage() {
         vehicles={rows}
         branches={(branches as Branch[]) ?? []}
         showCost={showCost}
+        viewerBranchId={profile?.branch_id ?? null}
       />
     </div>
   );

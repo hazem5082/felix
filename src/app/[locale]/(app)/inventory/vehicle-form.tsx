@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,6 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
 
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [make, setMake] = useState("");
-  const [decodedMake, setDecodedMake] = useState("");
   const [model, setModel] = useState("");
   const [trim, setTrim] = useState("");
   const [color, setColor] = useState("");
@@ -144,9 +143,9 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
 
   // Decodes the VIN via NHTSA's free vPIC API (lib/vin-decode.ts) and
   // fills make/model/year/trim/origin plus the read-only decoded-details
-  // block. An explicit button, not an on-blur auto-trigger: the user
-  // asked for this once, on purpose, rather than firing a network call
-  // on every keystroke that happens to land on 17 characters.
+  // block. Called automatically (see the effect below) once the VIN is
+  // valid, and re-callable from the button for a manual retry — e.g. a
+  // first attempt that came back empty on a slow NHTSA response.
   async function handleDecodeVin() {
     const v = vin.trim();
     if (!v || vinInvalid) return;
@@ -159,10 +158,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         return;
       }
       if (result.year) setYear(result.year);
-      if (result.make) {
-        setMake(result.make);
-        setDecodedMake(result.make);
-      }
+      if (result.make) setMake(result.make);
       if (result.model) setModel(result.model);
       if (result.trim) setTrim(result.trim);
       if (result.countryOfOrigin) setOrigin(result.countryOfOrigin);
@@ -180,6 +176,27 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
       setDecoding(false);
     }
   }
+
+  // Automatic: fires once the VIN reaches a valid, complete 17-character
+  // format — not on every keystroke before that, and not re-fired for a
+  // VIN that hasn't actually changed since the last successful decode.
+  // The 400ms delay absorbs the last keystroke or two of a fast typist/
+  // paste so the field doesn't decode partway through being corrected.
+  // A hard security check for what this VIN actually belongs to still
+  // happens server-side, independently, at save (see createVehicle in
+  // actions.ts) — this is purely the convenience autofill.
+  const lastAutoDecodedVin = useRef<string | null>(null);
+  useEffect(() => {
+    const v = vin.trim();
+    if (!v || vinInvalid || v.length !== 17) return;
+    if (lastAutoDecodedVin.current === v) return;
+    const timer = setTimeout(() => {
+      lastAutoDecodedVin.current = v;
+      handleDecodeVin();
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vin, vinInvalid]);
 
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -281,8 +298,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         drive_type: driveType,
         doors,
         plant_country: plantCountry,
-        decoded_make: decodedMake,
-        locale,
+        locale: locale === "ar" ? "ar" : "en",
         features,
         item_code: itemCode,
         acquisition_type: mode,

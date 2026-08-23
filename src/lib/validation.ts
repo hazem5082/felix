@@ -82,22 +82,15 @@ export const VinSchema = z
   .toUpperCase()
   .regex(/^[A-HJ-NPR-Z0-9]{17}$/, { message: "VIN must be 17 characters (no I, O or Q)" });
 
-// Re-decode of an EXISTING vehicle's VIN (migration 0041) — the same
-// five fields CreateVehicleSchema accepts at intake, addressed at one
-// vehicle_id instead of bundled into a full intake payload.
+// Re-decode of an EXISTING vehicle's VIN (migration 0041) — fully
+// server-driven (see saveVinDecodedDetails in inventory/actions.ts):
+// the server reads the VIN off the vehicle row itself, decodes it, and
+// derives every saved field and the FraudRadar check from that. All the
+// client sends is which vehicle and which locale the "view it" email
+// link should use.
 export const RedecodeVehicleVinSchema = z.object({
   vehicle_id: Uuid,
-  body_type: z.string().trim().max(60),
-  engine_info: z.string().trim().max(120),
-  drive_type: z.string().trim().max(40),
-  doors: z.number().int().min(0).max(10).nullable(),
-  plant_country: z.string().trim().max(60),
-  // What the VIN decoded to, at the moment it was decoded — carried
-  // separately from `make` above because the user may have hand-edited
-  // the make field afterwards. Compared against the vehicle's actual
-  // make server-side to raise the FraudRadar alert (lib/vin-fraud-
-  // alert.ts) when they disagree. Blank when no decode ever ran.
-  decoded_make: z.string().trim().max(60),
+  locale: z.enum(["en", "ar"]),
 });
 
 export const EquitySplitSchema = z
@@ -163,12 +156,10 @@ export const CreateVehicleSchema = z.object({
   // (the notePoints treatment), because the last editor row legitimately
   // sits blank waiting to be typed into.
   country_of_origin: z.string().trim().max(60),
-  // What the VIN decoded to at the moment it was decoded, carried
-  // separately from `make` because the user may hand-edit the make
-  // field afterwards. Compared against the FINAL `make` server-side to
-  // raise the FraudRadar alert (lib/vin-fraud-alert.ts) on a mismatch.
-  // Blank when no decode ever ran, or the VIN field is empty.
-  decoded_make: z.string().trim().max(60),
+  // Which "view it" link the FraudRadar email should carry, if the VIN
+  // this car is saved under turns out to mismatch on a fully independent
+  // server-side re-decode (lib/vin-fraud-alert.ts) — not otherwise used.
+  locale: z.enum(["en", "ar"]),
   features: z
     .array(z.string())
     .max(50)

@@ -5,22 +5,31 @@ import { useTranslations, useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { decodeVin } from "@/lib/vin-decode";
 import { saveVinDecodedDetails } from "../actions";
 
 /**
- * Runs the VIN decode (lib/vin-decode.ts) against a vehicle ALREADY in
- * stock and saves the result via the column-limited grant 0041 opened.
- * createVehicle() only ever decodes at intake — every car taken in
+ * Re-decodes a vehicle ALREADY in stock — the retrofit path 0041 opened.
+ * createVehicle() only ever decodes at intake; every car taken in
  * before this feature existed has a VIN but no decoded details, and
  * without this button there is no screen where that gap could ever be
- * closed. Safe to press more than once: NHTSA coverage can improve, and
- * a first attempt that came back empty is worth retrying later.
+ * closed.
+ *
+ * Fully server-driven (see saveVinDecodedDetails in ../actions.ts): this
+ * component sends only the vehicle id and the viewer's own locale (for
+ * the FraudRadar email's "view it" link, if this VIN turns out to
+ * mismatch). The decode, what gets saved, and the fraud check all run
+ * server-side off the VIN actually on record — never off anything
+ * decoded in this browser tab.
+ *
+ * Deliberately still a manual, one-click action rather than something
+ * that runs automatically when the page loads: re-running it on every
+ * view of a car that stays mismatched would re-send the CEO the same
+ * FraudRadar email every time anyone opened it.
  */
-export function VinRedecodeButton({ vehicleId, vin }: { vehicleId: string; vin: string }) {
-  const locale = useLocale();
+export function VinRedecodeButton({ vehicleId }: { vehicleId: string }) {
   const t = useTranslations("inventory");
   const common = useTranslations("common");
+  const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [note, setNote] = useState<{ kind: "empty" | "error"; message: string } | null>(null);
@@ -28,21 +37,7 @@ export function VinRedecodeButton({ vehicleId, vin }: { vehicleId: string; vin: 
   function handleClick() {
     setNote(null);
     startTransition(async () => {
-      const result = await decodeVin(vin);
-      if (!result || !result.decoded) {
-        setNote({ kind: "empty", message: t("vinDecodeEmpty") });
-        return;
-      }
-      const res = await saveVinDecodedDetails({
-        vehicle_id: vehicleId,
-        body_type: result.bodyType ?? "",
-        engine_info: result.engineInfo ?? "",
-        drive_type: result.driveType ?? "",
-        doors: result.doors,
-        plant_country: result.countryOfOrigin ?? "",
-        decoded_make: result.make ?? "",
-        locale,
-      });
+      const res = await saveVinDecodedDetails({ vehicle_id: vehicleId, locale: locale === "ar" ? "ar" : "en" });
       if ("error" in res) {
         setNote({ kind: "error", message: res.error });
         return;

@@ -37,6 +37,7 @@ export function InventoryBrowser({
   vehicles,
   branches,
   showCost,
+  viewerBranchId,
 }: {
   vehicles: Vehicle[];
   branches: Branch[];
@@ -47,6 +48,15 @@ export function InventoryBrowser({
    * anything the RLS-fetched rows don't already carry.
    */
   showCost: boolean;
+  /**
+   * The viewer's own home branch (0043) — null for an org-wide role
+   * (CEO, accountant, marketing, investor), which has no "home" to
+   * contrast against. Sales now reads every branch's stock, not just
+   * their own; this is what lets the browser colour-code a car at
+   * another branch instead of presenting the whole floor as one
+   * undifferentiated list.
+   */
+  viewerBranchId: string | null;
 }) {
   const t = useTranslations("inventory");
   const common = useTranslations("common");
@@ -55,7 +65,10 @@ export function InventoryBrowser({
   const locale = useLocale();
 
   const [view, setView] = useState<ViewMode>("grid");
-  const [status, setStatus] = useState<StatusFilter>("all");
+  // Opens on what's actually on the floor — a sold car is history, not
+  // something most visits to this page are about — while "All" and
+  // "Sold" stay one tap away in the status tabs.
+  const [status, setStatus] = useState<StatusFilter>("in_stock");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [year, setYear] = useState("");
@@ -164,6 +177,17 @@ export function InventoryBrowser({
     setColor("");
     setBranchId("");
     setQ("");
+  }
+
+  // Cross-branch colour coding (0043). Only meaningful for a
+  // branch-scoped viewer — an org-wide role has no "home" branch to
+  // contrast against, so every car reads the same to them regardless.
+  const branchNameById = useMemo(
+    () => new Map(branches.map((b) => [b.id, b.name])),
+    [branches]
+  );
+  function isOtherBranch(v: Vehicle): boolean {
+    return viewerBranchId != null && v.branch_id !== viewerBranchId;
   }
 
   // How the showroom came to have a car (0032). Null for a purchase:
@@ -354,6 +378,8 @@ export function InventoryBrowser({
               acquisitionText={acquisitionLabel(v)}
               colorText={colorLabel(colors, v.color)}
               showCost={showCost}
+              branchName={branchNameById.get(v.branch_id) ?? null}
+              isOtherBranch={isOtherBranch(v)}
             />
           ))}
         </div>
@@ -367,6 +393,10 @@ export function InventoryBrowser({
                 hidden below md purely to keep the mobile table from needing
                 a 2×-width horizontal scroll to reach price/status. */}
             <Th className="hidden px-2 md:table-cell md:px-4">{t("trim")}</Th>
+            {/* Only worth a column once there is more than one branch to
+                tell apart (0043) — same condition the branch FILTER
+                dropdown above already uses. */}
+            {branches.length > 1 && <Th className="px-2 md:px-4">{t("branch")}</Th>}
             <Th className="hidden px-2 md:table-cell md:px-4">{t("odometer")}</Th>
             {showCost && <Th className="hidden px-2 md:table-cell md:px-4">{t("purchasePrice")}</Th>}
             <Th className="px-2 md:px-4">{t("stickerPrice")}</Th>
@@ -402,6 +432,21 @@ export function InventoryBrowser({
                   </div>
                 </Td>
                 <Td className="hidden px-2 text-[var(--color-text-muted)] md:table-cell md:px-4">{v.trim || "—"}</Td>
+                {branches.length > 1 && (
+                  <Td className="px-2 md:px-4">
+                    {/* Plain text for the viewer's own branch (the
+                        unremarkable case) — a pill only for a car sitting
+                        somewhere else, the one worth a salesperson's
+                        second look before promising it to a walk-in. */}
+                    {isOtherBranch(v) ? (
+                      <StatusPill label={branchNameById.get(v.branch_id) ?? "—"} tone="amber" />
+                    ) : (
+                      <span className="text-[var(--color-text-muted)]">
+                        {branchNameById.get(v.branch_id) ?? "—"}
+                      </span>
+                    )}
+                  </Td>
+                )}
                 <Td className="num hidden px-2 text-[var(--color-text-muted)] md:table-cell md:px-4">{formatOdometer(v.odometer_km, locale)}</Td>
                 {showCost && (
                   <Td className="num hidden px-2 md:table-cell md:px-4">
@@ -465,6 +510,8 @@ function VehicleCard({
   acquisitionText,
   colorText,
   showCost,
+  branchName,
+  isOtherBranch,
 }: {
   v: Vehicle;
   statusText: string;
@@ -472,6 +519,10 @@ function VehicleCard({
   acquisitionText: string | null;
   colorText: string | null;
   showCost: boolean;
+  /** This car's branch name, for the cross-branch badge below (0043). */
+  branchName: string | null;
+  /** True when this car is NOT at the viewer's own home branch. */
+  isOtherBranch: boolean;
 }) {
   const locale = useLocale();
   const swatch = v.color ? colorSwatch(v.color) : undefined;
@@ -513,6 +564,14 @@ function VehicleCard({
       {/* Always visible on touch (below md there is no :hover to reveal
           it), revealed on hover/focus once there is a pointer for that. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-0 bg-gradient-to-t from-black/92 via-black/70 to-transparent p-3 opacity-100 transition-all duration-200 md:translate-y-2 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-focus-within:translate-y-0 md:group-focus-within:opacity-100">
+        {/* Cross-branch colour coding (0043) — only ever rendered for a
+            car sitting somewhere other than the viewer's own branch, so
+            the ordinary case (your own floor) stays uncluttered. */}
+        {isOtherBranch && branchName && (
+          <div className="mb-1.5">
+            <StatusPill label={branchName} tone="amber" />
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <BrandMark make={v.make} size={15} />
           <p className="truncate text-xs font-medium text-white">

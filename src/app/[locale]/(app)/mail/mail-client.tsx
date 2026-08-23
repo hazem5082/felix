@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Mail, Paperclip, Send, X } from "lucide-react";
+import { ArrowLeft, Mail, Paperclip, Send, ShieldAlert, X } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -159,13 +159,24 @@ export function MailClient({ sent, received, attachments, colleagues, ownProfile
                       aria-current={active ? "true" : undefined}
                       className={cn(
                         "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
-                        active ? "bg-[var(--color-accent-dim)]" : "hover:bg-black/[0.02]"
+                        active
+                          ? "bg-[var(--color-accent-dim)]"
+                          // A system row keeps its tint even unselected —
+                          // "different background than any other email"
+                          // is the whole point, not just on hover.
+                          : m.is_system
+                            ? "bg-[var(--color-accent-red-dim)]/40 hover:bg-[var(--color-accent-red-dim)]/60"
+                            : "hover:bg-black/[0.02]"
                       )}
                     >
-                      <Mail
-                        size={15}
-                        className={unread ? "mt-0.5 text-[var(--color-accent)]" : "mt-0.5 text-[var(--color-text-faint)]"}
-                      />
+                      {m.is_system ? (
+                        <ShieldAlert size={15} className="mt-0.5 shrink-0 text-[var(--color-accent-red)]" />
+                      ) : (
+                        <Mail
+                          size={15}
+                          className={unread ? "mt-0.5 shrink-0 text-[var(--color-accent)]" : "mt-0.5 shrink-0 text-[var(--color-text-faint)]"}
+                        />
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-2">
                           <p className={`truncate text-sm ${unread ? "font-semibold text-[var(--color-text)]" : "text-[var(--color-text)]"}`}>
@@ -249,6 +260,15 @@ function MessageDetail({
   const [previewing, setPreviewing] = useState<MailAttachment | null>(null);
   return (
     <Panel className="flex h-full flex-col overflow-hidden">
+      {/* System messages only (0042) — FraudRadar's is the first. A
+          fixed banner, not just the list row's tint, so the distinction
+          survives into the reading pane too. */}
+      {message.is_system && (
+        <div className="mb-3 flex shrink-0 items-center gap-2 rounded-md border border-[var(--color-accent-red)]/30 bg-[var(--color-accent-red-dim)] px-3 py-2 text-xs font-semibold text-[var(--color-accent-red)]">
+          <ShieldAlert size={14} />
+          {t("systemAlert")}
+        </div>
+      )}
       <div className="mb-3 flex items-start justify-between gap-3 border-b border-[var(--color-border)] pb-3">
         <div className="flex min-w-0 items-start gap-2">
           {/* Below lg the list is hidden while a message is open, so this
@@ -288,13 +308,25 @@ function MessageDetail({
         </button>
       </div>
 
-      {/* body_html is a stranger's markup for an inbound message. Never
-          rendered as HTML — the plain-text side is always what shows,
-          same rule the 508.world Agent Portal's mail.js documents. */}
+      {/* body_html is a stranger's markup for every ORDINARY message —
+          composed by a colleague or received from outside FELIX — and is
+          never rendered as HTML for those; the plain-text side is always
+          what shows, same rule the 508.world Agent Portal's mail.js
+          documents. A system message is the one exception: its
+          is_system flag can only ever be set by service_role (0042's
+          grant, not RLS, is what guarantees that — see the migration
+          header), so its body_html is FELIX's own template, not a
+          stranger's markup, and rendering it is what makes the "view
+          this vehicle" button inside it an actual clickable button
+          rather than a bare URL in a wall of plain text. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text)]">
-          {message.body_text || message.snippet}
-        </p>
+        {message.is_system && message.body_html ? (
+          <div dangerouslySetInnerHTML={{ __html: message.body_html }} />
+        ) : (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text)]">
+            {message.body_text || message.snippet}
+          </p>
+        )}
       </div>
 
       {attachments.length > 0 && (
