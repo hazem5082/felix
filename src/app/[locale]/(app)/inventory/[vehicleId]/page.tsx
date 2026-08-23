@@ -21,6 +21,7 @@ import { ExpenseFormDialog } from "./expense-form";
 import { TransferPanel } from "./transfer-dialog";
 import { PricingDialog } from "../pricing-form";
 import { PriceHistoryCard } from "./price-history-card";
+import { PhotoGallery } from "./photo-gallery";
 import { colorLabel } from "@/lib/vehicle-color";
 import { originLabel } from "@/lib/vehicle-origin";
 import { flagForOrigin } from "@/lib/country-flag";
@@ -237,11 +238,8 @@ export default async function VehicleDetailPage({
           )}
 
           {v.photos?.length > 0 && (
-            <div className="mt-4 flex gap-2 overflow-x-auto">
-              {v.photos.map((p) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={p} src={p} alt="" className="h-24 w-32 shrink-0 rounded-lg object-cover" />
-              ))}
+            <div className="mt-4">
+              <PhotoGallery photos={v.photos} thumbClassName="h-24 w-32 shrink-0 rounded-lg" />
             </div>
           )}
 
@@ -250,12 +248,7 @@ export default async function VehicleDetailPage({
               <p className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
                 {t("inspectionPhotos")}
               </p>
-              <div className="flex gap-2 overflow-x-auto">
-                {v.inspection_photos.map((p) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={p} src={p} alt="" className="h-20 w-28 shrink-0 rounded-lg object-cover" />
-                ))}
-              </div>
+              <PhotoGallery photos={v.inspection_photos} thumbClassName="h-20 w-28 shrink-0 rounded-lg" />
             </div>
           )}
         </Panel>
