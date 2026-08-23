@@ -22,6 +22,7 @@ import { TransferPanel } from "./transfer-dialog";
 import { PricingDialog } from "../pricing-form";
 import { PriceHistoryCard } from "./price-history-card";
 import { PhotoGallery } from "./photo-gallery";
+import { VinRedecodeButton } from "./vin-redecode-button";
 import { colorLabel } from "@/lib/vehicle-color";
 import { originLabel } from "@/lib/vehicle-origin";
 import { flagForOrigin } from "@/lib/country-flag";
@@ -100,10 +101,14 @@ export default async function VehicleDetailPage({
     ? await supabase.from("branches").select("*").eq("id", (branch as { branch_id: string }).branch_id).maybeSingle()
     : { data: null };
 
-  const canManageExpenses = profile && ["ceo", "accountant", "branch_manager"].includes(profile.role);
+  // Gated inside the showCost-only Expenses panel below, so a branch
+  // manager (no longer cost-visible) never reaches this even though the
+  // server action still authorizes them — the button just isn't offered.
+  const canManageExpenses = profile && ["ceo", "accountant"].includes(profile.role);
   const isCeo = profile?.role === "ceo";
-  // Cost, expenses and the funding structure are management's numbers
-  // (0028): sales and marketing see the sticker price and lowest offer.
+  // Cost, expenses and the funding structure are the CEO/accountant/
+  // investor's numbers: everyone else — sales, marketing and branch
+  // managers — sees the sticker price and the optional lowest offer only.
   const showCost = canSeeCost(profile);
   const canPrice = profile && ["ceo", "branch_manager"].includes(profile.role);
   // 0032. A consigned car belongs to somebody else: it has no cost, no
@@ -272,10 +277,16 @@ export default async function VehicleDetailPage({
             )}
           </p>
           <div className="mt-3 space-y-1 text-xs text-[var(--color-text-muted)]">
-            <div className="flex justify-between">
-              <span>{t("lowestOffer")}</span>
-              <span className="num">{v.min_price != null ? formatMoney(v.min_price, locale) : "—"}</span>
-            </div>
+            {/* Optional, and genuinely absent rather than shown as a dash
+                when nobody has set a floor yet — a management-only figure
+                pretending to be "no offer yet" would mislead the sales
+                floor, who read this as the number they may not undercut. */}
+            {v.min_price != null && (
+              <div className="flex justify-between">
+                <span>{t("lowestOffer")}</span>
+                <span className="num">{formatMoney(v.min_price, locale)}</span>
+              </div>
+            )}
             {showCost && (
               <>
                 <div className="flex justify-between">
@@ -346,6 +357,11 @@ export default async function VehicleDetailPage({
                 against the portal. */}
             <div className="flex justify-between gap-3"><span>{t("itemCode")}</span><span className="font-mono" dir="ltr">{v.item_code ?? "—"}</span></div>
           </div>
+
+          {/* Retrofit path for every car intaken before the VIN decoder
+              existed (0041) — canPrice is the same CEO/branch-manager
+              audience the server action itself re-checks. */}
+          {canPrice && v.vin && <VinRedecodeButton vehicleId={v.id} vin={v.vin} />}
 
           {/* Self-contained (0036) — the only insertion point this
               migration makes on this page beyond the facts block above. */}

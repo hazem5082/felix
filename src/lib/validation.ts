@@ -82,6 +82,18 @@ export const VinSchema = z
   .toUpperCase()
   .regex(/^[A-HJ-NPR-Z0-9]{17}$/, { message: "VIN must be 17 characters (no I, O or Q)" });
 
+// Re-decode of an EXISTING vehicle's VIN (migration 0041) — the same
+// five fields CreateVehicleSchema accepts at intake, addressed at one
+// vehicle_id instead of bundled into a full intake payload.
+export const RedecodeVehicleVinSchema = z.object({
+  vehicle_id: Uuid,
+  body_type: z.string().trim().max(60),
+  engine_info: z.string().trim().max(120),
+  drive_type: z.string().trim().max(40),
+  doors: z.number().int().min(0).max(10).nullable(),
+  plant_country: z.string().trim().max(60),
+});
+
 export const EquitySplitSchema = z
   .object({
     holder_type: z.enum(["ceo", "investor"]),

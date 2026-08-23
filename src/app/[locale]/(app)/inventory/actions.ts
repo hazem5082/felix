@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { authorize, assertBranch, INTAKE_ROLES, EXPENSE_ROLES } from "@/lib/auth";
-import { AddExpenseSchema, CreateVehicleSchema, SetVehiclePricesSchema, parseInput } from "@/lib/validation";
+import {
+  AddExpenseSchema,
+  CreateVehicleSchema,
+  RedecodeVehicleVinSchema,
+  SetVehiclePricesSchema,
+  parseInput,
+} from "@/lib/validation";
 import { toUserError } from "@/lib/db-error";
 
 export interface EquitySplitInput {
@@ -169,6 +175,58 @@ export async function setVehiclePrices(input: {
   if (error) return toUserError(error);
 
   revalidatePath("/[locale]/(app)/inventory", "page");
+  revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
+  return { ok: true };
+}
+
+/**
+ * Re-decodes an EXISTING vehicle's VIN — the retrofit path 0041 opened.
+ * createVehicle() sets body_type/engine_info/drive_type/doors/
+ * plant_country once, at intake; this is the only way any car intaken
+ * before that feature existed (which is every car already in stock) can
+ * ever get them. Column-limited UPDATE grant (0041) + vehicles_update's
+ * existing row policy (CEO, or a manager on their own branch) — same
+ * shape as setVehiclePrices() above, no RPC ceremony.
+ */
+export async function saveVinDecodedDetails(input: {
+  vehicle_id: string;
+  body_type: string;
+  engine_info: string;
+  drive_type: string;
+  doors: number | null;
+  plant_country: string;
+}) {
+  const auth = await authorize(INTAKE_ROLES);
+  if (!auth.ok) return auth.error;
+
+  const parsed = parseInput(RedecodeVehicleVinSchema, input);
+  if (!parsed.ok) return parsed.error;
+
+  const supabase = await createClient();
+
+  const { data: vehicle } = await supabase
+    .from("vehicles")
+    .select("id, branch_id")
+    .eq("id", parsed.data.vehicle_id)
+    .maybeSingle();
+  const v = vehicle as { id: string; branch_id: string } | null;
+  if (!v) return { error: "Unknown vehicle." };
+
+  const branchError = await assertBranch(auth.profile, v.branch_id);
+  if (branchError) return branchError;
+
+  const { error } = await supabase
+    .from("vehicles")
+    .update({
+      body_type: parsed.data.body_type || null,
+      engine_info: parsed.data.engine_info || null,
+      drive_type: parsed.data.drive_type || null,
+      doors: parsed.data.doors,
+      plant_country: parsed.data.plant_country || null,
+    })
+    .eq("id", parsed.data.vehicle_id);
+  if (error) return toUserError(error);
+
   revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
   return { ok: true };
 }

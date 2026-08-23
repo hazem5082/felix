@@ -55,7 +55,10 @@ const NAV_BY_ROLE: Record<Role, NavItem["key"][]> = {
   ceo: ["ceoDashboard", "inventory", "crm", "deals", "marketing", "accountant", "calendar", "employees", "attendance", "mail", "support", "account"],
   branch_manager: ["inventory", "crm", "deals", "calendar", "attendance", "mail", "support", "account"],
   accountant: ["accountant", "inventory", "deals", "calendar", "attendance", "mail", "support", "account"],
-  sales_exec: ["crm", "deals", "calendar", "attendance", "mail", "support", "account"],
+  // Sales sees the floor (sticker + optional lowest-offer price only —
+  // cost is redacted, see canSeeCost) so they know what is in stock
+  // without ever reading what it cost the showroom.
+  sales_exec: ["inventory", "crm", "deals", "calendar", "attendance", "mail", "support", "account"],
   investor: ["investor", "calendar", "mail", "support", "account"],
   // Marketing lists stock across channels: their workspace, the inventory
   // they advertise (cost hidden — 0028), and the tabs everyone carries.

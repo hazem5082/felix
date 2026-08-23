@@ -246,11 +246,12 @@ export async function assertBranch(
 
 /**
  * Who may see what a car COST the showroom (and the expenses/equity/
- * profit figures that derive from it). No showroom shows its cost to
- * the sales floor: sales and marketing work with asking_price and
- * min_price (0028) and nothing else.
+ * profit figures that derive from it). Purchase price is restricted to
+ * the CEO, the accountant and investors — everyone else, branch
+ * managers included, works with asking_price and the optional min_price
+ * and nothing else.
  */
-export const COST_ROLES: Role[] = ["ceo", "accountant", "branch_manager", "investor"];
+export const COST_ROLES: Role[] = ["ceo", "accountant", "investor"];
 export function canSeeCost(profile: Profile | null): boolean {
   return !!profile && COST_ROLES.includes(profile.role);
 }
