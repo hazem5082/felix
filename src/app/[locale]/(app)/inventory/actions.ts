@@ -11,6 +11,9 @@ import {
   parseInput,
 } from "@/lib/validation";
 import { toUserError } from "@/lib/db-error";
+import { getTenant } from "@/lib/tenant";
+import { vinMakeMismatch } from "@/lib/vin-match";
+import { sendSuspiciousVinAlert } from "@/lib/vin-fraud-alert";
 
 export interface EquitySplitInput {
   holder_type: "ceo" | "investor";
@@ -42,6 +45,9 @@ export async function createVehicle(input: {
   drive_type: string;
   doors: number | null;
   plant_country: string;
+  // What the VIN decoded to, at decode time — see FraudRadar note below.
+  decoded_make: string;
+  locale: string;
   features: string[];
   item_code: string;
   // How the showroom came to have this car (0032). 'trade_in' is not
@@ -116,6 +122,38 @@ export async function createVehicle(input: {
   });
 
   if (error) return toUserError(error);
+
+  // FraudRadar (0041-era feature): the VIN this car was decoded under
+  // named a different manufacturer than what actually got saved as its
+  // make — whether because the intake clerk overrode the auto-filled
+  // value or typed a make before ever running the decode. Either way
+  // the chassis number and the paperwork disagree, which is worth the
+  // CEO's attention before the car is ever offered for sale. Fired
+  // AFTER the insert succeeds, off the real vehicle id, and never
+  // allowed to fail the intake itself — a mail outage must not block a
+  // car from being taken into stock.
+  if (parsed.data.decoded_make && vinMakeMismatch(parsed.data.decoded_make, parsed.data.make)) {
+    const tenant = await getTenant();
+    if (tenant) {
+      // Awaited, not fire-and-forget: this app runs on Workers via
+      // OpenNext, where a promise left running after the action returns
+      // is not guaranteed to finish. This only executes on the rare
+      // mismatch path, so the extra latency here is not felt on an
+      // ordinary intake. Failure is logged, never surfaced to the
+      // clerk — a mail outage must not block a car from being taken in.
+      await sendSuspiciousVinAlert({
+        schemaName: tenant.schema_name,
+        tenantSlug: tenant.slug,
+        vehicleId: data as string,
+        vin: parsed.data.vin,
+        recordedMake: parsed.data.make,
+        recordedModel: parsed.data.model,
+        decodedMake: parsed.data.decoded_make,
+        decodedModel: null,
+        locale: input.locale === "ar" ? "ar" : "en",
+      }).catch((err) => console.error("[inventory] FraudRadar alert failed", err));
+    }
+  }
 
   // The intake RPC stays at 17 arguments (0028's header): sticker/min
   // price ride the column-limited UPDATE grant instead. Not atomic with
@@ -195,6 +233,8 @@ export async function saveVinDecodedDetails(input: {
   drive_type: string;
   doors: number | null;
   plant_country: string;
+  decoded_make: string;
+  locale: string;
 }) {
   const auth = await authorize(INTAKE_ROLES);
   if (!auth.ok) return auth.error;
@@ -206,10 +246,10 @@ export async function saveVinDecodedDetails(input: {
 
   const { data: vehicle } = await supabase
     .from("vehicles")
-    .select("id, branch_id")
+    .select("id, branch_id, make, model, vin")
     .eq("id", parsed.data.vehicle_id)
     .maybeSingle();
-  const v = vehicle as { id: string; branch_id: string } | null;
+  const v = vehicle as { id: string; branch_id: string; make: string; model: string; vin: string | null } | null;
   if (!v) return { error: "Unknown vehicle." };
 
   const branchError = await assertBranch(auth.profile, v.branch_id);
@@ -226,6 +266,26 @@ export async function saveVinDecodedDetails(input: {
     })
     .eq("id", parsed.data.vehicle_id);
   if (error) return toUserError(error);
+
+  // FraudRadar — see the identical note in createVehicle() above. Here
+  // the comparison is against the make already on record, since a
+  // re-decode never touches make/model itself.
+  if (input.decoded_make && vinMakeMismatch(input.decoded_make, v.make)) {
+    const tenant = await getTenant();
+    if (tenant) {
+      await sendSuspiciousVinAlert({
+        schemaName: tenant.schema_name,
+        tenantSlug: tenant.slug,
+        vehicleId: v.id,
+        vin: v.vin ?? "",
+        recordedMake: v.make,
+        recordedModel: v.model,
+        decodedMake: input.decoded_make,
+        decodedModel: null,
+        locale: input.locale === "ar" ? "ar" : "en",
+      }).catch((err) => console.error("[inventory] FraudRadar alert failed", err));
+    }
+  }
 
   revalidatePath("/[locale]/(app)/inventory/[vehicleId]", "page");
   return { ok: true };

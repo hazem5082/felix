@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { saveVinDecodedDetails } from "../actions";
  * a first attempt that came back empty is worth retrying later.
  */
 export function VinRedecodeButton({ vehicleId, vin }: { vehicleId: string; vin: string }) {
+  const locale = useLocale();
   const t = useTranslations("inventory");
   const common = useTranslations("common");
   const router = useRouter();
@@ -39,6 +40,8 @@ export function VinRedecodeButton({ vehicleId, vin }: { vehicleId: string; vin: 
         drive_type: result.driveType ?? "",
         doors: result.doors,
         plant_country: result.countryOfOrigin ?? "",
+        decoded_make: result.make ?? "",
+        locale,
       });
       if ("error" in res) {
         setNote({ kind: "error", message: res.error });

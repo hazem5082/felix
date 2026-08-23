@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
@@ -24,6 +24,7 @@ interface SplitRow {
 }
 
 export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
+  const locale = useLocale();
   const t = useTranslations("inventory");
   const common = useTranslations("common");
   const misc = useTranslations("misc");
@@ -40,6 +41,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
 
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [make, setMake] = useState("");
+  const [decodedMake, setDecodedMake] = useState("");
   const [model, setModel] = useState("");
   const [trim, setTrim] = useState("");
   const [color, setColor] = useState("");
@@ -157,7 +159,10 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         return;
       }
       if (result.year) setYear(result.year);
-      if (result.make) setMake(result.make);
+      if (result.make) {
+        setMake(result.make);
+        setDecodedMake(result.make);
+      }
       if (result.model) setModel(result.model);
       if (result.trim) setTrim(result.trim);
       if (result.countryOfOrigin) setOrigin(result.countryOfOrigin);
@@ -276,6 +281,8 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
         drive_type: driveType,
         doors,
         plant_country: plantCountry,
+        decoded_make: decodedMake,
+        locale,
         features,
         item_code: itemCode,
         acquisition_type: mode,

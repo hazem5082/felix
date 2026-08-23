@@ -92,6 +92,12 @@ export const RedecodeVehicleVinSchema = z.object({
   drive_type: z.string().trim().max(40),
   doors: z.number().int().min(0).max(10).nullable(),
   plant_country: z.string().trim().max(60),
+  // What the VIN decoded to, at the moment it was decoded — carried
+  // separately from `make` above because the user may have hand-edited
+  // the make field afterwards. Compared against the vehicle's actual
+  // make server-side to raise the FraudRadar alert (lib/vin-fraud-
+  // alert.ts) when they disagree. Blank when no decode ever ran.
+  decoded_make: z.string().trim().max(60),
 });
 
 export const EquitySplitSchema = z
@@ -157,6 +163,12 @@ export const CreateVehicleSchema = z.object({
   // (the notePoints treatment), because the last editor row legitimately
   // sits blank waiting to be typed into.
   country_of_origin: z.string().trim().max(60),
+  // What the VIN decoded to at the moment it was decoded, carried
+  // separately from `make` because the user may hand-edit the make
+  // field afterwards. Compared against the FINAL `make` server-side to
+  // raise the FraudRadar alert (lib/vin-fraud-alert.ts) on a mismatch.
+  // Blank when no decode ever ran, or the VIN field is empty.
+  decoded_make: z.string().trim().max(60),
   features: z
     .array(z.string())
     .max(50)
