@@ -11,7 +11,8 @@ export type UploadFolder =
   | "financing-contracts"
   | "avatars"
   | "financing-requests"
-  | "mail";
+  | "mail"
+  | "branding";
 
 /**
  * Who may write into each prefix. Previously any authenticated user — an
@@ -26,6 +27,10 @@ export const FOLDER_ROLES: Record<UploadFolder, Role[]> = {
   // Mail is generic comms, unlike every other folder here — every role
   // that can sign in may attach a file to a message.
   mail: ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing"],
+  // The company logo on every printed contract, report and sticker
+  // (0046). CEO only — this is the letterhead the whole group signs
+  // under, not a per-user asset.
+  branding: ["ceo"],
 };
 
 /**

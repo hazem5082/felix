@@ -8,7 +8,7 @@ import { colorLabel } from "@/lib/vehicle-color";
 import { originLabel } from "@/lib/vehicle-origin";
 import type { DealTicket, Vehicle } from "@/lib/supabase/types";
 import { PrintToolbar } from "../../print-toolbar";
-import { DocFooter, DocHeader } from "../../doc-chrome";
+import { DocFooter, DocHeader, getCompanySettings } from "../../doc-chrome";
 
 /**
  * The CPA windshield sticker — Consumer Protection Agency Decision
@@ -50,6 +50,9 @@ export default async function StickerPrintPage({
 
   const supabase = await createClient();
   const tenant = await getTenant();
+  // The showroom's own letterhead (0046) — null until a CEO saves one,
+  // in which case DocHeader falls back to the tenant name as before.
+  const company = await getCompanySettings();
 
   const [{ data: vehicleRow }, { data: ticketRow }] = await Promise.all([
     supabase.from("vehicles").select("*").eq("id", vehicleId).maybeSingle(),
@@ -97,6 +100,7 @@ export default async function StickerPrintPage({
       <PrintToolbar />
 
       <DocHeader
+        company={company}
         showroomName={tenant?.name ?? "FELIX"}
         docTitle={`${ar("title")} — ${en("title")}`}
         meta={

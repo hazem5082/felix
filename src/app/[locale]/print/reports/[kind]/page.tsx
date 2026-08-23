@@ -23,7 +23,7 @@ import {
   type AttendanceEvent,
 } from "@/lib/attendance";
 import { PrintToolbar } from "../../print-toolbar";
-import { DocFooter, DocHeader } from "../../doc-chrome";
+import { DocFooter, DocHeader, getCompanySettings } from "../../doc-chrome";
 
 /**
  * The report suite: /print/reports/<kind>?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -65,6 +65,9 @@ export default async function ReportPage({
   const fmt = await getFormatter();
   const supabase = await createClient();
   const tenant = await getTenant();
+  // The showroom's own letterhead (0046) — null until a CEO saves one,
+  // in which case DocHeader falls back to the tenant name as before.
+  const company = await getCompanySettings();
 
   const sp = await searchParams;
   // The launcher sends the viewer's UTC offset so a "July" report means
@@ -88,6 +91,7 @@ export default async function ReportPage({
 
   const header = (
     <DocHeader
+      company={company}
       showroomName={tenant?.name ?? "FELIX"}
       docTitle={t(`title_${kind}`)}
       meta={

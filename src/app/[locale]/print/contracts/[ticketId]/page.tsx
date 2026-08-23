@@ -13,7 +13,7 @@ import type {
   Vehicle,
 } from "@/lib/supabase/types";
 import { PrintToolbar } from "../../print-toolbar";
-import { DocFooter, DocHeader } from "../../doc-chrome";
+import { DocFooter, DocHeader, getCompanySettings } from "../../doc-chrome";
 
 /**
  * The sale contract as a printable document. The browser's own
@@ -41,6 +41,9 @@ export default async function ContractPrintPage({
   const fmt = await getFormatter();
   const supabase = await createClient();
   const tenant = await getTenant();
+  // The showroom's own letterhead (0046) — null until a CEO saves one,
+  // in which case DocHeader falls back to the tenant name as before.
+  const company = await getCompanySettings();
 
   const { data: ticketRow } = await supabase
     .from("deal_tickets")
@@ -92,6 +95,7 @@ export default async function ContractPrintPage({
       )}
 
       <DocHeader
+        company={company}
         showroomName={tenant?.name ?? "FELIX"}
         docTitle={
           branch

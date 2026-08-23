@@ -882,7 +882,22 @@
     "changeSignInEmail": "Change sign-in email",
     "signInEmailHint": "This is the address you sign in with, and where account codes are sent. Changing it needs your current password.",
     "newEmail": "New email address",
-    "emailChanged": "Sign-in email updated."
+    "emailChanged": "Sign-in email updated.",
+    "companyTitle": "Company Profile",
+    "companySubtitle": "Your legal name, logo and tax numbers — printed on every contract, report and windshield sticker.",
+    "companyLegalName": "Legal Company Name",
+    "companyLegalNameHint": "The entity that signs contracts, exactly as registered.",
+    "companyTradeName": "Trade Name",
+    "companyTaxId": "Tax Registration No.",
+    "companyCommercialReg": "Commercial Registration No.",
+    "companyAddress": "Address",
+    "companyPhone": "Phone",
+    "companyEmail": "Email",
+    "companyLogo": "Company logo",
+    "companyNoLogo": "No logo yet",
+    "companyUploadLogo": "Upload logo",
+    "companyLogoHint": "A wide, transparent PNG prints best. It replaces the FELIX mark on your documents.",
+    "companyLogoNotImage": "The logo must be an image file."
   },
   "colors": {
     "white": "White",

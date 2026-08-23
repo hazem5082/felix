@@ -255,6 +255,33 @@ export interface MailMessage {
   is_system: boolean;
 }
 
+/**
+ * The company that owns this showroom group — its legal identity, its
+ * letterhead and its tax numbers (migration 0046). Exactly ONE row per
+ * tenant schema, enforced by a unique singleton column.
+ *
+ * Every field is nullable and the ROW ITSELF may be absent: the tenant
+ * template is pure DDL and cannot seed it, so it comes into existence
+ * the first time a CEO saves the form. Readers fall back to the tenant
+ * name from platform.tenants until then.
+ *
+ * Distinct from branches.tax_registration_no (0022), which is the
+ * per-branch e-invoice seller identity. This is the level above it.
+ */
+export interface CompanySettings {
+  id: string;
+  legal_name: string | null;
+  trade_name: string | null;
+  logo_url: string | null;
+  tax_id: string | null;
+  commercial_registration: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
 export interface MailRecipient {
   id: string;
   message_id: string;

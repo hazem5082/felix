@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { AccountForms } from "./account-forms";
+import type { CompanySettings } from "@/lib/supabase/types";
 
 export default async function AccountPage({
   params,
@@ -18,6 +19,17 @@ export default async function AccountPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // The company letterhead (0046). Read for the CEO only, because only
+  // the CEO gets the panel that edits it — everyone else has no use for
+  // the row on this page. maybeSingle() and a null result are the
+  // ORDINARY case, not an error: the tenant template is pure DDL and
+  // cannot seed the row, so it does not exist until a CEO first saves.
+  const isCeo = profile.role === "ceo";
+  const { data: companyRow } = isCeo
+    ? await supabase.from("company_settings").select("*").maybeSingle()
+    : { data: null };
+  const company = companyRow as CompanySettings | null;
 
   return (
     <div className="space-y-6">
@@ -46,6 +58,8 @@ export default async function AccountPage({
         signInEmail={user?.email ?? ""}
         notificationEmail={profile.notification_email}
         whatsappNumber={profile.whatsapp_number}
+        isCeo={isCeo}
+        company={company}
       />
     </div>
   );

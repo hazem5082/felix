@@ -93,6 +93,23 @@ export const RedecodeVehicleVinSchema = z.object({
   locale: z.enum(["en", "ar"]),
 });
 
+// The company profile a CEO edits on the Account page (migration 0046).
+// Every field optional and blank-allowed: a showroom fills this in over
+// time, and a half-complete letterhead is more useful than a form that
+// refuses to save. The action collapses "" to NULL on the way in.
+export const CompanySettingsSchema = z.object({
+  legal_name: z.string().trim().max(200),
+  trade_name: z.string().trim().max(200),
+  // Validated as a managed upload URL by the action, not here — this
+  // schema is shared with tests that have no R2 origin configured.
+  logo_url: z.string().trim().max(2048),
+  tax_id: z.string().trim().max(50),
+  commercial_registration: z.string().trim().max(50),
+  address: z.string().trim().max(300),
+  phone: z.string().trim().max(40),
+  email: z.union([z.email().max(200), z.literal("")]).transform((v) => v || ""),
+});
+
 export const EquitySplitSchema = z
   .object({
     holder_type: z.enum(["ceo", "investor"]),

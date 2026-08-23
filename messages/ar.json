@@ -882,7 +882,22 @@
     "changeSignInEmail": "تغيير بريد تسجيل الدخول",
     "signInEmailHint": "هذا هو البريد الذي تسجّل الدخول به، وإليه تُرسل رموز الحساب. تغييره يتطلب كلمة المرور الحالية.",
     "newEmail": "البريد الإلكتروني الجديد",
-    "emailChanged": "تم تحديث بريد تسجيل الدخول."
+    "emailChanged": "تم تحديث بريد تسجيل الدخول.",
+    "companyTitle": "بيانات الشركة",
+    "companySubtitle": "الاسم القانوني والشعار والأرقام الضريبية — تُطبع على كل عقد وتقرير وملصق زجاج أمامي.",
+    "companyLegalName": "الاسم القانوني للشركة",
+    "companyLegalNameHint": "الكيان الذي يوقّع العقود، كما هو مسجّل تمامًا.",
+    "companyTradeName": "الاسم التجاري",
+    "companyTaxId": "الرقم الضريبي",
+    "companyCommercialReg": "رقم السجل التجاري",
+    "companyAddress": "العنوان",
+    "companyPhone": "الهاتف",
+    "companyEmail": "البريد الإلكتروني",
+    "companyLogo": "شعار الشركة",
+    "companyNoLogo": "لا يوجد شعار بعد",
+    "companyUploadLogo": "رفع الشعار",
+    "companyLogoHint": "يُفضَّل شعار PNG عريض بخلفية شفافة. سيحل محل شعار FELIX في مستنداتك.",
+    "companyLogoNotImage": "يجب أن يكون الشعار ملف صورة."
   },
   "colors": {
     "white": "أبيض",
