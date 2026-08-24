@@ -33,7 +33,17 @@ export function vinFor(slug, key) {
   const base = BASE_VINS[key];
   if (!base) throw new Error(`Unknown vehicle key "${key}"`);
   if (slug === "felix") return base;
-  const tail = slug.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6).padEnd(6, "0");
+  // The VIN alphabet (0021's vehicles_vin_format_check) excludes I, O and
+  // Q, so slug letters outside it are mapped to their lookalike digits —
+  // "demo2" would otherwise mint DEMO2 and fail the constraint on its O.
+  const tail = slug
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .replace(/I/g, "1")
+    .replace(/O/g, "0")
+    .replace(/Q/g, "9")
+    .slice(0, 6)
+    .padEnd(6, "0");
   return base.slice(0, 11) + tail;
 }
 

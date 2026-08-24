@@ -3,16 +3,19 @@ import {
   DEMO_ACCOUNTS,
   DEMO_ACCOUNT_KEYS,
   DEMO_STATUS_MODULE_KEY,
+  DEMO_TENANT_SLUGS,
+  demoEmailFor,
   demoKeyForEmail,
   demoPersonas,
   isDemoAccountKey,
+  isDemoTenant,
   isFlagshipDemo,
   parseDemoStatusRow,
 } from "./demo-accounts";
 import { FLAGSHIP_SLUG } from "./tenant-host";
 
 describe("the demo persona allowlist", () => {
-  it("matches the nine accounts scripts/seed-demo.mjs creates", () => {
+  it("matches the ten accounts scripts/seed-demo.mjs creates", () => {
     // If the seed's ACCOUNTS array changes, this is the test that says so.
     // Nothing derives one from the other at runtime, so drift here means
     // buttons that sign nobody in.
@@ -22,6 +25,7 @@ describe("the demo persona allowlist", () => {
       "manager2",
       "accountant",
       "sales",
+      "sales2",
       "marketing",
       "hr",
       "investor1",
@@ -29,18 +33,26 @@ describe("the demo persona allowlist", () => {
     ]);
 
     expect(DEMO_ACCOUNTS.ceo).toEqual({
-      email: "ceo@filex.demo",
       role: "ceo",
       name: "Alex Carter",
+      branch: null,
     });
     expect(DEMO_ACCOUNTS.manager.role).toBe("branch_manager");
     expect(DEMO_ACCOUNTS.manager2.role).toBe("branch_manager");
     expect(DEMO_ACCOUNTS.accountant.role).toBe("accountant");
     expect(DEMO_ACCOUNTS.sales.role).toBe("sales_exec");
+    expect(DEMO_ACCOUNTS.sales2.role).toBe("sales_exec");
     expect(DEMO_ACCOUNTS.marketing.role).toBe("marketing");
     expect(DEMO_ACCOUNTS.hr.role).toBe("hr");
     expect(DEMO_ACCOUNTS.investor1.role).toBe("investor");
     expect(DEMO_ACCOUNTS.investor2.role).toBe("investor");
+
+    // The two salespeople and the two managers each sit at a different
+    // showroom — the pairing the grouped switcher exists to demonstrate.
+    expect(DEMO_ACCOUNTS.sales.branch).toBe("downtown");
+    expect(DEMO_ACCOUNTS.sales2.branch).toBe("airport");
+    expect(DEMO_ACCOUNTS.manager.branch).toBe("downtown");
+    expect(DEMO_ACCOUNTS.manager2.branch).toBe("airport");
   });
 
   it("keeps every address inside the demo namespace, and distinct", () => {
@@ -49,15 +61,22 @@ describe("the demo persona allowlist", () => {
     // collide with a real account on another product — and this table is
     // the only thing standing between the switch endpoint and that
     // address space.
-    const emails = DEMO_ACCOUNT_KEYS.map((key) => DEMO_ACCOUNTS[key].email);
+    const emails = DEMO_TENANT_SLUGS.flatMap((slug) =>
+      DEMO_ACCOUNT_KEYS.map((key) => demoEmailFor(slug, key))
+    );
     for (const email of emails) {
-      expect(email).toMatch(/^[a-z0-9]+@filex\.demo$/);
+      expect(email).toMatch(/^[a-z0-9]+@([a-z0-9]+\.)?filex\.demo$/);
       expect(email).toBe(email.toLowerCase());
     }
     expect(new Set(emails).size).toBe(emails.length);
+
+    // Matches scripts/seed-demo.mjs's emailFor() exactly: flagship keeps
+    // the original bare addresses, other demo tenants namespace by slug.
+    expect(demoEmailFor("felix", "ceo")).toBe("ceo@filex.demo");
+    expect(demoEmailFor("demo2", "ceo")).toBe("ceo@demo2.filex.demo");
   });
 
-  it("accepts exactly the eight keys and nothing else", () => {
+  it("accepts exactly the seeded keys and nothing else", () => {
     for (const key of DEMO_ACCOUNT_KEYS) expect(isDemoAccountKey(key)).toBe(true);
 
     expect(isDemoAccountKey("admin")).toBe(false);
@@ -89,12 +108,16 @@ describe("the demo persona allowlist", () => {
   it("maps a signed-in address back to its persona, case-insensitively", () => {
     expect(demoKeyForEmail("investor2@filex.demo")).toBe("investor2");
     expect(demoKeyForEmail("  CEO@Filex.Demo  ")).toBe("ceo");
+    // demo2's namespaced addresses highlight the same personas.
+    expect(demoKeyForEmail("sales2@demo2.filex.demo")).toBe("sales2");
   });
 
   it("returns no persona for anyone who is not a demo account", () => {
     expect(demoKeyForEmail(null)).toBeNull();
     expect(demoKeyForEmail(undefined)).toBeNull();
     expect(demoKeyForEmail("")).toBeNull();
+    // A licensed showroom's slug never lights a persona chip, even with
+    // a lookalike address - only slugs in DEMO_TENANT_SLUGS count.
     expect(demoKeyForEmail("ceo@clientb.filex.demo")).toBeNull();
     expect(demoKeyForEmail("someone@508.world")).toBeNull();
   });
@@ -105,29 +128,35 @@ describe("the demo persona allowlist", () => {
     const personas = demoPersonas();
     expect(personas).toHaveLength(DEMO_ACCOUNT_KEYS.length);
     expect(personas.map((p) => p.key)).toEqual(DEMO_ACCOUNT_KEYS);
-    expect(personas[0]).toEqual({ key: "ceo", name: "Alex Carter" });
+    expect(personas[0]).toEqual({ key: "ceo", name: "Alex Carter", role: "ceo", branch: null });
     for (const persona of personas) {
-      expect(Object.keys(persona).sort()).toEqual(["key", "name"]);
+      expect(Object.keys(persona).sort()).toEqual(["branch", "key", "name", "role"]);
     }
   });
 });
 
-describe("isFlagshipDemo", () => {
-  it("is true only for the flagship showroom", () => {
+describe("isDemoTenant / isFlagshipDemo", () => {
+  it("recognises exactly the demo showrooms", () => {
+    expect(isDemoTenant({ slug: FLAGSHIP_SLUG })).toBe(true);
+    expect(isDemoTenant({ slug: "demo2" })).toBe(true);
     expect(isFlagshipDemo({ slug: FLAGSHIP_SLUG })).toBe(true);
+    // demo2 is a demo but not the flagship.
+    expect(isFlagshipDemo({ slug: "demo2" })).toBe(false);
   });
 
   it("is false for every licensed client, which is the whole invariant", () => {
-    // Every demo-mode check in the codebase starts with this call. If it
-    // ever answered true for a paying showroom, that showroom could be
+    // Every demo-mode check in the codebase starts with isDemoTenant. If
+    // it ever answered true for a paying showroom, that showroom could be
     // switched off by a row in a table it has nothing to do with.
-    expect(isFlagshipDemo({ slug: "clientb" })).toBe(false);
-    expect(isFlagshipDemo({ slug: "acmemotors" })).toBe(false);
-    expect(isFlagshipDemo({ slug: "felixx" })).toBe(false);
-    expect(isFlagshipDemo({ slug: "FELIX" })).toBe(false);
+    for (const slug of ["clientb", "acmemotors", "felixx", "FELIX", "demo22", "DEMO2"]) {
+      expect(isDemoTenant({ slug })).toBe(false);
+      expect(isFlagshipDemo({ slug })).toBe(false);
+    }
   });
 
   it("is false when there is no tenant at all", () => {
+    expect(isDemoTenant(null)).toBe(false);
+    expect(isDemoTenant(undefined)).toBe(false);
     expect(isFlagshipDemo(null)).toBe(false);
     expect(isFlagshipDemo(undefined)).toBe(false);
   });

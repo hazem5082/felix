@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import {
   FlaskConical,
@@ -9,11 +9,14 @@ import {
   MapPin,
   Calculator,
   Car,
+  CarFront,
   Megaphone,
   PieChart,
   TrendingUp,
   UsersRound,
+  ChevronDown,
   ChevronRight,
+  Check,
   Loader2,
   ShieldCheck,
   type LucideIcon,
@@ -21,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { switchDemoRole, type DemoSwitchState } from "@/app/[locale]/demo/actions";
 import type { DemoAccountKey, DemoPersona } from "@/lib/demo-accounts";
+import type { Role } from "@/lib/supabase/types";
 
 const PERSONA_CONFIG: Record<
   DemoAccountKey,
@@ -55,6 +59,11 @@ const PERSONA_CONFIG: Record<
     iconColor: "text-orange-800",
     iconBg: "bg-orange-100",
   },
+  sales2: {
+    icon: CarFront,
+    iconColor: "text-lime-800",
+    iconBg: "bg-lime-100",
+  },
   hr: {
     icon: UsersRound,
     iconColor: "text-rose-800",
@@ -78,6 +87,33 @@ const PERSONA_CONFIG: Record<
 };
 
 /**
+ * How the dropdown clusters personas: by what they do, not by seed
+ * order, so "Sales" reads as a team (Salesperson 1 — Downtown,
+ * Salesperson 2 — Airport Road) rather than a flat list of ten chips.
+ * Labels come from messages/*.json under demo.groups.
+ */
+type GroupKey = "executive" | "managers" | "sales" | "backOffice" | "investors";
+
+const GROUP_FOR_ROLE: Record<Role | string, GroupKey> = {
+  ceo: "executive",
+  branch_manager: "managers",
+  sales_exec: "sales",
+  accountant: "backOffice",
+  marketing: "backOffice",
+  hr: "backOffice",
+  investor: "investors",
+};
+
+const GROUP_ORDER: GroupKey[] = ["executive", "managers", "sales", "backOffice", "investors"];
+
+function groupPersonas(personas: DemoPersona[]): { group: GroupKey; members: DemoPersona[] }[] {
+  return GROUP_ORDER.map((group) => ({
+    group,
+    members: personas.filter((p) => (GROUP_FOR_ROLE[p.role] ?? "backOffice") === group),
+  })).filter((g) => g.members.length > 0);
+}
+
+/**
  * The persona switcher.
  *
  * Two shapes, one behaviour:
@@ -88,16 +124,15 @@ const PERSONA_CONFIG: Record<
  *             scaffolding wrapped around the product, never as part of
  *             it, because a prospect who mistakes it for a feature will
  *             ask where the role switcher went in their own showroom.
+ *             Since the persona set outgrew a chip row (two salespeople,
+ *             two managers, each pinned to a showroom), the bar carries a
+ *             single dropdown grouped by role, each entry naming its
+ *             person and their showroom.
  *
  *   "login" — the same personas as "enter as…" shortcuts under the sign-in
  *             form, so nobody ever has to be given a demo password.
  *
- * On phones the bar becomes a horizontally scrollable row of chips at the
- * TOP of the shell. It deliberately does not float or dock to the bottom:
- * MobileNav is `fixed inset-x-0 bottom-0`, and anything else down there
- * either covers the tab bar or gets covered by it.
- *
- * The buttons only ever send a persona key. See app/[locale]/demo/
+ * The controls only ever send a persona key. See app/[locale]/demo/
  * actions.ts for why that matters and what the server checks.
  */
 export function DemoSwitcher({
@@ -116,6 +151,31 @@ export function DemoSwitcher({
   const [pending, startTransition] = useTransition();
   const [busyKey, setBusyKey] = useState<DemoAccountKey | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the dropdown on any click outside it and on Escape — the two
+  // gestures every menu on the platform answers to. Listener registered
+  // only while open, so the shell pays nothing the rest of the time.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent | TouchEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   function message(state: NonNullable<DemoSwitchState>): string {
     if (state.error === "throttled") return `${t("throttled")} ${state.message ?? ""}`.trim();
@@ -128,6 +188,7 @@ export function DemoSwitcher({
   function pick(key: DemoAccountKey) {
     setError(null);
     setBusyKey(key);
+    setOpen(false);
     startTransition(async () => {
       try {
         const state = await switchDemoRole(locale, key);
@@ -145,28 +206,8 @@ export function DemoSwitcher({
     });
   }
 
-  const buttons = personas.map((persona) => {
-    const active = persona.key === currentKey;
-    const busy = persona.key === busyKey;
-    return (
-      <button
-        key={persona.key}
-        type="button"
-        onClick={() => pick(persona.key)}
-        disabled={pending}
-        aria-current={active ? "true" : undefined}
-        title={persona.name}
-        className={cn(
-          "shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-progress disabled:opacity-50",
-          active
-            ? "border-[var(--color-accent-amber)] bg-[var(--color-accent-amber)] text-white shadow-xs font-semibold"
-            : "border-[var(--color-accent-amber)]/25 bg-white/80 text-[var(--color-text)] hover:border-[var(--color-accent-amber)]/60 hover:bg-white hover:text-[var(--color-text)]"
-        )}
-      >
-        {busy ? t("switching") : t(`personas.${persona.key}`)}
-      </button>
-    );
-  });
+  const branchLabel = (persona: DemoPersona) =>
+    persona.branch ? t(`branches.${persona.branch}`) : t("branches.companyWide");
 
   if (variant === "login") {
     return (
@@ -229,7 +270,7 @@ export function DemoSwitcher({
                     </p>
                   </div>
                   <p className="truncate text-[11px] text-[var(--color-text-muted)]">
-                    {persona.name}
+                    {persona.name} · {branchLabel(persona)}
                   </p>
                 </div>
 
@@ -254,33 +295,145 @@ export function DemoSwitcher({
     );
   }
 
+  const current = currentKey ? personas.find((p) => p.key === currentKey) ?? null : null;
+  const currentConfig = current ? PERSONA_CONFIG[current.key] : null;
+  const CurrentIcon = currentConfig?.icon ?? ShieldCheck;
+
   return (
-    <div className="shrink-0 max-h-11 border-b border-[var(--color-accent-amber)]/25 bg-[var(--color-accent-amber-dim)]/80 backdrop-blur-md">
-      <div className="flex h-9 items-center gap-2.5 px-3 md:px-5">
+    <div className="relative z-40 shrink-0 border-b border-[var(--color-accent-amber)]/25 bg-[var(--color-accent-amber-dim)]/80 backdrop-blur-md">
+      <div className="flex h-10 items-center gap-2.5 px-3 md:px-5">
         <span className="hidden shrink-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-accent-amber)] sm:flex">
           <FlaskConical size={13} aria-hidden />
           {t("badge")}
         </span>
-        {/* The scroll container, not the page: a six-chip row is wider
-            than a phone, and the shell itself must never scroll sideways. */}
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {buttons}
+
+        {/* One dropdown instead of a chip per persona: ten chips no longer
+            fit a phone, and the grouping (a sales TEAM across two
+            showrooms, a manager PER showroom) is the thing being
+            demonstrated — a flat row hides it. */}
+        <div ref={menuRef} className="relative min-w-0">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            disabled={pending}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            className={cn(
+              "flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-[var(--color-accent-amber)]/40 bg-white/85 px-2.5 py-1 text-xs font-medium text-[var(--color-text)] shadow-xs transition-colors",
+              "hover:border-[var(--color-accent-amber)] hover:bg-white disabled:cursor-progress disabled:opacity-60"
+            )}
+          >
+            {pending ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-accent-amber)]" aria-hidden />
+            ) : (
+              <span
+                className={cn(
+                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-md",
+                  currentConfig?.iconBg ?? "bg-gray-100",
+                  currentConfig?.iconColor ?? "text-[var(--color-text-muted)]"
+                )}
+              >
+                <CurrentIcon className="h-3 w-3" aria-hidden />
+              </span>
+            )}
+            <span className="truncate font-semibold">
+              {pending
+                ? t("switching")
+                : current
+                  ? `${t(`personas.${current.key}`)} — ${current.name}`
+                  : t("choosePersona")}
+            </span>
+            {current && !pending && (
+              <span className="hidden truncate text-[11px] text-[var(--color-text-muted)] sm:inline">
+                {branchLabel(current)}
+              </span>
+            )}
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-[var(--color-accent-amber)] transition-transform",
+                open && "rotate-180"
+              )}
+              aria-hidden
+            />
+          </button>
+
+          {open && (
+            <div
+              role="listbox"
+              aria-label={t("choosePersona")}
+              className="absolute start-0 top-full z-50 mt-1.5 max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface,#fff)] bg-white p-1.5 shadow-lg"
+            >
+              {groupPersonas(personas).map(({ group, members }) => (
+                <div key={group} className="pb-1 last:pb-0">
+                  <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)] first:pt-1">
+                    {t(`groups.${group}`)}
+                  </p>
+                  {members.map((persona) => {
+                    const config = PERSONA_CONFIG[persona.key] ?? {
+                      icon: ShieldCheck,
+                      iconColor: "text-[var(--color-text-muted)]",
+                      iconBg: "bg-gray-100",
+                    };
+                    const Icon = config.icon;
+                    const active = persona.key === currentKey;
+                    const isBusy = persona.key === busyKey;
+                    return (
+                      <button
+                        key={persona.key}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => pick(persona.key)}
+                        disabled={pending}
+                        className={cn(
+                          "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-start transition-colors",
+                          "hover:bg-[var(--color-accent-amber-dim)]/60 disabled:cursor-progress disabled:opacity-60",
+                          active && "bg-[var(--color-accent-amber-dim)]"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                            config.iconBg,
+                            config.iconColor
+                          )}
+                        >
+                          {isBusy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--color-accent-amber)]" />
+                          ) : (
+                            <Icon className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-semibold text-[var(--color-text)]">
+                            {t(`personas.${persona.key}`)} — {persona.name}
+                          </span>
+                          <span className="block truncate text-[11px] text-[var(--color-text-muted)]">
+                            {branchLabel(persona)}
+                          </span>
+                        </span>
+                        {active && (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent-amber)]" aria-hidden />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
         {error ? (
-          <span role="alert" className="hidden shrink-0 text-xs text-[var(--color-accent-red)] md:inline">
+          <span role="alert" className="min-w-0 flex-1 truncate text-xs text-[var(--color-accent-red)]">
             {error}
           </span>
         ) : (
-          <span className="hidden shrink-0 text-xs text-[var(--color-text-muted)] lg:inline">
+          <span className="hidden min-w-0 flex-1 truncate text-end text-xs text-[var(--color-text-muted)] lg:block">
             {t("hint")}
           </span>
         )}
       </div>
-      {error && (
-        <p role="alert" className="px-3 pb-1 text-xs text-[var(--color-accent-red)] md:hidden">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

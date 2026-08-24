@@ -2,7 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTenant } from "@/lib/tenant";
-import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
+import { getDemoStatus, isDemoTenant } from "@/lib/demo";
 import { PublicLeadSchema, Uuid } from "@/lib/validation";
 import { clientIp, consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import { localizeErrorMessage } from "@/lib/action-messages";
@@ -71,7 +71,7 @@ export async function submitPublicLead(
   // operator's own message is passed straight through. English literals
   // here match the rest of this file — it has no locale to translate with,
   // and the translated notice is on the page.
-  const demo = isFlagshipDemo(tenant) ? await getDemoStatus() : null;
+  const demo = isDemoTenant(tenant) ? await getDemoStatus() : null;
   if (demo && !demo.enabled) {
     return { error: demo.offMessage ?? "This demo is currently off." };
   }

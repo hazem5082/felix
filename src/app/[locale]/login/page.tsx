@@ -1,7 +1,7 @@
 import { getProfile, defaultRouteForRole } from "@/lib/auth";
 import { redirect } from "@/i18n/navigation";
 import { getTenant } from "@/lib/tenant";
-import { demoPersonas, getDemoStatus, isFlagshipDemo } from "@/lib/demo";
+import { demoPersonas, getDemoStatus, isDemoTenant } from "@/lib/demo";
 import { DemoOffNotice } from "@/components/demo/demo-off-notice";
 import { LoginForm } from "./login-form";
 
@@ -20,9 +20,9 @@ export default async function LoginPage({
   // a dashboard would make them chase the notice around the app instead
   // of reading it.
   //
-  // For every licensed showroom isFlagshipDemo() is false, `demo` stays
+  // For every licensed showroom isDemoTenant() is false, `demo` stays
   // null, and this page behaves exactly as it did before.
-  const demo = isFlagshipDemo(tenant) ? await getDemoStatus() : null;
+  const demo = isDemoTenant(tenant) ? await getDemoStatus() : null;
   if (demo && !demo.enabled) {
     return <DemoOffNotice offMessage={demo.offMessage} />;
   }

@@ -5,7 +5,7 @@ import { redirect } from "@/i18n/navigation";
 import { defaultRouteForRole } from "@/lib/auth";
 import { clientIp, consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import { getTenant } from "@/lib/tenant";
-import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
+import { getDemoStatus, isDemoTenant } from "@/lib/demo";
 import { tenantClaimFromToken } from "@/lib/tenant-claim";
 import type { Role } from "@/lib/supabase/types";
 
@@ -49,7 +49,7 @@ export async function login(
   // quietly stay a working password oracle. Licensed showrooms never
   // reach getDemoStatus() at all.
   const tenant = await getTenant();
-  if (isFlagshipDemo(tenant) && !(await getDemoStatus()).enabled) {
+  if (isDemoTenant(tenant) && !(await getDemoStatus()).enabled) {
     return { error: "demoOff" };
   }
 

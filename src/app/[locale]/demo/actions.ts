@@ -7,10 +7,11 @@ import { defaultRouteForRole } from "@/lib/auth";
 import { clientIp, consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import { getTenant } from "@/lib/tenant";
 import { tenantClaimFromToken } from "@/lib/tenant-claim";
-import { DEMO_ACCOUNTS, getDemoStatus, isDemoAccountKey, isFlagshipDemo } from "@/lib/demo";
+import { DEMO_ACCOUNTS, demoEmailFor, getDemoStatus, isDemoAccountKey, isDemoTenant } from "@/lib/demo";
 import type { Role } from "@/lib/supabase/types";
 
-// Passwordless persona switching for the flagship demo.
+// Passwordless persona switching for the demo showrooms (the flagship
+// at demo-felix.508.world and demo2 at demo2-felix.508.world).
 //
 // THIS FILE ISSUES SESSIONS WITHOUT A CREDENTIAL. There is no password
 // anywhere in it, by design — a demo whose passwords are printed on the
@@ -30,7 +31,7 @@ import type { Role } from "@/lib/supabase/types";
 //      time. auth.users is shared with A-Star and Calendar on one GoTrue
 //      instance, so an email parameter here would be a session oracle for
 //      other products' real accounts.
-//   2. The request is for the flagship's own hostname. On a licensed
+//   2. The request is for a demo showroom's own hostname. On a licensed
 //      client's subdomain this action does nothing at all.
 //   3. The demo is switched on. The kill switch has to bind the action,
 //      not just the page that renders the buttons.
@@ -53,13 +54,14 @@ export async function switchDemoRole(
   // "constructor" cannot slip through into the lookup below.
   if (!isDemoAccountKey(key)) return { error: "denied" };
 
-  // GUARD 2 — flagship only. Not a UI concern: without this, POSTing to
-  // this action from a licensed showroom's subdomain would try to sign
-  // the caller into the demo's accounts. The claim cross-check further
-  // down would catch it, but refusing before touching GoTrue at all is
-  // the honest place to say "this feature does not exist here".
+  // GUARD 2 — demo showrooms only (the flagship and demo2). Not a UI
+  // concern: without this, POSTing to this action from a licensed
+  // showroom's subdomain would try to sign the caller into the demo's
+  // accounts. The claim cross-check further down would catch it, but
+  // refusing before touching GoTrue at all is the honest place to say
+  // "this feature does not exist here".
   const tenant = await getTenant();
-  if (!tenant || !isFlagshipDemo(tenant) || tenant.status === "suspended") {
+  if (!tenant || !isDemoTenant(tenant) || tenant.status === "suspended") {
     return { error: "denied" };
   }
 
@@ -77,6 +79,10 @@ export async function switchDemoRole(
   }
 
   const account = DEMO_ACCOUNTS[key];
+  // The address is derived from (this showroom's slug, the allow-listed
+  // key) — both fixed server-side — matching the seed's own emailFor().
+  // The flagship keeps <key>@filex.demo; demo2 gets <key>@demo2.filex.demo.
+  const accountEmail = demoEmailFor(tenant.slug, key);
   const supabase = await createClient();
 
   // Drop whatever session is already here before minting the next one,
@@ -110,7 +116,7 @@ export async function switchDemoRole(
   const admin = createAdminClient();
   const { data: link, error: linkError } = await admin.auth.admin.generateLink({
     type: "magiclink",
-    email: account.email,
+    email: accountEmail,
   });
 
   const tokenHash = link?.properties?.hashed_token;

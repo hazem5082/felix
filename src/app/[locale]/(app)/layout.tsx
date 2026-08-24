@@ -6,7 +6,7 @@ import {
   currentDemoPersona,
   demoPersonas,
   getDemoStatus,
-  isFlagshipDemo,
+  isDemoTenant,
 } from "@/lib/demo";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
@@ -60,7 +60,7 @@ export default async function AppLayout({
 
   // ── Demo mode ───────────────────────────────────────────────
   //
-  // Everything below is dead code for a licensed showroom: isFlagshipDemo()
+  // Everything below is dead code for a licensed showroom: isDemoTenant()
   // is false, `demo` stays null, and the shell renders exactly as it did
   // before demo mode existed. That is the invariant — a client's app must
   // not read demo_status, must not render the switcher, and must not be
@@ -71,7 +71,7 @@ export default async function AppLayout({
   // same way the licence gate above works. Sessions already issued are
   // not revoked — the notice replaces the shell, which is enough to stop
   // a prospect browsing a half-reset dataset.
-  const demo = isFlagshipDemo(tenant) ? await getDemoStatus() : null;
+  const demo = isDemoTenant(tenant) ? await getDemoStatus() : null;
   if (demo && !demo.enabled) {
     return <DemoOffNotice offMessage={demo.offMessage} />;
   }

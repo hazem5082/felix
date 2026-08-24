@@ -271,6 +271,10 @@ const ACCOUNTS = [
   { key: "manager2", role: "branch_manager", name: "Riley Nasser", branch: "airport" },
   { key: "accountant", role: "accountant", name: "Sam Nguyen", branch: "downtown" },
   { key: "sales", role: "sales_exec", name: "Jordan Blake", branch: "downtown" },
+  // The Airport Road salesperson, so the switcher's Sales group can show
+  // two people with the same role seeing different floors — which is the
+  // per-branch visibility story in one click.
+  { key: "sales2", role: "sales_exec", name: "Omar Khalil", branch: "airport" },
   // Org-wide, like the CEO and the investors: marketing advertises the
   // whole showroom's stock (0029), not one branch's.
   { key: "marketing", role: "marketing", name: "Farah Adel", branch: null },
@@ -353,6 +357,29 @@ let EXISTING_USERS;
  * The invitation row is written first and deliberately: it is the only
  * channel that can assign a role, a branch, and a tenant to a new user.
  */
+// Whether platform.staff_invitations carries 0052's invite_token_digest
+// column. Probed once in main(): the live database is known to have run
+// ahead on some migrations and behind on others, and a seed that assumes
+// 0052 fails on its very first insert against a pre-0052 registry. When
+// the column is absent the invitation is written without a digest and the
+// signup metadata omits the token — which is exactly what that database's
+// handle_new_user() expects.
+let INVITES_CARRY_TOKENS = true;
+
+async function probeInviteTokens() {
+  const { error } = await platformDb
+    .from("staff_invitations")
+    .select("invite_token_digest")
+    .limit(1);
+  if (error && /invite_token_digest/.test(error.message)) {
+    INVITES_CARRY_TOKENS = false;
+    console.warn(
+      "! staff_invitations has no invite_token_digest — migration 0052 is not applied here.\n" +
+        "  Seeding without invitation tokens to match this database's handle_new_user()."
+    );
+  }
+}
+
 async function createUser(key, dbRole, fullName, branchId) {
   const email = emailFor(key);
 
@@ -370,7 +397,9 @@ async function createUser(key, dbRole, fullName, branchId) {
       branch_id: branchId ?? null,
       accepted_at: null,
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      invite_token_digest: createHash("sha256").update(inviteToken).digest("hex"),
+      ...(INVITES_CARRY_TOKENS
+        ? { invite_token_digest: createHash("sha256").update(inviteToken).digest("hex") }
+        : {}),
     },
     { onConflict: "tenant_id,email" }
   );
@@ -435,7 +464,10 @@ async function createUser(key, dbRole, fullName, branchId) {
     email,
     password: PASSWORD,
     email_confirm: true,
-    user_metadata: { full_name: fullName, invite_token: inviteToken },
+    user_metadata: {
+      full_name: fullName,
+      ...(INVITES_CARRY_TOKENS ? { invite_token: inviteToken } : {}),
+    },
   });
   if (error) {
     console.error(`✗ Failed to create ${email}:`, error.message);
@@ -635,6 +667,7 @@ async function seedMeetings(ids) {
 
 async function main() {
   TENANT_ID = await ensureTenant();
+  await probeInviteTokens();
   tenantDb = createClient(URL, SERVICE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
     db: { schema: SCHEMA },

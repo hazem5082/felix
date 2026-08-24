@@ -132,7 +132,11 @@ const nextConfig: NextConfig = {
       // it no longer serves this app, and leaving it allow-listed would let a
       // compromise of that separately-deployed page reach mutating actions
       // here with same-site cookies attached.
-      allowedOrigins: ["demo-felix.508.world", "filex.wejdan-arts-studio.workers.dev"],
+      allowedOrigins: [
+        "demo-felix.508.world",
+        "demo2-felix.508.world",
+        "filex.wejdan-arts-studio.workers.dev",
+      ],
     },
   },
   // A stack trace on a financial system's error page is a reconnaissance gift.

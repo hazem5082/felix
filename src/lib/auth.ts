@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createClient, getSessionTenant } from "@/lib/supabase/server";
 import { getTenant, type Tenant } from "@/lib/tenant";
-import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
+import { getDemoStatus, isDemoTenant } from "@/lib/demo";
 import { acceptsBranchGrants, canActOnBranchWithGrants } from "@/lib/branch-authority";
 import { hasHrAuthority, resolveFeatures, type ResolvedFeatures } from "@/lib/features";
 import type { TenantClaim } from "@/lib/tenant-claim";
@@ -42,10 +42,10 @@ function sameShowroom(tenant: Tenant, claim: TenantClaim): boolean {
  * themselves.
  *
  * Returns false without a single database read for every licensed
- * showroom, which is the whole point of leading with isFlagshipDemo().
+ * showroom, which is the whole point of leading with isDemoTenant().
  */
 async function demoIsOff(tenant: Tenant): Promise<boolean> {
-  if (!isFlagshipDemo(tenant)) return false;
+  if (!isDemoTenant(tenant)) return false;
   return !(await getDemoStatus()).enabled;
 }
 

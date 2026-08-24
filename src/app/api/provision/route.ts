@@ -40,9 +40,17 @@ const BodySchema = z.object({
 
 // Slugs that would shadow the product's own hostnames rather than
 // namespace a client under them.
+//
+// "demo" is unreachable-by-construction: demo-felix.508.world is
+// short-circuited to the flagship in both the router Worker and
+// tenant-host.ts, so a tenant with slug "demo" would answer nowhere.
+// "demo2" IS a real tenant (the second demo showroom) — reserved so a
+// retried customer approval can never converge onto it and mint a CEO
+// invitation into the demo (provision_tenant is idempotent on slug).
 const RESERVED_SLUGS = new Set([
   "felix", "www", "api", "admin", "app", "partners", "dev", "saas",
   "man", "empi", "mail", "static", "assets", "cdn", "status",
+  "demo", "demo2",
 ]);
 
 function bad(message: string, status: number) {
@@ -103,6 +111,29 @@ export async function POST(request: Request) {
   // now creates the showroom's SCHEMA and ROLE as well as its rows.
   // Service-role only: provisioning is a licensing action.
   const admin = createAdminClient("platform");
+
+  // Cross-product slug collision (0060). public.tenants is the estate-wide
+  // registry A-Star and Calendar share; a slug already registered there by
+  // another product must be refused HERE, before anything is created —
+  // the mirror trigger downstream deliberately skips foreign slugs rather
+  // than aborting, because the house's own demo showrooms share slugs
+  // across products on purpose. A FELIX tenant of the same slug is the
+  // idempotent-retry case and sails through.
+  const { data: existingFelix } = await admin
+    .from("tenants")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (!existingFelix) {
+    const { data: foreign } = await createAdminClient()
+      .from("tenants")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (foreign) {
+      return bad(`"${slug}" is already registered to another 508.world product`, 409);
+    }
+  }
 
   // Step 1 — tenant, schema, role, baseline rows, and the CEO's
   // invitation. Idempotent on slug, so a retried approval after a network

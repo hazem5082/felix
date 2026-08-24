@@ -144,12 +144,26 @@
     "wrongTenant": "That demo account does not belong to this showroom.",
     "offTitle": "This demo is currently off",
     "offBody": "The FELIX demo is paused for maintenance. Please check back shortly.",
+    "choosePersona": "Choose a persona",
+    "groups": {
+      "executive": "Leadership",
+      "managers": "Branch Managers",
+      "sales": "Sales Team",
+      "backOffice": "Back Office",
+      "investors": "Investors"
+    },
+    "branches": {
+      "downtown": "Downtown Showroom",
+      "airport": "Airport Road Branch",
+      "companyWide": "Company-wide"
+    },
     "personas": {
       "ceo": "CEO",
       "manager": "Branch Manager",
-      "manager2": "Branch Manager (Airport Rd.)",
+      "manager2": "Branch Manager",
       "accountant": "Accountant",
-      "sales": "Sales",
+      "sales": "Salesperson 1",
+      "sales2": "Salesperson 2",
       "marketing": "Marketing",
       "hr": "HR",
       "investor1": "Investor 1",

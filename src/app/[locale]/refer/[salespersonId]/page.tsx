@@ -1,5 +1,5 @@
 import { getTenant } from "@/lib/tenant";
-import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
+import { getDemoStatus, isDemoTenant } from "@/lib/demo";
 import { DemoOffNotice } from "@/components/demo/demo-off-notice";
 import { ReferralForm } from "./referral-form";
 
@@ -15,10 +15,10 @@ export default async function ReferralPage({
   // out during a demo keeps working long after the demo tab is closed, so
   // it needs the notice as much as the shell does.
   //
-  // Licensed showrooms: isFlagshipDemo() is false, `demo` stays null, and
+  // Licensed showrooms: isDemoTenant() is false, `demo` stays null, and
   // the page renders exactly as before.
   const tenant = await getTenant();
-  const demo = isFlagshipDemo(tenant) ? await getDemoStatus() : null;
+  const demo = isDemoTenant(tenant) ? await getDemoStatus() : null;
   if (demo && !demo.enabled) {
     return <DemoOffNotice offMessage={demo.offMessage} />;
   }

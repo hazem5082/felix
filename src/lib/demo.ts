@@ -13,18 +13,21 @@ import {
 
 // Demo mode — the server half.
 //
-// FELIX's shop window is the flagship showroom at demo-felix.508.world.
-// It is a real tenant with a real schema (t_felix) full of seed data, and
-// it is the only tenant any of this applies to. Two capabilities live
-// here:
+// FELIX's shop window is the flagship showroom at demo-felix.508.world
+// (tenant felix / schema t_felix), joined by the second demo showroom at
+// demo2-felix.508.world (tenant demo2) so the cross-showroom network has
+// a peer to demonstrate against. Both are real tenants full of seed
+// data, and they are the only tenants any of this applies to. Two
+// capabilities live here:
 //
 //   1. Passwordless persona switching, so a prospect can look at the
-//      product through six different pairs of eyes without ever being
+//      product through different pairs of eyes without ever being
 //      handed a password (see app/[locale]/demo/actions.ts).
-//   2. A kill switch, so the demo can be taken down from a table without
-//      a deploy — during a data reset, a migration, or an incident.
+//   2. A kill switch, so the demos can be taken down from a table without
+//      a deploy — during a data reset, a migration, or an incident. One
+//      row covers the product, i.e. both demo showrooms at once.
 //
-// Both are gated on isFlagshipDemo(). A licensed showroom takes exactly
+// Both are gated on isDemoTenant(). A licensed showroom takes exactly
 // the code paths it took before this file existed.
 
 export {
@@ -32,13 +35,17 @@ export {
   DEMO_ACCOUNT_KEYS,
   DEMO_ON,
   DEMO_STATUS_MODULE_KEY,
+  DEMO_TENANT_SLUGS,
+  demoEmailFor,
   demoKeyForEmail,
   demoPersonas,
   isDemoAccountKey,
+  isDemoTenant,
   isFlagshipDemo,
   parseDemoStatusRow,
   type DemoAccount,
   type DemoAccountKey,
+  type DemoBranchKey,
   type DemoPersona,
   type DemoStatus,
 } from "@/lib/demo-accounts";
@@ -96,7 +103,7 @@ export const getDemoStatus = cache(async (): Promise<DemoStatus> => {
  * Nothing is authorized on the strength of it, which is why matching on
  * the address is good enough.
  *
- * Callers must guard this with isFlagshipDemo() so a licensed showroom
+ * Callers must guard this with isDemoTenant() so a licensed showroom
  * never pays for the extra `auth.getUser()` round trip.
  */
 export const currentDemoPersona = cache(async (): Promise<DemoAccountKey | null> => {

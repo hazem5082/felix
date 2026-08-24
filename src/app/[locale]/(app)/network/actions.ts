@@ -5,7 +5,7 @@ import { getTranslations } from "next-intl/server";
 import { authorizeActiveTenant } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSessionTenant } from "@/lib/supabase/server";
-import { isFlagshipDemo } from "@/lib/demo-accounts";
+import { isDemoTenant } from "@/lib/demo-accounts";
 import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import {
   NetworkParticipationSchema,
@@ -124,7 +124,7 @@ interface RawVehicle {
  * line of this file touched and no hole in the rule.
  */
 function sameNetworkSide(a: string, b: string): boolean {
-  return isFlagshipDemo({ slug: a }) === isFlagshipDemo({ slug: b });
+  return isDemoTenant({ slug: a }) === isDemoTenant({ slug: b });
 }
 
 function emptyResult(query: string, error?: string): NetworkSearchResult {
