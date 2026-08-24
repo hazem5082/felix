@@ -27,7 +27,7 @@ export async function upsertListing(input: {
   const auth = await authorize(LISTING_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpsertListingSchema, input);
+  const parsed = await parseInput(UpsertListingSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();

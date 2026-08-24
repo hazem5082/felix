@@ -126,7 +126,7 @@ export async function loadEtaContext(ticketId: string): Promise<ContextResult> {
     .eq("id", ticketId)
     .maybeSingle();
 
-  if (ticketError) return { ok: false, error: toUserError(ticketError, "eta ticket") };
+  if (ticketError) return { ok: false, error: await toUserError(ticketError, "eta ticket") };
   if (!ticketRow) return { ok: false, error: { error: "That deal ticket no longer exists." } };
 
   const ticket = ticketRow as DealTicket & {

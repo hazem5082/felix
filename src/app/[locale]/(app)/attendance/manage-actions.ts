@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { assertBranch, authorize } from "@/lib/auth";
+import { assertBranch, authorize, authorizeHr, hasHrAccess, type Authorized } from "@/lib/auth";
 import { toUserError } from "@/lib/db-error";
 import {
   AttendanceAdjustmentSchema,
@@ -12,6 +12,7 @@ import {
   parseInput,
 } from "@/lib/validation";
 import type { ActionError } from "@/lib/validation";
+import type { Profile } from "@/lib/supabase/types";
 
 /**
  * The supervisor half of attendance (migration 0038).
@@ -25,6 +26,43 @@ import type { ActionError } from "@/lib/validation";
  */
 
 const MANAGER_ROLES = ["ceo", "branch_manager"] as const;
+
+/**
+ * "May this session administer other people's attendance?"
+ *
+ * Since 0047 that is no longer a role list. HR owns the attendance
+ * record org-wide — attendance_events_select, _insert and _update all
+ * carry an is_hr() arm — and since 0048 is_hr() also admits whoever the
+ * CEO handed the HR hub to. A `Role[]` cannot express the second half,
+ * so the check is a function.
+ *
+ * DELIBERATELY NOT USED BY setBranchGeofence(). Moving a showroom's pin
+ * is reshaping the branch, which branches_geofence_update still gates on
+ * is_manager_or_above(); routing that through this helper would produce
+ * a control that passes the app check and fails at the database.
+ */
+async function authorizeOversight(): Promise<Authorized> {
+  const asManager = await authorize([...MANAGER_ROLES]);
+  if (asManager.ok) return asManager;
+  // Falls through to the HR guard, which covers both the 'hr' role and
+  // a CEO-issued grant. Its refusal message is the same one, so a
+  // salesperson POSTing this action learns nothing either way.
+  return authorizeHr();
+}
+
+/**
+ * HR acts across every branch (the attendance policies say
+ * `can_act_on_branch(branch_id) or is_hr()`), so the app's branch check
+ * has to make the same exception or it refuses writes Postgres would
+ * accept.
+ */
+async function assertBranchUnlessHr(
+  profile: Profile,
+  branchId: string | null
+): Promise<ActionError | null> {
+  if (await hasHrAccess()) return null;
+  return assertBranch(profile, branchId);
+}
 
 /**
  * Enter a punch on somebody's behalf.
@@ -53,14 +91,14 @@ export async function recordAdjustment(input: {
   occurred_at: string;
   reason: string;
 }): Promise<{ ok: true } | ActionError> {
-  const auth = await authorize([...MANAGER_ROLES]);
+  const auth = await authorizeOversight();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(AttendanceAdjustmentSchema, input);
+  const parsed = await parseInput(AttendanceAdjustmentSchema, input);
   if (!parsed.ok) return parsed.error;
   const a = parsed.data;
 
-  const branchError = await assertBranch(auth.profile, a.branch_id);
+  const branchError = await assertBranchUnlessHr(auth.profile, a.branch_id);
   if (branchError) return branchError;
 
   // A timestamp arriving as a local `datetime-local` string has no zone.
@@ -101,10 +139,10 @@ export async function voidAttendanceEvent(input: {
   event_id: string;
   void_reason: string;
 }): Promise<{ ok: true } | ActionError> {
-  const auth = await authorize([...MANAGER_ROLES]);
+  const auth = await authorizeOversight();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(VoidAttendanceSchema, input);
+  const parsed = await parseInput(VoidAttendanceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -163,7 +201,7 @@ export async function setBranchGeofence(input: {
   const auth = await authorize([...MANAGER_ROLES]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(BranchGeofenceSchema, input);
+  const parsed = await parseInput(BranchGeofenceSchema, input);
   if (!parsed.ok) return parsed.error;
   const g = parsed.data;
 
@@ -216,10 +254,10 @@ export async function setBranchGeofence(input: {
 export async function revokeTrustedDevice(input: {
   device_id: string;
 }): Promise<{ ok: true } | ActionError> {
-  const auth = await authorize(["ceo", "branch_manager", "accountant", "sales_exec", "marketing"]);
+  const auth = await authorize(["ceo", "branch_manager", "accountant", "sales_exec", "marketing", "hr"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(RevokeDeviceSchema, input);
+  const parsed = await parseInput(RevokeDeviceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -256,7 +294,7 @@ export async function revokeTrustedDevice(input: {
 export async function overseenProfiles(): Promise<
   { ok: true; profiles: { id: string; full_name: string; branch_id: string | null; work_mode: string }[] } | ActionError
 > {
-  const auth = await authorize([...MANAGER_ROLES]);
+  const auth = await authorizeOversight();
   if (!auth.ok) return auth.error;
 
   const supabase = await createClient();

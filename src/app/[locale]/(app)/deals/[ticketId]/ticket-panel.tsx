@@ -6,8 +6,9 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Waterfall } from "@/components/waterfall";
-import { updateChecklist, approveTicket, rejectTicket, executeSale, fetchWaterfallPreview } from "../actions";
-import type { DealTicket, WaterfallPreview } from "@/lib/supabase/types";
+import { updateChecklist, approveTicket, rejectTicket, executeSale, fetchTicketWaterfall } from "../actions";
+import type { DealTicket, TicketWaterfall } from "@/lib/supabase/types";
+import { FeeFootnote, FeeOverrideDialog, FeeSourceBadge } from "./fee-override";
 import { CheckCircle2, FileText, Lock, ShieldCheck } from "lucide-react";
 import { InstallmentsPanel } from "./installments-panel";
 
@@ -17,6 +18,7 @@ export function TicketPanel({
   canExecute,
   canSeeCost,
   isConsignment,
+  isCeo,
   investorNames,
   contractSerial,
 }: {
@@ -39,6 +41,13 @@ export function TicketPanel({
    * <ConsignmentBanner> above this panel instead.
    */
   isConsignment: boolean;
+  /**
+   * Whether this viewer may edit the showroom fee on this one sale
+   * (migration 0050). CEO only — set_ticket_overhead() re-checks is_ceo()
+   * inside the function, so this prop only decides whether the control
+   * renders.
+   */
+  isCeo: boolean;
   investorNames: Record<string, string>;
   contractSerial: string | null;
 }) {
@@ -50,7 +59,7 @@ export function TicketPanel({
   const [error, setError] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [showReject, setShowReject] = useState(false);
-  const [preview, setPreview] = useState<WaterfallPreview | null>(null);
+  const [preview, setPreview] = useState<TicketWaterfall | null>(null);
 
   const [checklist, setChecklist] = useState({
     financial_check_passed: ticket.financial_check_passed,
@@ -66,15 +75,18 @@ export function TicketPanel({
     if (!canSeeCost || isConsignment) return;
     // Guard against an out-of-order response overwriting a newer one.
     let active = true;
-    fetchWaterfallPreview(ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount).then(
-      (result) => {
-        if (active) setPreview(result);
-      }
-    );
+    // 0050: the TICKET's waterfall, not the vehicle's. A settled sale is
+    // priced from the fee it actually paid rather than from today's
+    // configuration — see fetchTicketWaterfall for why those are
+    // different questions and why the old one silently answered the
+    // wrong one for every executed ticket.
+    fetchTicketWaterfall(ticket.id).then((result) => {
+      if (active) setPreview(result);
+    });
     return () => {
       active = false;
     };
-  }, [canSeeCost, isConsignment, ticket.vehicle_id, ticket.agreed_price, ticket.discount_amount]);
+  }, [canSeeCost, isConsignment, ticket.id, ticket.agreed_price, ticket.discount_amount, ticket.status]);
 
   function toggleCheck(key: keyof typeof checklist) {
     const previous = checklist;
@@ -239,9 +251,21 @@ export function TicketPanel({
 
       {canSeeCost && !isConsignment && (
         <Panel className="md:col-span-2">
-          <PanelHeader title={t("waterfall")} />
+          <PanelHeader
+            title={t("waterfall")}
+            action={
+              isCeo && preview ? (
+                <FeeOverrideDialog ticketId={ticket.id} waterfall={preview} />
+              ) : undefined
+            }
+          />
           {preview ? (
-            <Waterfall preview={preview} investorNames={investorNames} />
+            <Waterfall
+              preview={preview}
+              investorNames={investorNames}
+              overheadBadge={<FeeSourceBadge waterfall={preview} />}
+              overheadFootnote={<FeeFootnote waterfall={preview} />}
+            />
           ) : (
             <p className="text-xs text-[var(--color-text-faint)]">{common("loading")}</p>
           )}

@@ -120,5 +120,8 @@ export const REPORT_ROLES: Record<ReportKind, readonly string[]> = {
   expenses: ["ceo", "accountant"],
   salaries: ["ceo", "accountant"],
   vat: ["ceo", "accountant"],
-  attendance: ["ceo", "accountant", "branch_manager"],
+  // 0047. HR reads attendance org-wide, so the report that summarises
+  // it is theirs as much as the manager's. Nothing financial is
+  // widened: this is the one non-financial report in the suite.
+  attendance: ["ceo", "accountant", "branch_manager", "hr"],
 };

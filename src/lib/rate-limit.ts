@@ -1,5 +1,6 @@
 import "server-only";
 import { headers } from "next/headers";
+import { getTranslations } from "next-intl/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // There is no KV or Durable Object binding in this deployment, so the
@@ -55,6 +56,25 @@ export const LIMITS = {
    * cannon aimed at the outside world.
    */
   mailSend: { limit: 60, windowSeconds: 60 * 60 },
+  /**
+   * END DAY presses per profile (0053). Every one of them mails the
+   * branch managers and the CEO, so this is the throttle that stops an
+   * evening report becoming a way to fill your manager's inbox. Ten an
+   * hour is roomy for the real case — finish a late task, press it
+   * again — and useless for anything else.
+   */
+  endDay: { limit: 10, windowSeconds: 60 * 60 },
+  /**
+   * Cross-showroom stock searches per profile (0054). Every call fans
+   * out one request per participating showroom, so this is both a cost
+   * ceiling and the thing that stops one manager's account being used
+   * to walk the whole network's floor make by make — the one abuse this
+   * feature makes possible that nothing else in FELIX does.
+   *
+   * Roomy for the real job: a manager working through a list of
+   * unfilled asks clicks a dozen of them and never sees it.
+   */
+  networkSearch: { limit: 60, windowSeconds: 10 * 60 },
 } as const;
 
 /**
@@ -75,7 +95,11 @@ export async function clientIp(): Promise<string> {
 
 export async function consume(
   key: string,
-  { limit, windowSeconds }: { limit: number; windowSeconds: number }
+  {
+    limit,
+    windowSeconds,
+    failClosed = false,
+  }: { limit: number; windowSeconds: number; failClosed?: boolean }
 ): Promise<RateLimitResult> {
   try {
     // Buckets and the function both live in `platform` since 0008/0011 —
@@ -91,16 +115,29 @@ export async function consume(
     const row = data as { allowed: boolean; remaining: number; retry_after: number };
     return { allowed: row.allowed, remaining: row.remaining, retryAfter: row.retry_after };
   } catch (err) {
-    // Fail OPEN. A rate limiter that takes the login page down with it when
-    // the database hiccups is a worse outage than the abuse it prevents —
-    // but it must be visible, so log loudly.
-    console.error("[rate-limit] check failed, allowing request", { key, err });
-    return { allowed: true, remaining: 0, retryAfter: 0 };
+    if (!failClosed) {
+      // Fail OPEN. A rate limiter that takes its feature down with it when
+      // the database hiccups is a worse outage than the abuse it prevents —
+      // but it must be visible, so log loudly.
+      console.error("[rate-limit] check failed, allowing request", { key, err });
+      return { allowed: true, remaining: 0, retryAfter: 0 };
+    }
+
+    // Fail CLOSED. The login buckets pass this flag on purpose: during a
+    // Postgres outage, "open" means password grinding with no throttle at
+    // all, against the single most valuable credential set in the system.
+    // Denying logins for the window is the safer failure — nobody can
+    // sign in anyway while auth's own session store is unreachable.
+    console.error("[rate-limit] check failed, REFUSING request (fail-closed bucket)", { key, err });
+    return { allowed: false, remaining: 0, retryAfter: windowSeconds };
   }
 }
 
 /** Formats the retry delay for a user-facing message. */
-export function retryMessage(retryAfter: number): string {
+export async function retryMessage(retryAfter: number): Promise<string> {
   const minutes = Math.ceil(retryAfter / 60);
-  return minutes <= 1 ? "Please try again in a minute." : `Please try again in ${minutes} minutes.`;
+  // One plural key instead of two branches: next-intl renders the =1 and
+  // other cases in the request's locale, including the numeral.
+  const t = await getTranslations("errors.actions");
+  return t("retryInMinutes", { count: minutes });
 }

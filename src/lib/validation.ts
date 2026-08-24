@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { buildSchedule, MAX_PLAN_MONTHS } from "@/lib/receivables";
+import { SHOWROOM_EXPENSE_CATEGORIES as EXPENSE_CATEGORIES } from "@/lib/showroom-expenses";
+import { localizeActionError } from "@/lib/action-messages";
 
 // Every Server Action is a public HTTP endpoint: any authenticated user can
 // invoke any exported action with hand-crafted arguments, whatever the UI
@@ -849,6 +851,94 @@ export const OverheadSchema = z.object({
   monthlyOpex: money,
 });
 
+// ── Showroom fees (migration 0047) ──────────────────────────
+//
+// The running cost of keeping the doors open — recorded as bills,
+// resolved into a monthly rate, and charged against a car's profit
+// before the cap table divides it. Three surfaces, three schemas: the
+// bill, the branch policy, and the CEO's per-month and per-sale
+// overrides.
+//
+// Everything is anchored to the FIRST of a month. The database CHECKs
+// that too (showroom_expenses_month_first, overhead_months_month_first),
+// so a `YYYY-MM` here is the only shape the UI can produce and the only
+// shape the constraint accepts.
+
+/** `YYYY-MM` off a month input, normalised to the first of that month. */
+const monthString = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, { message: "Pick a month" })
+  .transform((v) => `${v}-01`);
+
+// The vocabulary itself lives in a module with no server dependencies —
+// this file imports `server-only` transitively through action-messages,
+// so a client component reaching in here for a constant would break the
+// build. Re-exported for the server-side call sites that already import
+// their schemas from here.
+export { SHOWROOM_EXPENSE_CATEGORIES } from "@/lib/showroom-expenses";
+
+export const ShowroomExpenseSchema = z.object({
+  branch_id: Uuid,
+  period_month: monthString,
+  category: z.enum(EXPENSE_CATEGORIES),
+  amount: positiveMoney,
+  note: optionalText(300),
+});
+
+export const VoidShowroomExpenseSchema = z.object({
+  expense_id: Uuid,
+});
+
+/**
+ * The branch-level fee policy. `basis` decides where the monthly rate
+ * comes from; `fees_enabled` false stops charging altogether, which is
+ * NOT the same as a zero rate — a zero rate is a figure, and this is the
+ * switch being off.
+ */
+export const OverheadPolicySchema = z.object({
+  branch_id: Uuid,
+  fees_enabled: z.boolean(),
+  basis: z.enum(["manual", "average"]),
+  monthly_opex_amount: money,
+  average_window_months: z.number().int().min(1).max(36),
+});
+
+/**
+ * One month's override. `rate` is ignored when `enabled` is false — the
+ * database stores it either way so switching the month back on restores
+ * the figure the CEO last typed rather than a zero.
+ */
+export const OverheadMonthSchema = z.object({
+  branch_id: Uuid,
+  period_month: monthString,
+  rate_amount: money,
+  enabled: z.boolean(),
+  note: optionalText(200),
+});
+
+export const ClearOverheadMonthSchema = z.object({
+  branch_id: Uuid,
+  period_month: monthString,
+});
+
+/**
+ * The CEO's per-sale fee edit. `overhead` null CLEARS the override —
+ * back to the frozen snapshot on a settled sale, back to the live
+ * accrual on an open one. On a settled sale either direction moves money,
+ * so a reason is required for anything but a clear.
+ */
+export const TicketOverheadSchema = z
+  .object({
+    ticket_id: Uuid,
+    overhead: money.nullable(),
+    reason: optionalText(300),
+  })
+  .refine((v) => v.overhead === null || (v.reason?.length ?? 0) > 0, {
+    message: "Give a reason for changing this sale's showroom fee.",
+    path: ["reason"],
+  });
+
 // ── The in-house receivable book (migration 0033) ───────────
 //
 // A deal ticket with financing_type 'installments' and NO
@@ -1047,7 +1137,7 @@ export const PresignSchema = z.object({
 
 // ── Administration ──────────────────────────────────────────
 
-export const ROLES = ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing"] as const;
+export const ROLES = ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing", "hr"] as const;
 
 // Statutory employee data for Egypt's monthly NOSI filing (migration
 // 0018). Everything optional — an account is often created before the
@@ -1074,12 +1164,21 @@ export const CreateStaffSchema = z
     phone: z.union([phone, z.literal("")]).transform((v) => v || null),
     ...StaffStatutoryFields,
   })
-  // A CEO, an investor and marketing are org-wide; everyone else works
-  // out of a branch (marketing lists the whole showroom's stock — 0029).
-  .refine((s) => s.role === "ceo" || s.role === "investor" || s.role === "marketing" || s.branch_id !== null, {
-    message: "Branch staff must be assigned to a branch",
-    path: ["branch_id"],
-  });
+  // A CEO, an investor, marketing and HR are org-wide; everyone else
+  // works out of a branch (marketing lists the whole showroom's stock —
+  // 0029; HR runs the payroll for all of them — 0047).
+  .refine(
+    (s) =>
+      s.role === "ceo" ||
+      s.role === "investor" ||
+      s.role === "marketing" ||
+      s.role === "hr" ||
+      s.branch_id !== null,
+    {
+      message: "Branch staff must be assigned to a branch",
+      path: ["branch_id"],
+    }
+  );
 
 export const UpdateStaffSchema = z.object({
   id: Uuid,
@@ -1088,6 +1187,82 @@ export const UpdateStaffSchema = z.object({
   branch_id: Uuid.nullable(),
   phone: z.union([phone, z.literal("")]).transform((v) => v || null),
   ...StaffStatutoryFields,
+});
+
+// ── The HR hub (0047–0049) ──────────────────────────────────
+
+/**
+ * What HR may change about somebody's employment record.
+ *
+ * Deliberately a DIFFERENT schema from UpdateStaffSchema even though
+ * four of the five fields overlap: that one also carries `role` and
+ * `branch_id`, which are CEO-only at the database (the first arm of
+ * guard_profile_privilege_columns). Reusing it would have HR POSTing a
+ * role on every save and relying on a trigger to reject it, which works
+ * right up until somebody adds an `if` to that trigger. The payroll form
+ * cannot express a role change because the payroll schema has no field
+ * for one.
+ */
+export const UpdatePayrollSchema = z.object({
+  profile_id: Uuid,
+  ...StaffStatutoryFields,
+});
+
+/**
+ * One rung of the bonus ladder (0049).
+ *
+ * `min_units` is capped at 15 here and CHECKed at 1–15 in Postgres. The
+ * cap is the showroom's, not a technical limit: a rung above the top of
+ * the scheme is unreachable and would sit in the table looking like
+ * policy.
+ */
+export const BonusRuleSchema = z.object({
+  min_units: z.number().int().min(1).max(15),
+  bonus_amount: money,
+  active: z.boolean(),
+  note: optionalText(200),
+});
+
+/** Retiring a rung is a flag, not a delete — there is no DELETE grant. */
+export const BonusRuleActiveSchema = z.object({
+  id: Uuid,
+  active: z.boolean(),
+});
+
+/**
+ * The features a CEO may address on someone's navigation (0048).
+ *
+ * FEATURES lists everything the database CHECK accepts. Which of them
+ * may be GRANTED is a narrower question with a narrower answer —
+ * FEATURE_GRANTABLE in lib/features.ts, mirroring
+ * feature_grants_grantable — and the action checks it, because a schema
+ * that accepted a grant Postgres refuses would turn a product decision
+ * into a constraint-violation toast.
+ */
+export const FEATURES = [
+  "hr",
+  "ceoDashboard",
+  "inventory",
+  "crm",
+  "deals",
+  "marketing",
+  "accountant",
+  "investor",
+  "calendar",
+  "employees",
+  "attendance",
+  "mail",
+  "support",
+  "account",
+] as const;
+
+export const SetFeatureGrantSchema = z.object({
+  profile_id: Uuid,
+  feature: z.enum(FEATURES),
+  mode: z.enum(["grant", "hide"]),
+  /** false revokes whatever is live for this (profile, feature). */
+  enabled: z.boolean(),
+  note: optionalText(200),
 });
 
 // ── Employee targets & profile (0027) ───────────────────────
@@ -1375,6 +1550,124 @@ export const MailUploadPresignSchema = z.object({
   size: z.number().int().positive().max(25 * 1024 * 1024),
 });
 
+// ── Tasks (migration 0053) ──────────────────────────────────
+
+/**
+ * A calendar day as the browser computed it, offset already applied.
+ * Never `new Date()` on the server: Workers run in UTC and a Cairo
+ * showroom closing at 21:00 would file its evening report under
+ * tomorrow for three hours every night.
+ */
+const DayKey = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Expected a date as YYYY-MM-DD" });
+
+export const TaskRecurrenceEnum = z.enum(["daily", "weekly", "monthly"]);
+
+/**
+ * A standing instruction. The three cross-field rules here are the same
+ * three the database CHECKs — target, weekly, monthly — restated so the
+ * form can name the mistake instead of surfacing a constraint violation.
+ */
+export const TaskTemplateSchema = z
+  .object({
+    // Optional: present when editing, absent when creating.
+    id: Uuid.optional(),
+    title: text(160),
+    description: optionalText(1000),
+    recurrence: TaskRecurrenceEnum,
+    // 0 = Sunday, matching Postgres extract(dow).
+    weekday: z.number().int().min(0).max(6).nullable().default(null),
+    // 28 rather than 31, and the message says why — see lib/tasks.ts.
+    day_of_month: z.number().int().min(1).max(28).nullable().default(null),
+    /** Null = every branch in the company. The action refuses that for
+     *  anyone but the CEO, exactly as task_templates_insert does. */
+    branch_id: Uuid.nullable().default(null),
+    assignee_role: z
+      .enum(["ceo", "accountant", "branch_manager", "sales_exec", "marketing", "hr"])
+      .nullable()
+      .default(null),
+    assignee_id: Uuid.nullable().default(null),
+  })
+  .refine((v) => (v.assignee_role === null) !== (v.assignee_id === null), {
+    message: "Aim the task at a role or at one person — not both, and not neither.",
+    path: ["assignee_role"],
+  })
+  .refine((v) => v.recurrence !== "weekly" || v.weekday !== null, {
+    message: "A weekly task needs a day of the week.",
+    path: ["weekday"],
+  })
+  .refine((v) => v.recurrence !== "monthly" || v.day_of_month !== null, {
+    message: "A monthly task needs a day of the month (1–28).",
+    path: ["day_of_month"],
+  });
+
+export const SetTaskTemplateActiveSchema = z.object({
+  id: Uuid,
+  active: z.boolean(),
+});
+
+/** A one-off task: a manager assigning work, or anyone's own to-do. */
+export const CreateTaskSchema = z.object({
+  title: text(160),
+  description: optionalText(1000),
+  due_on: DayKey,
+  /** Null means "me" — the personal-to-do arm of tasks_insert. */
+  assignee_id: Uuid.nullable().default(null),
+});
+
+export const SetTaskStatusSchema = z.object({
+  id: Uuid,
+  // 'cancelled' is admitted here and refused inside set_task_status()
+  // for anyone but a manager. The schema's job is shape, not authority.
+  status: z.enum(["open", "done", "skipped", "cancelled"]),
+  note: optionalText(500),
+});
+
+/**
+ * Split the branch's pending enquiries across the salespeople on the
+ * floor.
+ *
+ * `include_assigned` is the one destructive switch on the page, and it
+ * defaults to false: off, only enquiries that belong to nobody are
+ * dealt out. On, every pending enquiry in the branch is re-dealt, which
+ * moves leads between salespeople and is a decision a manager has to
+ * make deliberately.
+ */
+export const DistributeLeadsSchema = z.object({
+  branch_id: Uuid,
+  due_on: DayKey,
+  include_assigned: z.boolean().default(false),
+});
+
+export const EndDaySchema = z.object({
+  day: DayKey,
+  note: optionalText(500),
+});
+
+export const MaterialiseTasksSchema = z.object({
+  day: DayKey,
+});
+
+// ── The FELIX Network (migration 0054) ──────────────────────
+
+/**
+ * One cross-showroom stock search.
+ *
+ * Capped at 80 characters because this string is fanned out to every
+ * participating showroom's PostgREST as an `ilike` filter — see
+ * coarseFilter() for why the words themselves are safe by then.
+ */
+export const NetworkSearchSchema = z.object({
+  q: z.string().trim().min(1).max(80),
+});
+
+/** The CEO's switch: does this showroom publish its stock to the network. */
+export const NetworkParticipationSchema = z.object({
+  enabled: z.boolean(),
+});
+
 // ── List controls ───────────────────────────────────────────
 
 export const PAGE_SIZE = 25;
@@ -1398,11 +1691,16 @@ export type ActionError = { error: string; fieldErrors?: Record<string, string[]
  * Parse an action's input, returning a shape the forms can render directly.
  * Keeps every action's failure path identical: `{ error }` for the banner,
  * `fieldErrors` for inline messages.
+ *
+ * Async since localization moved server-side: zod's custom messages are
+ * English literals by construction (module scope has no request locale),
+ * so they are translated here, where every action's failure already
+ * funnels through. All call sites await this.
  */
-export function parseInput<S extends z.ZodType>(
+export async function parseInput<S extends z.ZodType>(
   schema: S,
   input: unknown
-): { ok: true; data: z.infer<S> } | { ok: false; error: ActionError } {
+): Promise<{ ok: true; data: z.infer<S> } | { ok: false; error: ActionError }> {
   const result = schema.safeParse(input);
   if (result.success) return { ok: true, data: result.data };
 
@@ -1410,9 +1708,10 @@ export function parseInput<S extends z.ZodType>(
   const firstField = Object.values(flat.fieldErrors).flat()[0];
   return {
     ok: false,
-    error: {
+    error: await localizeActionError({
       error: flat.formErrors[0] ?? firstField ?? "Please check the values you entered.",
       fieldErrors: flat.fieldErrors as Record<string, string[]>,
-    },
+    }),
   };
 }
+

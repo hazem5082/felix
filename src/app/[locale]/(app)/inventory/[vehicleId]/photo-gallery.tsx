@@ -60,6 +60,7 @@ export function PhotoGallery({
             key={p}
             src={p}
             alt=""
+            loading={i === 0 ? "eager" : "lazy"}
             onClick={() => setIndex(i)}
             className={cn(thumbClassName, "cursor-zoom-in object-cover transition-opacity hover:opacity-90")}
           />

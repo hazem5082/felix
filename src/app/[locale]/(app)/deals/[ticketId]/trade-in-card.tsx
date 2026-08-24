@@ -85,7 +85,7 @@ export async function TradeInCard({
         <div className="mt-3 flex gap-2 overflow-x-auto">
           {ticket.trade_in_photos.map((p) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <img key={p} src={p} alt="" className="h-16 w-20 shrink-0 rounded-md object-cover" />
+            <img key={p} src={p} alt="" loading="lazy" className="h-16 w-20 shrink-0 rounded-md object-cover" />
           ))}
         </div>
       )}

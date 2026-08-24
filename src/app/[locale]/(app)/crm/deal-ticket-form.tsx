@@ -303,7 +303,13 @@ export function DealTicketFormDialog({
                 onClick={() => setTradeInOpen((v) => !v)}
                 className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-sm font-medium text-[var(--color-text)]"
               >
-                {tradeInOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {/* Mirrored in RTL: the closed chevron points "forward" in
+                    either direction, like every other disclosure here. */}
+                {tradeInOpen ? (
+                  <ChevronDown size={14} />
+                ) : (
+                  <ChevronRight size={14} className="rtl:-scale-x-100" />
+                )}
                 {t("tradeInSection")}
                 {!tradeInOpen && (
                   <span className="ms-auto text-xs font-normal text-[var(--color-text-faint)]">
@@ -372,7 +378,7 @@ export function DealTicketFormDialog({
                       <div className="mt-2 flex gap-2 overflow-x-auto">
                         {tiPhotos.map((p) => (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img key={p} src={p} alt="" className="h-14 w-14 rounded-md object-cover" />
+                          <img key={p} src={p} alt="" loading="lazy" className="h-14 w-14 rounded-md object-cover" />
                         ))}
                       </div>
                     )}

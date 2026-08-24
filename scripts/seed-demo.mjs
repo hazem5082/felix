@@ -47,6 +47,7 @@ import { createClient } from "@supabase/supabase-js";
 import { fileURLToPath } from "node:url";
 import { register } from "node:module";
 import { spawnSync } from "node:child_process";
+import { randomBytes, createHash } from "node:crypto";
 // The four cars themselves — VINs and photography — are described in one
 // place, because demo-photos.mjs writes to the same rows this script creates.
 import { vinFor, photosFor, seedPipeline } from "./demo-fixtures.mjs";
@@ -273,6 +274,9 @@ const ACCOUNTS = [
   // Org-wide, like the CEO and the investors: marketing advertises the
   // whole showroom's stock (0029), not one branch's.
   { key: "marketing", role: "marketing", name: "Farah Adel", branch: null },
+  // Org-wide for the same reason: the payroll register is the whole
+  // company, not one branch's staff (0047).
+  { key: "hr", role: "hr", name: "Nadia Fouad", branch: null },
   { key: "investor1", role: "investor", name: "Morgan Lee", branch: null },
   { key: "investor2", role: "investor", name: "Priya Shah", branch: null },
 ];
@@ -352,6 +356,11 @@ let EXISTING_USERS;
 async function createUser(key, dbRole, fullName, branchId) {
   const email = emailFor(key);
 
+  // The invitation's one-time token (0052): the digest goes on the row,
+  // the plaintext into this user's signup metadata. handle_new_user()
+  // refuses any auth.users insert whose metadata does not carry it.
+  const inviteToken = randomBytes(24).toString("hex");
+
   const { error: invError } = await platformDb.from("staff_invitations").upsert(
     {
       tenant_id: TENANT_ID,
@@ -361,6 +370,7 @@ async function createUser(key, dbRole, fullName, branchId) {
       branch_id: branchId ?? null,
       accepted_at: null,
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      invite_token_digest: createHash("sha256").update(inviteToken).digest("hex"),
     },
     { onConflict: "tenant_id,email" }
   );
@@ -425,7 +435,7 @@ async function createUser(key, dbRole, fullName, branchId) {
     email,
     password: PASSWORD,
     email_confirm: true,
-    user_metadata: { full_name: fullName },
+    user_metadata: { full_name: fullName, invite_token: inviteToken },
   });
   if (error) {
     console.error(`✗ Failed to create ${email}:`, error.message);

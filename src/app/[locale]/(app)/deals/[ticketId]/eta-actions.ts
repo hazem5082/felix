@@ -39,7 +39,7 @@ export async function recordEtaInvoice(input: {
   const auth = await authorize(FINANCE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(RecordEtaInvoiceSchema, input);
+  const parsed = await parseInput(RecordEtaInvoiceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -85,7 +85,7 @@ export async function loadEtaSubmissions(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(SubmitEtaInvoiceSchema, input);
+  const parsed = await parseInput(SubmitEtaInvoiceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const result = await listEtaSubmissions(parsed.data.ticketId);
@@ -111,7 +111,7 @@ export async function previewEtaInvoice(input: {
   const auth = await authorize(FINANCE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(SubmitEtaInvoiceSchema, input);
+  const parsed = await parseInput(SubmitEtaInvoiceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   return previewEtaSubmission(parsed.data.ticketId);
@@ -137,7 +137,7 @@ export async function submitEtaInvoice(input: { ticketId: string }) {
   const auth = await authorize(FINANCE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(SubmitEtaInvoiceSchema, input);
+  const parsed = await parseInput(SubmitEtaInvoiceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const result = await submitTicketToEta(parsed.data.ticketId, auth.profile.id);

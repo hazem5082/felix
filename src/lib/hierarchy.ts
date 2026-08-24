@@ -39,6 +39,11 @@ export const ROLE_RANK: Record<Role, number> = {
   ceo: 100,
   branch_manager: 60,
   accountant: 50,
+  // 0047. Level with the accountant: a staff function that reports to
+  // the CEO and manages nobody. The number is only ever read as "is this
+  // person above that one" — see the note above on why SUPERVISES is a
+  // separate table rather than a comparison against these.
+  hr: 50,
   marketing: 30,
   sales_exec: 30,
   investor: 10,
@@ -60,9 +65,21 @@ export const ROLE_RANK: Record<Role, number> = {
  * a person.
  */
 export const SUPERVISES: Record<Role, readonly Role[]> = {
-  ceo: ["ceo", "branch_manager", "accountant", "marketing", "sales_exec", "investor"],
+  ceo: ["ceo", "branch_manager", "accountant", "marketing", "sales_exec", "investor", "hr"],
   branch_manager: ["sales_exec", "marketing"],
   accountant: [],
+  // HR supervises NOBODY, and the omission is the point.
+  //
+  // This table governs exactly one thing: who may change whose SIGN-IN
+  // ADDRESS, which is a full account takeover — the new address can
+  // request a password reset. HR administering someone's payroll record
+  // is a different power with a different fence (the payroll arm of
+  // guard_profile_privilege_columns, migration 0047), and conflating
+  // the two would hand a payroll clerk every account in the showroom.
+  //
+  // A locked-out salesperson still has a route: their branch manager,
+  // or the CEO.
+  hr: [],
   marketing: [],
   sales_exec: [],
   investor: [],

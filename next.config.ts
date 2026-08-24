@@ -76,11 +76,25 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-DNS-Prefetch-Control", value: "off" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  // geolocation=(self), NOT () — the attendance geofence calls
+  // getCurrentPosition (punch-card, geofence-panel). With () the browser
+  // denies silently, without ever showing a prompt, and every punch
+  // degrades to null coordinates: the feature is dead while looking
+  // merely "unavailable". (self) still blocks third parties.
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self), payment=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
 ];
 
 const nextConfig: NextConfig = {
+  // Two dev servers on one checkout share `.next` and overwrite each
+  // other's manifests: routes-manifest.json and the client chunks go
+  // missing, every route 500s with "Cannot find module for page", and
+  // nothing hydrates — a failure that looks exactly like a bug in
+  // whatever you last edited. `NEXT_DIST_DIR=.next-<name> npm run dev`
+  // gives a session its own build directory. Unset, this is the plain
+  // `.next` Next.js would have used anyway, so nothing changes for a
+  // normal run or for the Cloudflare build.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   turbopack: {
     root: __dirname,
   },

@@ -1,6 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
-import { getGrantedBranchIds, requireRole } from "@/lib/auth";
+import { getGrantedBranchIds, hasHrAccess, requireRole } from "@/lib/auth";
 import { selectableBranches } from "@/lib/branch-authority";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { dayKey, summariseDay, summariseRange, stateAfter, type AttendanceEvent } from "@/lib/attendance";
@@ -41,7 +41,14 @@ export default async function AttendancePage({
     "accountant",
     "sales_exec",
     "marketing",
+    // 0047. HR owns the attendance record: they read it org-wide, void
+    // a bad punch and enter the adjustment that replaces it.
+    "hr",
   ]);
+  // ...as does anyone the CEO handed the HR hub to (0048). Same
+  // predicate the database uses, so the board this unlocks is exactly
+  // the board attendance_events_select will serve.
+  const isHr = await hasHrAccess();
   const t = await getTranslations("attendance");
 
   // The viewer's UTC offset, as the report suite does it. Workers run in
@@ -50,7 +57,18 @@ export default async function AttendancePage({
   const offsetMinutes = parseOffset(tz);
 
   const supabase = await createClient();
+  // TWO DIFFERENT QUESTIONS, and 0047 is where they stopped having the
+  // same answer.
+  //
+  //   isManager  may reshape the SHOWROOM — the geofence panel writes to
+  //              branches, which branches_geofence_update gates on
+  //              is_manager_or_above(). HR is not that, and rendering
+  //              the panel for them would be a control that fails on
+  //              save.
+  //   oversees   may look at other people's days. That is HR's whole
+  //              job, and attendance_events_select now says so.
   const isManager = profile.role === "ceo" || profile.role === "branch_manager";
+  const oversees = isManager || isHr;
 
   const [{ data: branchRows }, { data: myEvents }, { data: myDevices }, grantedBranchIds] =
     await Promise.all([
@@ -91,7 +109,7 @@ export default async function AttendancePage({
   // branches they may read, so a filter here would restate the rule in
   // a second place where it could drift — and would silently narrow the
   // CEO, who is meant to see everyone.
-  const [{ data: staffRows }, { data: teamRows }] = isManager
+  const [{ data: staffRows }, { data: teamRows }] = oversees
     ? await Promise.all([
         supabase
           .from("profiles")
@@ -155,10 +173,13 @@ export default async function AttendancePage({
         workMode={profile.work_mode}
       />
 
-      {isManager && (
+      {oversees && (
         <TeamBoard
           rows={board}
-          branches={mine.map((b) => ({ id: b.id, name: b.name }))}
+          // HR reads every branch (attendance_events_select), so the
+          // filter must offer every branch — narrowing it to `mine`
+          // would hide rows the query already returned.
+          branches={(isHr ? branches : mine).map((b) => ({ id: b.id, name: b.name }))}
           offsetMinutes={offsetMinutes}
         />
       )}
@@ -171,7 +192,7 @@ export default async function AttendancePage({
           same component the accountant page uses; it renders only the
           reports the given role may open, so a branch manager sees
           attendance and nothing financial. */}
-      {isManager && <ReportsLauncher role={profile.role} />}
+      {oversees && <ReportsLauncher role={profile.role} />}
 
       {isManager && (
         <GeofencePanel

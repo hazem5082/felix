@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { putObject } from "@/lib/r2";
 import { sniff, SNIFF_PREFIX_BYTES, MAX_ATTACHMENT_BYTES } from "@/lib/file-sniff";
+import { authenticateWebhook } from "@/lib/webhook-auth";
 
 /**
  * The 508.world Worker -> FILEX bridge for mail arriving at
@@ -29,8 +30,9 @@ import { sniff, SNIFF_PREFIX_BYTES, MAX_ATTACHMENT_BYTES } from "@/lib/file-snif
 const AttachmentSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   mime_type: z.string().trim().max(200).optional(),
-  /** base64, no data: prefix. */
-  content: z.string(),
+  /** base64, no data: prefix. Bounded at the raw-body level before any
+   * decode is attempted — 25 MB of bytes is ~34 MB of base64. */
+  content: z.string().max(Math.ceil(MAX_ATTACHMENT_BYTES * 1.37)),
 });
 
 const InboundSchema = z.object({
@@ -38,8 +40,8 @@ const InboundSchema = z.object({
   from: z.string().trim().max(320),
   from_name: z.string().trim().max(200).optional(),
   subject: z.string().trim().max(500).optional(),
-  text: z.string().optional(),
-  html: z.string().optional(),
+  text: z.string().max(1_000_000).optional(),
+  html: z.string().max(2_000_000).optional(),
   message_id: z.string().trim().max(998).optional(),
   in_reply_to: z.string().trim().max(998).optional(),
   occurred_at: z.string().datetime().optional(),
@@ -73,19 +75,17 @@ function snippetOf(text: string): string {
 }
 
 export async function POST(request: Request) {
-  const expected = process.env.FELIX_MAIL_SECRET;
-  if (!expected) {
-    console.error("[mail/inbound] FELIX_MAIL_SECRET is not configured");
-    return NextResponse.json({ error: "Not configured" }, { status: 503 });
-  }
-  const presented = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!presented || presented !== expected) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Shared-secret auth, HMAC-signed when the router has been upgraded
+  // (see webhook-auth.ts). On success `body` holds the raw request text —
+  // the HMAC branch consumes the stream verifying it.
+  const verified = await authenticateWebhook(request, "FELIX_MAIL_SECRET", "mail/inbound");
+  if (!verified.ok) {
+    return NextResponse.json({ error: verified.error }, { status: verified.status });
   }
 
   let raw: unknown;
   try {
-    raw = await request.json();
+    raw = JSON.parse(verified.body);
   } catch {
     return NextResponse.json({ error: "Malformed request body" }, { status: 400 });
   }
@@ -145,8 +145,27 @@ export async function POST(request: Request) {
     .single();
 
   if (insertError || !inserted) {
-    // Thrown rather than a clean 4xx: a DB hiccup is exactly the kind
-    // of transient failure the Worker should retry, and Cloudflare
+    // A duplicate message_id (0055's unique index) means the Worker is
+    // retrying a delivery we already stored — Cloudflare Email Routing
+    // retries on any non-2xx, so answering 500 here would loop forever.
+    // Report success with the row we already have; mail is idempotent
+    // per (tenant, inbound message_id).
+    if (insertError?.code === "23505" && body.message_id) {
+      const { data: existing } = await tenant
+        .from("mail_messages")
+        .select("id")
+        .eq("message_id", body.message_id)
+        .eq("direction", "inbound")
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        console.warn("[mail/inbound] duplicate delivery ignored", { messageId: body.message_id });
+        return NextResponse.json({ ok: true, id: (existing as { id: string }).id, duplicate: true });
+      }
+    }
+
+    // Otherwise thrown rather than a clean 4xx: a DB hiccup is exactly the
+    // kind of transient failure the Worker should retry, and Cloudflare
     // Email Routing's own retry/backoff is a better recovery path here
     // than anything this route could build itself.
     console.error("[mail/inbound] storing message failed", insertError);

@@ -16,8 +16,14 @@ export async function middleware(request: NextRequest) {
 
   const intlResponse = intlMiddleware(request);
   if (intlResponse) {
+    // Copy the WHOLE cookie object, not just name+value. The refreshed
+    // sb-* cookies carry SameSite/Secure/httpOnly/Max-Age from auth-js;
+    // copying only name/value silently stripped every attribute — on
+    // browsers without a Lax-by-default (Safari) that let refreshed
+    // session cookies ride cross-site POSTs, and persistent sessions
+    // degraded to browser-session cookies.
     sessionResponse.cookies.getAll().forEach((cookie) => {
-      intlResponse.cookies.set(cookie.name, cookie.value);
+      intlResponse.cookies.set(cookie);
     });
     return intlResponse;
   }

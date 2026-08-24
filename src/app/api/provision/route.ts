@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { authenticateWebhook } from "@/lib/webhook-auth";
 
 // Provisions a licensed FELIX showroom.
 //
@@ -53,39 +54,36 @@ function bad(message: string, status: number) {
  * with the Web Crypto CSPRNG — `Math.random()` is not acceptable for a
  * credential, even a temporary one, and this runs on the Workers
  * runtime where `crypto` is global.
+ *
+ * Every character comes from the CSPRNG directly; an older version
+ * appended a literal "!7" for symbol-class theatre, which added zero
+ * entropy and made generated passwords recognisable on sight.
  */
 function temporaryPassword(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const bytes = new Uint8Array(20);
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%?";
+  const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   // Rejection-free mapping is unnecessary here: the alphabet length
-  // divides evenly enough that modulo bias across 56 symbols is
-  // negligible for a 20-character single-use password.
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("") + "!7";
+  // divides evenly enough that modulo bias across 57 symbols is
+  // negligible for a 24-character single-use password.
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
 export async function POST(request: Request) {
   // Shared-secret auth. This endpoint creates accounts and tenants, so
   // it is deliberately not reachable with a user session at all — only
   // by a caller holding the secret, which lives as a Worker secret on
-  // the 508.world side and an env var here.
-  const expected = process.env.PROVISION_SECRET;
-  if (!expected) {
-    console.error("[provision] PROVISION_SECRET is not configured");
-    return bad("Provisioning is not configured", 503);
-  }
-
-  const presented = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  // Length-independent compare would be better, but the secret is
-  // high-entropy and this is a single non-enumerable endpoint; a
-  // constant-time compare across a network boundary buys nothing here.
-  if (!presented || presented !== expected) {
-    return bad("Forbidden", 403);
+  // the 508.world side and an env var here. HMAC-signed when the router
+  // has been upgraded; legacy bearer still accepted during the
+  // transition (webhook-auth.ts).
+  const verified = await authenticateWebhook(request, "PROVISION_SECRET", "provision");
+  if (!verified.ok) {
+    return bad(verified.error, verified.status);
   }
 
   let raw: unknown;
   try {
-    raw = await request.json();
+    raw = JSON.parse(verified.body);
   } catch {
     return bad("Malformed request body", 400);
   }
@@ -126,6 +124,8 @@ export async function POST(request: Request) {
   const result = provisioned as {
     tenant: { id: string; slug: string; name: string; status: string };
     branch_id: string;
+    /** One-time signup secret minted by provision_tenant (0052). */
+    invite_token?: string;
   };
 
   // Step 1b — expose the new schema to PostgREST. provision_tenant()
@@ -150,12 +150,21 @@ export async function POST(request: Request) {
   // exists, because handle_new_user() reads that row to decide the new
   // profile's role and tenant. Reversing these two would silently
   // produce a tenant-less sales_exec who can see nothing.
+  //
+  // invite_token (0052) is the one-time secret the token gate demands;
+  // without it GoTrue refuses the insert and no CEO profile is minted.
+  // It travels server-to-server only and must never be logged or
+  // returned — the response already carries a credential in the temp
+  // password, and one is enough.
   const temp = temporaryPassword();
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email: ceo_email,
     password: temp,
     email_confirm: true,
-    user_metadata: { full_name: ceo_full_name },
+    user_metadata: {
+      full_name: ceo_full_name,
+      ...(result.invite_token ? { invite_token: result.invite_token } : {}),
+    },
   });
 
   let temporaryPasswordToReturn: string | null = temp;

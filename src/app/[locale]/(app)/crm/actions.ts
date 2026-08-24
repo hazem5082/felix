@@ -36,7 +36,7 @@ export async function createLead(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateLeadSchema, input);
+  const parsed = await parseInput(CreateLeadSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -91,7 +91,7 @@ export async function lookupCustomerForLead(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return null;
 
-  const parsed = parseInput(CustomerLookupSchema, input);
+  const parsed = await parseInput(CustomerLookupSchema, input);
   if (!parsed.ok) return null;
   if (!parsed.data.national_id && !parsed.data.phone_number) return null;
 
@@ -153,7 +153,7 @@ export async function updateLead(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateLeadSchema, input);
+  const parsed = await parseInput(UpdateLeadSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const { id, ...fields } = parsed.data;
@@ -220,7 +220,7 @@ export async function addLeadComment(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(LeadCommentSchema, {
+  const parsed = await parseInput(LeadCommentSchema, {
     ...input,
     contact_method: input.contact_method || null,
   });
@@ -273,7 +273,7 @@ export async function addLeadInterest(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateLeadInterestSchema, input);
+  const parsed = await parseInput(CreateLeadInterestSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -329,7 +329,7 @@ export async function setLeadInterestStatus(input: { id: string; status: string 
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateLeadInterestStatusSchema, input);
+  const parsed = await parseInput(UpdateLeadInterestStatusSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -382,7 +382,7 @@ export async function updateLeadInterest(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateLeadInterestSchema, input);
+  const parsed = await parseInput(UpdateLeadInterestSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -448,7 +448,7 @@ export async function createDealTicket(input: {
   const auth = await authorize(STAFF_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateDealTicketSchema, input);
+  const parsed = await parseInput(CreateDealTicketSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();

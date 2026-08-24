@@ -1,5 +1,5 @@
 import "server-only";
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { Role } from "@/lib/supabase/types";
 
@@ -23,10 +23,10 @@ export const FOLDER_ROLES: Record<UploadFolder, Role[]> = {
   vehicles: ["ceo", "branch_manager", "accountant"],
   "financing-contracts": ["ceo", "accountant"],
   "financing-requests": ["ceo", "accountant", "branch_manager", "sales_exec"],
-  avatars: ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing"],
+  avatars: ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing", "hr"],
   // Mail is generic comms, unlike every other folder here — every role
   // that can sign in may attach a file to a message.
-  mail: ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing"],
+  mail: ["ceo", "accountant", "branch_manager", "sales_exec", "investor", "marketing", "hr"],
   // The company logo on every printed contract, report and sticker
   // (0046). CEO only — this is the letterhead the whole group signs
   // under, not a per-user asset.
@@ -108,10 +108,19 @@ export async function createPresignedUpload(
   folder: UploadFolder,
   fileName: string,
   contentType: string,
-  contentLength: number
+  contentLength: number,
+  /** Binds the object to its uploader. Used for the `mail` folder: the
+   * key gains an owner segment (`mail/<profileId>/<uuid>_<name>`), which
+   * is what lets sendMail() refuse a staged key the caller does not own
+   * — including one whose random UUID was learned from another tenant's
+   * message, on the shared bucket this prefix lives in. */
+  ownerId?: string
 ) {
   const bucket = bucketFor(folder);
-  const key = `${folder}/${crypto.randomUUID()}_${safeFileName(fileName)}`;
+  const safeOwner = ownerId && /^[a-zA-Z0-9-]{1,64}$/.test(ownerId) ? ownerId : null;
+  const key = safeOwner
+    ? `${folder}/${safeOwner}/${crypto.randomUUID()}_${safeFileName(fileName)}`
+    : `${folder}/${crypto.randomUUID()}_${safeFileName(fileName)}`;
 
   const client = getClient();
   const command = new PutObjectCommand({
@@ -136,6 +145,23 @@ export async function createPresignedUpload(
     : `${publicOrigin()}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
   return { uploadUrl, publicUrl, key };
+}
+
+/**
+ * The stored byte length of an already-uploaded object. Compose-time
+ * attachment budgets used to be computed from client-supplied sizes,
+ * which is a lie the sender controls — a 25 MB cap enforced against
+ * numbers the uploader typed. The sniff already reads real bytes; this
+ * reads their count.
+ */
+export async function statObjectSize(folder: UploadFolder, key: string): Promise<number | null> {
+  const client = getClient();
+  try {
+    const res = await client.send(new HeadObjectCommand({ Bucket: bucketFor(folder), Key: key }));
+    return res.ContentLength ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

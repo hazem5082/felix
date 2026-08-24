@@ -12,12 +12,15 @@ function Line({
   index,
   emphasize,
   negative,
+  badge,
 }: {
   label: string;
   value: number;
   index: number;
   emphasize?: boolean;
   negative?: boolean;
+  /** Rendered next to the label — the showroom fee's provenance (0050). */
+  badge?: React.ReactNode;
 }) {
   const locale = useLocale();
   return (
@@ -29,7 +32,10 @@ function Line({
         emphasize ? "text-base font-semibold" : "text-[var(--color-text-muted)]"
       }`}
     >
-      <span>{label}</span>
+      <span className="flex items-center gap-2">
+        {label}
+        {badge}
+      </span>
       <span
         className={`num ${
           emphasize
@@ -50,9 +56,20 @@ function Line({
 export function Waterfall({
   preview,
   investorNames,
+  overheadBadge,
+  overheadFootnote,
 }: {
   preview: WaterfallPreview;
   investorNames: Record<string, string>;
+  /**
+   * Where the showroom fee on this line came from (migration 0050) —
+   * frozen at settlement, overridden by the CEO, or still accruing.
+   * Optional: the plain preview has no ticket behind it and no
+   * provenance to show.
+   */
+  overheadBadge?: React.ReactNode;
+  /** The gap between the fee charged and what the calendar says today. */
+  overheadFootnote?: React.ReactNode;
 }) {
   const t = useTranslations("deals");
   const locale = useLocale();
@@ -67,7 +84,9 @@ export function Waterfall({
         value={preview.overhead_total}
         index={3}
         negative
+        badge={overheadBadge}
       />
+      {overheadFootnote}
       {preview.discount > 0 && <Line label={t("discount")} value={preview.discount} index={4} negative />}
       <Line label={t("netProfit")} value={preview.net_profit} index={5} emphasize />
 

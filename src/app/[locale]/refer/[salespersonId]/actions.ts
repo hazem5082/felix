@@ -5,6 +5,7 @@ import { getTenant } from "@/lib/tenant";
 import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
 import { PublicLeadSchema, Uuid } from "@/lib/validation";
 import { clientIp, consume, LIMITS, retryMessage } from "@/lib/rate-limit";
+import { localizeErrorMessage } from "@/lib/action-messages";
 
 // This is the only unauthenticated write path in the system, and it runs on
 // the service-role client, which bypasses RLS entirely. Everything here is
@@ -22,7 +23,9 @@ export async function submitPublicLead(
   const ip = await clientIp();
   const throttle = await consume(`public-lead:${ip}`, LIMITS.publicLead);
   if (!throttle.allowed) {
-    return { error: `Too many submissions. ${retryMessage(throttle.retryAfter)}` };
+    return {
+      error: `${await localizeErrorMessage("Too many submissions.")} ${await retryMessage(throttle.retryAfter)}`,
+    };
   }
 
   const id = Uuid.safeParse(salespersonId);

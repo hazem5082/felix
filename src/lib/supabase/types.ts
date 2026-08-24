@@ -8,6 +8,11 @@ export type Role =
   | "branch_manager"
   | "sales_exec"
   | "marketing"
+  // Migration 0047. The employment relationship rather than the sales
+  // operation: payroll, attendance, statutory filing data and the bonus
+  // ladder. Deliberately outside is_staff() in the database — an HR
+  // officer sees no vehicle, no cost, no lead and no deal.
+  | "hr"
   | "investor";
 
 export type VehicleStatus = "in_stock" | "reserved" | "sold";
@@ -507,6 +512,125 @@ export interface OverheadConfig {
   branch_id: string;
   monthly_opex_amount: number;
   updated_at: string;
+  // ── The showroom fee policy (migration 0047) ──────────────
+  // All four are `not null` with defaults, so they are only optional
+  // here for the window between deploying this code and applying the
+  // migration: supabase-js hands back whatever columns exist, and a page
+  // that reads a missing one should render a default rather than a 500.
+  /** The kill switch. False charges nothing at all, which is not the same as a zero rate. */
+  fees_enabled?: boolean;
+  /** Where the monthly rate comes from: the typed figure, or the recorded bills. */
+  basis?: OverheadBasis;
+  /** How far back `basis: "average"` looks, in months. */
+  average_window_months?: number;
+  updated_by?: string | null;
+}
+
+export type OverheadBasis = "manual" | "average";
+
+/**
+ * One bill the showroom paid to stay open (migration 0047) — the
+ * electricity, the water, the cleaner, the rent.
+ *
+ * This is the paper trail behind the fee an investor is charged, which
+ * before 0047 was a single hand-typed number per branch with nothing
+ * underneath it. On `basis: "average"` these rows ARE the rate; on
+ * "manual" they are recorded for the record and charged nothing.
+ *
+ * There is no delete. A bill keyed against the wrong month is voided —
+ * `voided_at` set, excluded from every average, still visible in the
+ * book. The tenant role holds no DELETE privilege on any table.
+ */
+export interface ShowroomExpense {
+  id: string;
+  branch_id: string;
+  /** Always the first of the month; the database CHECKs it. */
+  period_month: string;
+  category: ShowroomExpenseCategory;
+  amount: number;
+  note: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
+  created_by: string | null;
+  created_at: string;
+  branches?: Branch;
+}
+
+export type ShowroomExpenseCategory =
+  | "rent"
+  | "electricity"
+  | "water"
+  | "gas"
+  | "internet"
+  | "phone"
+  | "cleaning"
+  | "maintenance"
+  | "security"
+  | "salaries"
+  | "transport"
+  | "marketing"
+  | "licenses"
+  | "insurance"
+  | "bank_fees"
+  | "other";
+
+/**
+ * The CEO's calendar (migration 0047): what ONE month costs in ONE
+ * branch, overriding whatever the branch policy would otherwise resolve
+ * to — including switching a single month off without switching the
+ * branch off.
+ *
+ * Rows here are the exception, not the rule. Most months have none, and
+ * `effective_overhead_rate()` falls through to overhead_config.
+ */
+export interface OverheadMonth {
+  branch_id: string;
+  period_month: string;
+  rate_amount: number;
+  enabled: boolean;
+  note: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+/** Where a month's rate came from — `overhead_overview()`'s `source`. */
+export type OverheadRateSource = "month" | "off" | "average" | "manual" | "unset";
+
+/** One month's resolved fee, as the CEO's control page reads it. */
+export interface OverheadMonthView {
+  month: string;
+  rate: number;
+  enabled: boolean;
+  source: OverheadRateSource;
+  /** What was actually billed that month, from `showroom_expenses`. */
+  recorded: number;
+  bills: number;
+}
+
+/** One branch's whole fee picture — the shape `overhead_overview()` returns. */
+export interface OverheadBranchView {
+  branch_id: string;
+  branch_name: string;
+  fees_enabled: boolean;
+  basis: OverheadBasis;
+  monthly_opex_amount: number;
+  average_window_months: number;
+  current_rate: number;
+  current_source: OverheadRateSource;
+  current_enabled: boolean;
+  in_stock_count: number;
+  /**
+   * What the branch's CURRENT stock has run up so far — money that comes
+   * off a profit share the day each car sells. Computed live, because it
+   * moves every day by construction.
+   */
+  accrued_unsold: number;
+  months: OverheadMonthView[];
+}
+
+export interface OverheadOverview {
+  this_month: string;
+  branches: OverheadBranchView[];
 }
 
 /**
@@ -696,6 +820,25 @@ export interface DealTicket {
   trade_in_notes: string | null;
   // Never null — `not null default '{}'`, the photos/features precedent.
   trade_in_photos: string[];
+  // The showroom fee, frozen and overridable (migration 0047).
+  //
+  // overhead_snapshot is what execute_vehicle_sale() actually charged,
+  // written in the same statement that flipped the ticket to 'executed'.
+  // Before 0047 the fee was recomputed live on every read, so raising a
+  // branch's rate silently re-priced sales that had already paid out.
+  // NULL on an executed ticket means "settled before 0047" and the
+  // waterfall falls back to recomputing — 0047 §4 backfills what it can.
+  //
+  // overhead_override is the CEO's deliberate exception to that freeze,
+  // set through set_ticket_overhead(). On a settled sale it also posts
+  // adjustment rows to the ledger, so the money follows the number.
+  // All five are optional here for the window between deploying this
+  // code and applying the migration.
+  overhead_snapshot?: number | null;
+  overhead_override?: number | null;
+  overhead_override_reason?: string | null;
+  overhead_override_by?: string | null;
+  overhead_override_at?: string | null;
   status: DealStatus;
   financial_check_passed: boolean;
   discount_validated: boolean;
@@ -926,6 +1069,52 @@ export interface WaterfallPreview {
   }[];
 }
 
+/**
+ * Where the showroom fee on a ticket came from (migration 0047).
+ *
+ *   "auto"     — the ticket is still open, so the fee is the live
+ *                accrual and will keep moving until it settles.
+ *   "snapshot" — settled. This is the fee the ledger was built from,
+ *                and no config change can move it.
+ *   "override" — the CEO edited this one sale on purpose.
+ */
+export type OverheadSource = "auto" | "snapshot" | "override";
+
+/**
+ * The waterfall AS ONE TICKET IS PRICED — `ticket_waterfall()`'s return.
+ *
+ * The plain WaterfallPreview answers "what would this car's waterfall be
+ * today", which is the right question for a car in stock and the wrong
+ * one for a car already sold. This adds the four keys that say which
+ * question was actually answered.
+ */
+export interface TicketWaterfall extends WaterfallPreview {
+  overhead_source: OverheadSource;
+  /**
+   * What the fee calendar WOULD charge. On a settled sale the gap
+   * between this and `overhead_total` is the whole point: it is how the
+   * CEO sees that the branch's rate has moved without the sale moving
+   * with it.
+   */
+  overhead_auto: number;
+  /** True once the sale has settled — the fee is frozen from here. */
+  overhead_locked: boolean;
+  overhead_override_reason: string | null;
+  overhead_override_at: string | null;
+}
+
+/** What `set_ticket_overhead()` reports back. */
+export interface TicketOverheadResult {
+  old_overhead: number;
+  new_overhead: number;
+  /** `old - new`: positive means the fee came down and profit went up. */
+  delta: number;
+  /** True when ledger adjustment rows were posted (a settled sale). */
+  adjusted: boolean;
+  adjustment_rows: number;
+  cleared: boolean;
+}
+
 // ── The in-house receivable book (migration 0033) ───────────
 //
 // What the showroom is owed by its own customers, as opposed to what a
@@ -1047,3 +1236,196 @@ export interface SaleResult extends WaterfallPreview {
   consignment_amount_due?: number;
 }
 
+
+// ── The HR hub (migrations 0047–0049) ───────────────────────
+
+/**
+ * A navigation key the CEO can address on someone's profile.
+ *
+ * Mirrors `feature_grants_feature_check` in migration 0048. Widening
+ * this list without widening that CHECK produces a control that saves
+ * nothing; widening the CHECK without wiring the policies produces a
+ * tab onto an empty page. Both halves, same commit.
+ */
+export type FeatureKey =
+  | "hr"
+  // Migration 0050 — the CEO's showroom-fee console. Deliberately NOT in
+  // FEATURE_GRANTABLE or FEATURE_HIDEABLE: no RLS policy consults it, and
+  // a CEO who cannot find the screen that decides what every investor is
+  // charged is worse off than one with a slightly longer sidebar.
+  | "fees"
+  // Migration 0053 — the task board. Like 'fees', deliberately NOT in
+  // FEATURE_GRANTABLE or FEATURE_HIDEABLE: no RLS policy consults it,
+  // and 0048's `feature` CHECK does not know the name, so adding it to
+  // either list would produce a constraint violation the moment a CEO
+  // tried to use it.
+  | "tasks"
+  // Migration 0054 — the FELIX Network, where a manager finds the car a
+  // buyer wants on another licensed showroom's floor. Same footing as
+  // 'fees' and 'tasks': not in FEATURE_GRANTABLE or FEATURE_HIDEABLE,
+  // because 0048's `feature` CHECK does not carry the name and because
+  // the authority behind this screen is the role pair the page and both
+  // its actions check, not a grant.
+  | "network"
+  | "ceoDashboard"
+  | "inventory"
+  | "crm"
+  | "deals"
+  | "marketing"
+  | "accountant"
+  | "investor"
+  | "calendar"
+  | "employees"
+  | "attendance"
+  | "mail"
+  | "support"
+  | "account";
+
+/**
+ * 'grant' is REAL authority: the database policies consult it (today,
+ * only for 'hr' — see FEATURE_GRANTABLE in lib/features.ts).
+ * 'hide' removes a tab from the navigation and changes no permission
+ * whatsoever. The admin screen says so in those words, because a
+ * cosmetic control mistaken for a security control is worse than
+ * neither.
+ */
+export type FeatureGrantMode = "grant" | "hide";
+
+export interface FeatureGrant {
+  id: string;
+  profile_id: string;
+  feature: FeatureKey;
+  mode: FeatureGrantMode;
+  granted_by: string | null;
+  granted_at: string;
+  /** Set rather than deleted, so who widened whose reach survives. */
+  revoked_at: string | null;
+  revoked_by: string | null;
+  note: string | null;
+}
+
+/**
+ * One rung of the volume bonus ladder (migration 0049).
+ *
+ * "Sell `min_units` cars in a calendar month, earn `bonus_amount`."
+ * NOT cumulative — a salesperson earns the single highest active rung
+ * they reached, not the sum of every rung below it. See lib/bonus.ts,
+ * which is the one implementation of that rule.
+ */
+export interface BonusRule {
+  id: string;
+  /** 1–15, enforced by CHECK. */
+  min_units: number;
+  bonus_amount: number;
+  active: boolean;
+  note: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+/** One row of monthly_sales_units() — a person and a count, no prices. */
+export interface SalesUnitCount {
+  profile_id: string;
+  units: number;
+}
+
+// ── Tasks (migration 0053) ──────────────────────────────────
+
+/**
+ * 'skipped' is the worker declining WITH A REASON — it is reported, not
+ * hidden. 'cancelled' is the manager withdrawing the instruction, and it
+ * is excluded from the day's report entirely. The difference matters:
+ * one is a fact about the person, the other is a fact about the request.
+ */
+export type TaskStatus = "open" | "done" | "skipped" | "cancelled";
+
+/**
+ * Where the row came from. 'recurring' rows are minted by
+ * materialise_tasks() out of a template; 'lead' rows by the manager
+ * splitting the pending enquiries across the floor; 'manual' is somebody
+ * typing one in — a manager assigning work, or anyone's own to-do.
+ */
+export type TaskOrigin = "manual" | "recurring" | "lead";
+
+export type TaskRecurrence = "daily" | "weekly" | "monthly";
+
+/**
+ * A standing instruction (migration 0053).
+ *
+ * Aims at a ROLE or at one NAMED person, never both and never neither —
+ * task_templates_target_check. `branch_id` null means every branch in
+ * the company, which only a CEO may write.
+ */
+export interface TaskTemplate {
+  id: string;
+  title: string;
+  description: string | null;
+  recurrence: TaskRecurrence;
+  /** 0 = Sunday. Set for 'weekly', null otherwise. */
+  weekday: number | null;
+  /** 1–28. Set for 'monthly', null otherwise — see lib/tasks.ts. */
+  day_of_month: number | null;
+  branch_id: string | null;
+  assignee_role: Role | null;
+  assignee_id: string | null;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+/**
+ * One person, one day, one thing to do.
+ *
+ * Named TaskRow rather than Task because `Task` is a name every second
+ * library in this dependency tree also wants, and a type this widely
+ * imported should not be the one that collides.
+ */
+export interface TaskRow {
+  id: string;
+  branch_id: string | null;
+  assignee_id: string;
+  title: string;
+  description: string | null;
+  /** A day (YYYY-MM-DD), not an instant. See migration 0053's header. */
+  due_on: string;
+  origin: TaskOrigin;
+  template_id: string | null;
+  lead_id: string | null;
+  status: TaskStatus;
+  completed_at: string | null;
+  completed_by: string | null;
+  completion_note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** What END DAY produced, and whether the mail carrying it got out. */
+export interface DayReport {
+  id: string;
+  profile_id: string;
+  branch_id: string | null;
+  day: string;
+  done_count: number;
+  skipped_count: number;
+  open_count: number;
+  total_count: number;
+  note: string | null;
+  mail_message_id: string | null;
+  mail_status: "sent" | "skipped" | "failed" | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * One row of day_report_recipients() — who the evening mail is addressed
+ * to. profiles_select shows a sales exec only their own row, so this is
+ * the only way they can name their own manager. See migration 0053.
+ */
+export interface DayReportRecipient {
+  id: string;
+  full_name: string;
+  mail_address: string | null;
+  role: Role;
+}

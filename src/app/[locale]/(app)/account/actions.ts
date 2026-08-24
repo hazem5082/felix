@@ -28,7 +28,7 @@ export async function updateNotificationContacts(input: {
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateNotificationContactsSchema, input);
+  const parsed = await parseInput(UpdateNotificationContactsSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -53,7 +53,7 @@ export async function changePassword(input: {
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(ChangePasswordSchema, input);
+  const parsed = await parseInput(ChangePasswordSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -126,7 +126,7 @@ export async function updateCompanySettings(input: {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CompanySettingsSchema, input);
+  const parsed = await parseInput(CompanySettingsSchema, input);
   if (!parsed.ok) return parsed.error;
 
   // A hand-typed URL here would put an arbitrary third-party image on

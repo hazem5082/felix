@@ -4,9 +4,64 @@
     {
       "name": "filex-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "filex-dev-tasks",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3002,
+      "autoPort": true,
+      "env": {
+        "NEXT_DIST_DIR": ".next-tasks"
+      }
+    },
+    {
+      "name": "filex-dev-network",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3003,
+      "autoPort": true,
+      "env": {
+        "NEXT_DIST_DIR": ".next-network"
+      }
+    },
+    {
+      "name": "filex-dev-hr",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3001,
+      "autoPort": false,
+      "env": {
+        "NEXT_DIST_DIR": ".next-hr"
+      }
+    },
+    {
+      "name": "filex-dev-fees",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3004,
+      "autoPort": false,
+      "env": {
+        "NEXT_DIST_DIR": ".next-fees"
+      }
     }
   ]
 }

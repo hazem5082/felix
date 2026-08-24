@@ -706,7 +706,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               <div className="mt-2 flex gap-2 overflow-x-auto">
                 {photos.map((p) => (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={p} src={p} alt="" className="h-14 w-14 rounded-md object-cover" />
+                  <img key={p} src={p} alt="" loading="lazy" className="h-14 w-14 rounded-md object-cover" />
                 ))}
               </div>
             )}
@@ -763,7 +763,7 @@ export function VehicleFormDialog({ branches }: { branches: Branch[] }) {
               <div className="mt-2 flex gap-2 overflow-x-auto">
                 {inspection.map((p) => (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={p} src={p} alt="" className="h-14 w-14 rounded-md object-cover" />
+                  <img key={p} src={p} alt="" loading="lazy" className="h-14 w-14 rounded-md object-cover" />
                 ))}
               </div>
             )}

@@ -55,7 +55,7 @@ const REPORTS = [
   {
     kind: "attendance",
     icon: CalendarCheck,
-    roles: ["ceo", "accountant", "branch_manager"],
+    roles: ["ceo", "accountant", "branch_manager", "hr"],
   },
 ] as const;
 

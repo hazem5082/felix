@@ -217,7 +217,7 @@ export async function requestTransfer(input: {
   const auth = await authorize(REVIEWER_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(RequestStockTransferSchema, input);
+  const parsed = await parseInput(RequestStockTransferSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();

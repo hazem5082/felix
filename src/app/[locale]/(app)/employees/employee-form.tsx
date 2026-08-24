@@ -10,8 +10,11 @@ import type { Branch, Role } from "@/lib/supabase/types";
 import { createEmployee } from "./actions";
 import { CredentialsNote } from "./credentials-note";
 
-const ROLES: Role[] = ["sales_exec", "marketing", "branch_manager", "accountant", "investor", "ceo"];
-const ORG_WIDE: Role[] = ["ceo", "investor", "marketing"];
+const ROLES: Role[] = ["sales_exec", "marketing", "branch_manager", "accountant", "hr", "investor", "ceo"];
+// Roles with no home branch. HR (0047) joins them: the payroll register
+// is the whole company, and CreateStaffSchema exempts them from the
+// branch requirement for the same reason.
+const ORG_WIDE: Role[] = ["ceo", "investor", "marketing", "hr"];
 
 const EMPTY = {
   full_name: "",

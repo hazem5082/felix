@@ -11,7 +11,7 @@ import { FLAGSHIP_SLUG } from "./tenant-host";
 import type { Role } from "./supabase/types";
 
 /**
- * The six seeded personas, by the key the switcher sends over the wire.
+ * The seeded personas, by the key the switcher sends over the wire.
  *
  * THE KEY IS THE ONLY THING A CLIENT EVER SUPPLIES. The switch action is
  * a public HTTP endpoint reachable by direct POST, so if it accepted an
@@ -29,6 +29,7 @@ export type DemoAccountKey =
   | "accountant"
   | "sales"
   | "marketing"
+  | "hr"
   | "investor1"
   | "investor2";
 
@@ -61,6 +62,10 @@ export const DEMO_ACCOUNTS: Record<DemoAccountKey, DemoAccount> = {
   accountant: { email: "accountant@filex.demo", role: "accountant", name: "Sam Nguyen" },
   sales: { email: "sales@filex.demo", role: "sales_exec", name: "Jordan Blake" },
   marketing: { email: "marketing@filex.demo", role: "marketing", name: "Farah Adel" },
+  // 0047. Without this persona the HR hub is only ever visible to the
+  // CEO, and a prospect cannot see the thing the role exists to
+  // demonstrate: an account that runs payroll and cannot see a car.
+  hr: { email: "hr@filex.demo", role: "hr", name: "Nadia Fouad" },
   investor1: { email: "investor1@filex.demo", role: "investor", name: "Morgan Lee" },
   investor2: { email: "investor2@filex.demo", role: "investor", name: "Priya Shah" },
 };

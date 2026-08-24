@@ -27,7 +27,7 @@ export async function createFinancingPartner(input: {
   const auth = await authorize(FINANCE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateFinancingPartnerSchema, input);
+  const parsed = await parseInput(CreateFinancingPartnerSchema, input);
   if (!parsed.ok) return parsed.error;
 
   // The whole point of the gate is that a partner cannot go active until a
@@ -81,7 +81,7 @@ export async function updateFinancingRequestStatus(requestId: string, status: st
   const auth = await authorize([...MANAGER_OR_FINANCE]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(FinancingRequestStatusSchema, { requestId, status });
+  const parsed = await parseInput(FinancingRequestStatusSchema, { requestId, status });
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -137,7 +137,7 @@ export async function markPayoutPaid(input: {
   const auth = await authorize(FINANCE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(MarkPayoutPaidSchema, input);
+  const parsed = await parseInput(MarkPayoutPaidSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -173,7 +173,7 @@ export async function upsertOverhead(branchId: string, monthlyOpex: number) {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(OverheadSchema, { branchId, monthlyOpex });
+  const parsed = await parseInput(OverheadSchema, { branchId, monthlyOpex });
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();

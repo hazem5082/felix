@@ -1,4 +1,4 @@
-import { getProfile } from "@/lib/auth";
+import { getFeatureGrants, getProfile } from "@/lib/auth";
 import { redirect } from "@/i18n/navigation";
 import { getTenant } from "@/lib/tenant";
 import { getSessionTenant } from "@/lib/supabase/server";
@@ -23,10 +23,16 @@ export default async function AppLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const [profile, tenant, claim] = await Promise.all([
+  // The grants come along on the same round trip as the profile: the
+  // sidebar and the phone tab bar both need them, and fetching them
+  // after the guard below would serialise two reads for no reason.
+  // getFeatureGrants() resolves to [] for a signed-out session, so it is
+  // safe to ask for before the redirect.
+  const [profile, tenant, claim, grants] = await Promise.all([
     getProfile(),
     getTenant(),
     getSessionTenant(),
+    getFeatureGrants(),
   ]);
 
   if (!profile) {
@@ -81,7 +87,7 @@ export default async function AppLayout({
         <DemoSwitcher locale={locale} personas={demoPersonas()} currentKey={demoKey} />
       )}
       <div className="flex min-h-0 flex-1">
-        <Sidebar role={profile!.role} />
+        <Sidebar role={profile!.role} grants={grants} />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar profile={profile!} showroomName={tenant!.name} />
           <Breadcrumbs />
@@ -89,7 +95,7 @@ export default async function AppLayout({
           <main className="flex-1 overflow-y-auto p-6 pb-24 md:pb-6">{children}</main>
         </div>
       </div>
-      <MobileNav role={profile!.role} />
+      <MobileNav role={profile!.role} grants={grants} />
     </div>
   );
 }

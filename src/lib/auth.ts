@@ -4,10 +4,12 @@ import { createClient, getSessionTenant } from "@/lib/supabase/server";
 import { getTenant, type Tenant } from "@/lib/tenant";
 import { getDemoStatus, isFlagshipDemo } from "@/lib/demo";
 import { acceptsBranchGrants, canActOnBranchWithGrants } from "@/lib/branch-authority";
+import { hasHrAuthority, resolveFeatures, type ResolvedFeatures } from "@/lib/features";
 import type { TenantClaim } from "@/lib/tenant-claim";
 import { redirect } from "@/i18n/navigation";
-import type { Profile, Role } from "@/lib/supabase/types";
+import type { FeatureGrant, Profile, Role } from "@/lib/supabase/types";
 import type { ActionError } from "@/lib/validation";
+import { localizeErrorMessage } from "@/lib/action-messages";
 
 /**
  * Does the showroom this HOST serves match the showroom this SESSION
@@ -138,15 +140,15 @@ export async function authorizeActiveTenant(allowed: Role[]): Promise<Authorized
     getTenant(),
     getSessionTenant(),
   ]);
-  if (!profile) return { ok: false, error: UNAUTHENTICATED };
+  if (!profile) return { ok: false, error: await unauthenticated() };
   if (!tenant || !claim || !sameShowroom(tenant, claim) || tenant.status === "suspended") {
-    return { ok: false, error: DENIED };
+    return { ok: false, error: await denied() };
   }
   // Same gate as the redirecting twin above. Without it, /api/export/ledger
   // would keep streaming the demo's full ledger as CSV while every page
   // that reaches it says the demo is off.
-  if (await demoIsOff(tenant)) return { ok: false, error: DENIED };
-  if (!allowed.includes(profile.role)) return { ok: false, error: DENIED };
+  if (await demoIsOff(tenant)) return { ok: false, error: await denied() };
+  if (!allowed.includes(profile.role)) return { ok: false, error: await denied() };
   return { ok: true, profile };
 }
 
@@ -161,21 +163,27 @@ export type Authorized =
   | { ok: true; profile: Profile }
   | { ok: false; error: ActionError };
 
-const DENIED: ActionError = {
-  error: "You do not have permission to perform this action.",
-};
-const UNAUTHENTICATED: ActionError = { error: "Your session has expired. Please sign in again." };
+// Localized at the moment they are returned, not as module constants —
+// module scope runs once without a request locale. Every action funnels
+// through these two refusals, which is what makes this the highest-
+// leverage place in the app to speak the user's language.
+async function denied(): Promise<ActionError> {
+  return { error: await localizeErrorMessage("You do not have permission to perform this action.") };
+}
+async function unauthenticated(): Promise<ActionError> {
+  return { error: await localizeErrorMessage("Your session has expired. Please sign in again.") };
+}
 
 export async function authorize(allowed: Role[]): Promise<Authorized> {
   const profile = await getProfile();
-  if (!profile) return { ok: false, error: UNAUTHENTICATED };
-  if (!allowed.includes(profile.role)) return { ok: false, error: DENIED };
+  if (!profile) return { ok: false, error: await unauthenticated() };
+  if (!allowed.includes(profile.role)) return { ok: false, error: await denied() };
   return { ok: true, profile };
 }
 
 export async function authenticate(): Promise<Authorized> {
   const profile = await getProfile();
-  if (!profile) return { ok: false, error: UNAUTHENTICATED };
+  if (!profile) return { ok: false, error: await unauthenticated() };
   return { ok: true, profile };
 }
 
@@ -241,7 +249,7 @@ export async function assertBranch(
 ): Promise<ActionError | null> {
   return canActOnBranch(profile, branchId, await getGrantedBranchIds())
     ? null
-    : { error: "That record belongs to another branch." };
+    : { error: await localizeErrorMessage("That record belongs to another branch.") };
 }
 
 /**
@@ -254,6 +262,83 @@ export async function assertBranch(
 export const COST_ROLES: Role[] = ["ceo", "accountant", "investor"];
 export function canSeeCost(profile: Profile | null): boolean {
   return !!profile && COST_ROLES.includes(profile.role);
+}
+
+/**
+ * This session's live feature grants (migration 0048), memoized per
+ * request like getGrantedBranchIds().
+ *
+ * RLS is what makes this safe to read straight from the session:
+ * feature_grants_select admits the caller's own rows and the CEO's, so
+ * this cannot return somebody else's authority even if the filter were
+ * dropped. `revoked_at is null` is the same clause has_feature() carries
+ * in Postgres — a revoked grant must stop counting in the app on the
+ * same request it stops counting in the database, or the sidebar shows
+ * a hub whose pages are about to 403.
+ *
+ * Returns an EMPTY set rather than throwing when the table is missing
+ * (supabase-js hands back `{ data: null, error }`), so a deployment
+ * where 0048 has not been applied yet renders the pre-0048 navigation
+ * instead of a 500.
+ */
+export const getFeatureGrants = cache(async (): Promise<FeatureGrant[]> => {
+  const profile = await getProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("feature_grants")
+    .select("*")
+    .eq("profile_id", profile.id)
+    .is("revoked_at", null);
+
+  return (data as FeatureGrant[] | null) ?? [];
+});
+
+/** The same rows, reduced to the two sets the navigation reads. */
+export const getResolvedFeatures = cache(async (): Promise<ResolvedFeatures> => {
+  return resolveFeatures(await getFeatureGrants());
+});
+
+/**
+ * Does the CURRENT session hold HR authority — by role, or by a grant
+ * the CEO made?
+ *
+ * The app-side twin of is_hr() as 0048 redefines it, and the guard every
+ * HR page and every HR action calls. Deliberately async and deliberately
+ * NOT a `Role[]` passed to authorize(): a role list cannot express "or
+ * the accountant this particular CEO handed the payroll hub to", and
+ * writing the grant check out at each call site is how one of them
+ * eventually forgets it.
+ */
+export async function hasHrAccess(): Promise<boolean> {
+  const profile = await getProfile();
+  if (!profile) return false;
+  return hasHrAuthority(profile.role, await getResolvedFeatures());
+}
+
+/** Non-redirecting HR guard for Server Actions. */
+export async function authorizeHr(): Promise<Authorized> {
+  const profile = await getProfile();
+  if (!profile) return { ok: false, error: await unauthenticated() };
+  if (!hasHrAuthority(profile.role, await getResolvedFeatures())) {
+    return { ok: false, error: await denied() };
+  }
+  return { ok: true, profile };
+}
+
+/**
+ * Redirecting HR guard for pages. Sends a non-holder to their own
+ * landing page rather than to /login — they are signed in perfectly
+ * well, they just do not run payroll.
+ */
+export async function requireHr(locale: string): Promise<Profile> {
+  const profile = await requireProfile(locale);
+  if (!hasHrAuthority(profile.role, await getResolvedFeatures())) {
+    redirect({ href: defaultRouteForRole(profile.role), locale });
+    throw new Error("unreachable");
+  }
+  return profile;
 }
 
 export const REVIEWER_ROLES: Role[] = ["ceo", "branch_manager"];
@@ -274,6 +359,8 @@ export function defaultRouteForRole(role: Role) {
       return "/investor";
     case "marketing":
       return "/marketing";
+    case "hr":
+      return "/hr";
     case "sales_exec":
     default:
       return "/crm";

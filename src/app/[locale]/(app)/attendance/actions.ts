@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { authenticate } from "@/lib/auth";
 import { toUserError } from "@/lib/db-error";
 import { clientIp, consume, LIMITS, retryMessage } from "@/lib/rate-limit";
+import { localizeErrorMessage } from "@/lib/action-messages";
 import { sendCode } from "@/lib/notify";
 import {
   CODE_TTL_MINUTES,
@@ -134,7 +135,7 @@ export async function punch(input: {
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(PunchSchema, input);
+  const parsed = await parseInput(PunchSchema, input);
   if (!parsed.ok) return parsed.error;
   const p = parsed.data;
 
@@ -147,7 +148,9 @@ export async function punch(input: {
 
   const throttle = await consume(`punch:${auth.profile.id}`, LIMITS.punch);
   if (!throttle.allowed) {
-    return { error: `Too many attendance actions. ${retryMessage(throttle.retryAfter)}` };
+    return {
+      error: `${await localizeErrorMessage("Too many attendance actions.")} ${await retryMessage(throttle.retryAfter)}`,
+    };
   }
 
   const claim = await getSessionTenant();
@@ -241,7 +244,7 @@ export async function requestDeviceCode(input: {
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(EnrolDeviceSchema, input);
+  const parsed = await parseInput(EnrolDeviceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const [ip, byProfile] = await Promise.all([
@@ -251,7 +254,9 @@ export async function requestDeviceCode(input: {
   const byIp = await consume(`devicecode:ip:${ip}`, LIMITS.deviceCode);
   if (!byProfile.allowed || !byIp.allowed) {
     const retry = Math.max(byProfile.retryAfter, byIp.retryAfter);
-    return { error: `Too many verification codes requested. ${retryMessage(retry)}` };
+    return {
+      error: `${await localizeErrorMessage("Too many verification codes requested.")} ${await retryMessage(retry)}`,
+    };
   }
 
   const claim = await getSessionTenant();
@@ -339,12 +344,14 @@ export async function confirmDeviceCode(input: {
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(ConfirmDeviceSchema, input);
+  const parsed = await parseInput(ConfirmDeviceSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const throttle = await consume(`deviceconfirm:${auth.profile.id}`, LIMITS.deviceConfirm);
   if (!throttle.allowed) {
-    return { error: `Too many attempts. ${retryMessage(throttle.retryAfter)}` };
+    return {
+      error: `${await localizeErrorMessage("Too many attempts.")} ${await retryMessage(throttle.retryAfter)}`,
+    };
   }
 
   const claim = await getSessionTenant();

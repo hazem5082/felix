@@ -11,6 +11,7 @@ import {
   BranchGrantSchema,
   ChangeSignInEmailSchema,
   CreateStaffSchema,
+  SetFeatureGrantSchema,
   SetTargetSchema,
   SetWorkModeSchema,
   UpdateAvatarSchema,
@@ -19,6 +20,7 @@ import {
   parseInput,
 } from "@/lib/validation";
 import { canChangeSignInEmail } from "@/lib/hierarchy";
+import { FEATURE_GRANTABLE, FEATURE_HIDEABLE } from "@/lib/features";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { ActionError } from "@/lib/validation";
 import { isManagedUploadUrl } from "@/lib/r2";
@@ -55,7 +57,7 @@ export async function createEmployee(input: {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateStaffSchema, input);
+  const parsed = await parseInput(CreateStaffSchema, input);
   if (!parsed.ok) return parsed.error;
   const staff = parsed.data;
 
@@ -77,7 +79,14 @@ export async function createEmployee(input: {
   // reason: invite_staff validates the branch inside the tenant schema,
   // where a foreign showroom's branch id simply does not exist.
   // invited_by is set from auth.uid() by the function, not passed.
-  const { error: inviteError } = await supabase.rpc("invite_staff", {
+  //
+  // The returned token is the invitation's one-time secret (0052): the
+  // ONLY proof GoTrue will accept that this signup is the person the CEO
+  // invited. It rides straight into createUser's user_metadata below,
+  // server-to-server, and is never displayed, logged or emailed — which
+  // is what makes a public /auth/v1/signup with just the email address
+  // useless to an attacker.
+  const { data: inviteToken, error: inviteError } = await supabase.rpc("invite_staff", {
     p_email: staff.email.toLowerCase(),
     p_full_name: staff.full_name,
     p_role: staff.role,
@@ -98,13 +107,17 @@ export async function createEmployee(input: {
     return { error: inviteError.message };
   }
 
+  if (typeof inviteToken !== "string" || inviteToken.length === 0) {
+    return { error: "The invitation was created without its signup token. Revoke it and try again." };
+  }
+
   const temp = temporaryPassword();
   const admin = createAdminClient();
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email: staff.email.toLowerCase(),
     password: temp,
     email_confirm: true,
-    user_metadata: { full_name: staff.full_name },
+    user_metadata: { full_name: staff.full_name, invite_token: inviteToken },
   });
 
   if (createError || !created?.user) {
@@ -149,7 +162,7 @@ export async function resetEmployeePassword(input: {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(Uuid, input.profile_id);
+  const parsed = await parseInput(Uuid, input.profile_id);
   if (!parsed.ok) return { error: "Invalid employee." };
 
   const supabase = await createClient();
@@ -195,7 +208,7 @@ export async function updateEmployee(input: {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateStaffSchema, input);
+  const parsed = await parseInput(UpdateStaffSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -251,7 +264,7 @@ export async function setEmployeeTarget(input: {
   const auth = await authorize(["ceo", "branch_manager"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(SetTargetSchema, input);
+  const parsed = await parseInput(SetTargetSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -285,7 +298,7 @@ export async function updateEmployeeAvatar(input: {
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateAvatarSchema, input);
+  const parsed = await parseInput(UpdateAvatarSchema, input);
   if (!parsed.ok) return parsed.error;
 
   // A hand-typed URL must not stand in for an uploaded photo — the same
@@ -342,7 +355,7 @@ export async function grantBranchAccess(input: {
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(BranchGrantSchema, input);
+  const parsed = await parseInput(BranchGrantSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const target = await loadGrantTarget(parsed.data.profile_id);
@@ -395,7 +408,7 @@ export async function revokeBranchAccess(input: { profile_id: string; branch_id:
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(BranchGrantRevokeSchema, input);
+  const parsed = await parseInput(BranchGrantRevokeSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -439,7 +452,7 @@ export async function setWorkMode(input: { profile_id: string; work_mode: string
   const auth = await authorize(["ceo"]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(SetWorkModeSchema, input);
+  const parsed = await parseInput(SetWorkModeSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -494,7 +507,7 @@ export async function changeSignInEmail(input: {
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(ChangeSignInEmailSchema, input);
+  const parsed = await parseInput(ChangeSignInEmailSchema, input);
   if (!parsed.ok) return parsed.error;
   const { profile_id, new_email, current_password } = parsed.data;
 
@@ -581,4 +594,95 @@ export async function changeSignInEmail(input: {
   revalidatePath("/[locale]/(app)/employees", "page");
   revalidatePath("/[locale]/(app)/account", "page");
   return { ok: true, email: new_email };
+}
+
+/**
+ * Grant or hide a navigation feature for one person (migration 0048).
+ *
+ * CEO-ONLY, and the database says so too: feature_grants_insert and
+ * _update are both `is_ceo()`. A branch manager who could grant 'hr'
+ * would be granting themselves — one hop later — every profile in the
+ * company and the wage column on all of them.
+ *
+ * TWO REFUSALS BEFORE THE ROUND TRIP, both of which Postgres would also
+ * make. They are here so the message names the problem instead of
+ * arriving as a constraint violation:
+ *
+ *   1. Only FEATURE_GRANTABLE may be granted. That list mirrors
+ *      feature_grants_grantable, and it is short because a grant is
+ *      real authority: a feature whose policies do not consult
+ *      has_feature() would hand somebody a tab onto an empty page.
+ *   2. Nothing may be hidden that is not FEATURE_HIDEABLE — nobody gets
+ *      locked out of their own account page or the help desk.
+ *
+ * REVOKING IS AN UPDATE, never a delete: the tenant role holds no
+ * DELETE grant on the table (assertion (j) would refuse to provision a
+ * showroom where it did), and "who handed this person payroll, and who
+ * took it back" is exactly the question the row exists to answer.
+ *
+ * The unique index is partial (`where revoked_at is null`), so a
+ * re-grant after a revoke opens a NEW row rather than reusing the old
+ * one — which is why this upserts by hand: revoke whatever is live,
+ * then insert. Doing it in that order means the index is never asked to
+ * hold two live rows for the same pair, even for an instant.
+ */
+export async function setFeatureGrant(input: {
+  profile_id: string;
+  feature: string;
+  mode: string;
+  enabled: boolean;
+  note: string;
+}): Promise<{ ok: true } | ActionError> {
+  const auth = await authorize(["ceo"]);
+  if (!auth.ok) return auth.error;
+
+  const parsed = await parseInput(SetFeatureGrantSchema, input);
+  if (!parsed.ok) return parsed.error;
+  const g = parsed.data;
+
+  if (g.mode === "grant" && !FEATURE_GRANTABLE.includes(g.feature)) {
+    return {
+      error:
+        "That hub cannot be granted yet — its data permissions have not been wired for grants.",
+    };
+  }
+  if (g.mode === "hide" && !FEATURE_HIDEABLE.includes(g.feature)) {
+    return { error: "That tab cannot be hidden." };
+  }
+
+  const supabase = await createClient();
+
+  // Whatever is live for this pair goes first, in both directions:
+  // turning something on must also clear an opposing 'hide', or the
+  // sidebar would grant and then immediately hide the same key.
+  const { error: revokeError } = await supabase
+    .from("feature_grants")
+    .update({ revoked_at: new Date().toISOString(), revoked_by: auth.profile.id })
+    .eq("profile_id", g.profile_id)
+    .eq("feature", g.feature)
+    .is("revoked_at", null);
+
+  if (revokeError) return toUserError(revokeError);
+
+  if (!g.enabled) {
+    revalidatePath("/[locale]/(app)/employees/[profileId]", "page");
+    return { ok: true };
+  }
+
+  const { error } = await supabase.from("feature_grants").insert({
+    profile_id: g.profile_id,
+    feature: g.feature,
+    mode: g.mode,
+    // Stamped from the authenticated session rather than pinned by a
+    // policy predicate — 0046's header explains why `= auth.uid()` in a
+    // WITH CHECK raises 42501 under the tenant role.
+    granted_by: auth.profile.id,
+    note: g.note,
+  });
+
+  if (error) return toUserError(error);
+
+  revalidatePath("/[locale]/(app)/employees/[profileId]", "page");
+  revalidatePath("/[locale]/(app)", "layout");
+  return { ok: true };
 }

@@ -9,6 +9,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import type { FinancingPartner, FinancingRequest, Branch, OverheadConfig, DealTicket, Vehicle, ConsignmentPayout } from "@/lib/supabase/types";
 import { PartnerFormDialog } from "./partner-form";
 import { OverheadRow } from "./overhead-row";
+import { ShowroomExpensesPanel } from "./showroom-expenses-panel";
 import { RequestStatusControl } from "./request-status";
 import { PartnerContractUpload } from "./partner-contract-upload";
 import { ReceivablesPanel } from "./receivables-panel";
@@ -234,6 +235,11 @@ export default async function AccountantPage() {
         </Table>
       </Panel>
 
+      {/* THE BILLS BEHIND THE FEE (migration 0050). Recorded here, in the
+          hub where the accountant already works; turned into the monthly
+          rate a car is charged by the CEO's console at /fees. */}
+      <ShowroomExpensesPanel branches={(branches as Branch[]) ?? []} canEdit={isFinance} />
+
       <Panel>
         <PanelHeader title={t("overheadConfig")} subtitle={t("monthlyOpex")} />
         <div className="space-y-2">
@@ -247,6 +253,13 @@ export default async function AccountantPage() {
             />
           ))}
         </div>
+        {/* The manual figure is only ONE of the three ways a month's fee
+            can be resolved since 0050, and it is not consulted at all on
+            a branch set to average its recorded bills. The console is
+            where the whole picture lives. */}
+        <p className="mt-3 text-[11px] text-[var(--color-text-faint)]">
+          {t("overheadMovedHint")}
+        </p>
       </Panel>
     </div>
   );

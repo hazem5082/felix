@@ -92,9 +92,9 @@ export function ListingsBoard({
             key={v.id}
             className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             {v.photos?.[0] ? (
-              <img src={v.photos[0]} alt="" className="h-10 w-14 shrink-0 rounded object-cover" />
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={v.photos[0]} alt="" loading="lazy" className="h-10 w-14 shrink-0 rounded object-cover" />
             ) : (
               <span className="flex h-10 w-14 shrink-0 items-center justify-center rounded bg-black/[0.04]">
                 <BrandMark make={v.make} size={16} />

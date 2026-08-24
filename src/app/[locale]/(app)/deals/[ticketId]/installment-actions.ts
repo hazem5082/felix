@@ -196,7 +196,7 @@ export async function createInstallmentPlan(input: {
   const auth = await authorize(BOOK_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateInstallmentPlanSchema, input);
+  const parsed = await parseInput(CreateInstallmentPlanSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const ticket = await loadTicket(parsed.data.ticketId);
@@ -332,7 +332,7 @@ export async function recordInstallmentPayment(input: {
   const auth = await authorize(BOOK_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(RecordInstallmentPaymentSchema, input);
+  const parsed = await parseInput(RecordInstallmentPaymentSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const plan = await loadPlanScope(parsed.data.planId);
@@ -423,7 +423,7 @@ export async function addCheque(input: {
   const auth = await authorize(BOOK_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(AddChequeSchema, input);
+  const parsed = await parseInput(AddChequeSchema, input);
   if (!parsed.ok) return parsed.error;
 
   let branchId: string | null = null;
@@ -481,7 +481,7 @@ export async function updateChequeStatus(input: {
   const auth = await authorize(BOOK_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(UpdateChequeStatusSchema, input);
+  const parsed = await parseInput(UpdateChequeStatusSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -533,7 +533,7 @@ export async function recordReceipt(input: {
   const auth = await authorize(BOOK_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(RecordReceiptSchema, input);
+  const parsed = await parseInput(RecordReceiptSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const branchError = await assertBranch(auth.profile, parsed.data.branchId);

@@ -12,7 +12,7 @@ import {
 import { FLAGSHIP_SLUG } from "./tenant-host";
 
 describe("the demo persona allowlist", () => {
-  it("matches the eight accounts scripts/seed-demo.mjs creates", () => {
+  it("matches the nine accounts scripts/seed-demo.mjs creates", () => {
     // If the seed's ACCOUNTS array changes, this is the test that says so.
     // Nothing derives one from the other at runtime, so drift here means
     // buttons that sign nobody in.
@@ -23,6 +23,7 @@ describe("the demo persona allowlist", () => {
       "accountant",
       "sales",
       "marketing",
+      "hr",
       "investor1",
       "investor2",
     ]);
@@ -37,6 +38,7 @@ describe("the demo persona allowlist", () => {
     expect(DEMO_ACCOUNTS.accountant.role).toBe("accountant");
     expect(DEMO_ACCOUNTS.sales.role).toBe("sales_exec");
     expect(DEMO_ACCOUNTS.marketing.role).toBe("marketing");
+    expect(DEMO_ACCOUNTS.hr.role).toBe("hr");
     expect(DEMO_ACCOUNTS.investor1.role).toBe("investor");
     expect(DEMO_ACCOUNTS.investor2.role).toBe("investor");
   });

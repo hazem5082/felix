@@ -17,12 +17,19 @@ import type {
 } from "@/lib/supabase/types";
 import { TargetsPanel } from "./targets-panel";
 import { AvatarUploader } from "./avatar-uploader";
+import { TabsPanel } from "./tabs-panel";
+import { navFor } from "@/components/layout/nav-config";
+import { resolveFeatures } from "@/lib/features";
+import type { FeatureGrant, FeatureKey } from "@/lib/supabase/types";
 
 const ROLE_TONE: Record<Role, SemanticTone> = {
   ceo: "blue",
   branch_manager: "green",
   accountant: "amber",
   sales_exec: "neutral",
+  // 0047. Amber like the accountant: both are staff functions that
+  // report to the CEO and manage nobody.
+  hr: "amber",
   marketing: "blue",
   investor: "red",
 };
@@ -111,6 +118,18 @@ export default async function EmployeeProfilePage({
       .or(`created_at.gte.${since},executed_at.gte.${since}`),
   ]);
 
+  // 0048. This person's live navigation grants, for the CEO-only panel
+  // at the bottom of the page. feature_grants_select admits the CEO to
+  // every row and everyone else to their own, so a manager viewing one
+  // of their staff gets an empty list — which is correct, since the
+  // panel is not rendered for them either.
+  const { data: featureRows } = await supabase
+    .from("feature_grants")
+    .select("*")
+    .eq("profile_id", profileId)
+    .is("revoked_at", null);
+  const features = resolveFeatures((featureRows as FeatureGrant[] | null) ?? []);
+
   // Email lives in auth.users; looked up only after RLS proved the
   // profile visible — same pattern as the employees list.
   let email: string | null = null;
@@ -191,6 +210,13 @@ export default async function EmployeeProfilePage({
     new_leads: t("metricNewLeads"),
     deals_closed: t("metricDealsClosed"),
   };
+
+  // The tabs this person's ROLE carries, before any grant or hide — the
+  // set the "hidden tabs" control is allowed to address. Derived from
+  // navFor() with NO features so it reflects the role default rather
+  // than the current, already-edited answer; otherwise hiding a tab
+  // would remove it from the list of tabs you can un-hide.
+  const roleDefaultKeys = navFor(profile.role).map((e) => e.key) as FeatureKey[];
 
   return (
     <div className="space-y-6">
@@ -342,6 +368,16 @@ export default async function EmployeeProfilePage({
           })}
         </div>
       </div>
+
+      {/* ── Tabs & access (CEO only) ─────────────────────── */}
+      {me.role === "ceo" && (
+        <TabsPanel
+          profileId={profile.id}
+          granted={[...features.granted]}
+          hidden={[...features.hidden]}
+          roleDefaults={roleDefaultKeys}
+        />
+      )}
 
       {/* ── Six-month record ─────────────────────────────── */}
       <Panel>

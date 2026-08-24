@@ -66,7 +66,7 @@ export async function createVehicle(input: {
   const auth = await authorize(INTAKE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateVehicleSchema, input);
+  const parsed = await parseInput(CreateVehicleSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const branchError = await assertBranch(auth.profile, parsed.data.branch_id);
@@ -191,7 +191,7 @@ export async function setVehiclePrices(input: {
   const auth = await authorize(INTAKE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(SetVehiclePricesSchema, input);
+  const parsed = await parseInput(SetVehiclePricesSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -231,7 +231,7 @@ export async function saveVinDecodedDetails(input: { vehicle_id: string; locale:
   const auth = await authorize(INTAKE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(RedecodeVehicleVinSchema, input);
+  const parsed = await parseInput(RedecodeVehicleVinSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -301,7 +301,7 @@ export async function addExpense(input: {
   const auth = await authorize(EXPENSE_ROLES);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(AddExpenseSchema, input);
+  const parsed = await parseInput(AddExpenseSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();

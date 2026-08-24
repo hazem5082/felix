@@ -61,7 +61,7 @@ export async function createMeeting(input: {
   const auth = await authorize([...SCHEDULER_ROLES]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CreateMeetingSchema, input);
+  const parsed = await parseInput(CreateMeetingSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -91,7 +91,7 @@ export async function respondToMeeting(input: { meeting_id: string; response: st
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(MeetingResponseSchema, input);
+  const parsed = await parseInput(MeetingResponseSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();
@@ -115,7 +115,7 @@ export async function cancelMeeting(input: { meeting_id: string }) {
   const auth = await authorize([...SCHEDULER_ROLES]);
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(CancelMeetingSchema, input);
+  const parsed = await parseInput(CancelMeetingSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();

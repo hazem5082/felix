@@ -27,14 +27,16 @@ export async function login(
   // stops a distributed attack concentrating on one account (the CEO login
   // satisfies every is_ceo() branch in the RLS policy set).
   const ip = await clientIp();
+  // failClosed: see rate-limit.ts — an outage must not disable the only
+  // defence between a botnet and the CEO's password.
   const [byIp, byEmail] = await Promise.all([
-    consume(`login:ip:${ip}`, LIMITS.login),
-    consume(`login:email:${email}`, LIMITS.loginByEmail),
+    consume(`login:ip:${ip}`, { ...LIMITS.login, failClosed: true }),
+    consume(`login:email:${email}`, { ...LIMITS.loginByEmail, failClosed: true }),
   ]);
 
   if (!byIp.allowed || !byEmail.allowed) {
     const retryAfter = Math.max(byIp.retryAfter, byEmail.retryAfter);
-    return { error: "throttled", message: retryMessage(retryAfter) };
+    return { error: "throttled", message: await retryMessage(retryAfter) };
   }
 
   // The flagship demo's kill switch. The login page already replaces this

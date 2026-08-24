@@ -73,7 +73,7 @@ export async function switchDemoRole(
   const ip = await clientIp();
   const throttle = await consume(`demo-switch:ip:${ip}`, LIMITS.demoSwitch);
   if (!throttle.allowed) {
-    return { error: "throttled", message: retryMessage(throttle.retryAfter) };
+    return { error: "throttled", message: await retryMessage(throttle.retryAfter) };
   }
 
   const account = DEMO_ACCOUNTS[key];

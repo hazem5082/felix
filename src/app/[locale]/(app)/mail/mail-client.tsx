@@ -99,7 +99,7 @@ export function MailClient({ sent, received, attachments, colleagues, ownProfile
           <FolderTab active={folder === "inbox"} onClick={() => switchFolder("inbox")}>
             {t("inbox")}
             {unreadCount > 0 && (
-              <span className="ml-1.5 rounded-full bg-[var(--color-accent)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              <span className="ms-1.5 rounded-full bg-[var(--color-accent)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
                 {unreadCount}
               </span>
             )}
@@ -158,7 +158,7 @@ export function MailClient({ sent, received, attachments, colleagues, ownProfile
                       onClick={() => openMessage(m)}
                       aria-current={active ? "true" : undefined}
                       className={cn(
-                        "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
+                        "flex w-full items-start gap-3 px-4 py-3 text-start transition-colors",
                         active
                           ? "bg-[var(--color-accent-dim)]"
                           // A system row keeps its tint even unselected —

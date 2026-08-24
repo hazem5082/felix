@@ -128,6 +128,7 @@ export default async function TicketDetailPage({
         canExecute={!!canExecute}
         canSeeCost={canSeeCost(profile)}
         isConsignment={isConsignment}
+        isCeo={profile?.role === "ceo"}
         investorNames={investorNames}
         contractSerial={(contract as Contract | null)?.serial ?? null}
       />

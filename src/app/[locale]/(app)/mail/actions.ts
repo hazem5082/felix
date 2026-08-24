@@ -6,8 +6,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { authenticate } from "@/lib/auth";
 import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import { checkAttachmentBudget, sniff, SNIFF_PREFIX_BYTES } from "@/lib/file-sniff";
-import { deleteObject, readObjectBase64, readObjectPrefix } from "@/lib/r2";
+import { deleteObject, readObjectBase64, readObjectPrefix, statObjectSize } from "@/lib/r2";
 import { isFelixMailAddress } from "@/lib/mail-address";
+// The body helpers moved to lib/mail-body.ts when the end-of-day report
+// (0053) became the second thing writing into mail_messages — see that
+// module's header for why they must not be two copies.
+import {
+  SIGNATURE_HTML,
+  SIGNATURE_TEXT,
+  snippetOf,
+  textToHtml,
+  threadKeyOf,
+} from "@/lib/mail-body";
 import { externalMailPolicy } from "@/lib/mail-policy";
 import { isMailSendConfigured, sendExternalMail, type SendMailOutcome } from "@/lib/mail-send";
 import { MailComposeSchema, MarkMailReadSchema, parseInput } from "@/lib/validation";
@@ -29,43 +39,6 @@ import { MailComposeSchema, MarkMailReadSchema, parseInput } from "@/lib/validat
  * necessity.
  */
 
-const SIGNATURE_TEXT = "\n\n— mailed by FELIX by 508.world";
-const SIGNATURE_HTML =
-  '<div style="margin-top:24px;padding-top:12px;border-top:1px solid #e3e7ee;' +
-  'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#667085;">' +
-  "mailed by FELIX by 508.world</div>";
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function textToHtml(text: string): string {
-  const body = escapeHtml(text)
-    .split(/\n{2,}/)
-    .map((para) => `<p style="margin:0 0 14px;">${para.replace(/\n/g, "<br>")}</p>`)
-    .join("");
-  return `<div dir="auto" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#1a2233;">${body}</div>`;
-}
-
-/** "Re: Re: quote" -> "quote". Mirrors the 508.world Worker's threadKeyOf. */
-function threadKeyOf(subject: string): string | null {
-  let value = subject.trim();
-  const prefix = /^\s*(re|aw|antw|fw|fwd|رد|إعادة توجيه)\s*(\[\d+\])?\s*:\s*/i;
-  while (prefix.test(value)) value = value.replace(prefix, "");
-  const key = value.toLowerCase().replace(/\s+/g, " ").trim();
-  return key || null;
-}
-
-function snippetOf(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > 220 ? `${flat.slice(0, 220)}…` : flat;
-}
-
 export type SendMailResponse =
   | { ok: true; id: string; sendOutcome: "sent" | "skipped" | "failed" | null }
   | { error: string; fieldErrors?: Record<string, string[]> };
@@ -82,7 +55,7 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
     return { error: "Your mail address is not set up yet. Try signing in again." };
   }
 
-  const parsed = parseInput(MailComposeSchema, input);
+  const parsed = await parseInput(MailComposeSchema, input);
   if (!parsed.ok) return parsed.error;
   const data = parsed.data;
 
@@ -110,7 +83,7 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
   }
 
   const throttle = await consume(`mail-send:${profile.id}`, LIMITS.mailSend);
-  if (!throttle.allowed) return { error: retryMessage(throttle.retryAfter) };
+  if (!throttle.allowed) return { error: await retryMessage(throttle.retryAfter) };
 
   const supabase = await createClient();
 
@@ -154,10 +127,33 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
   }
 
   if (data.attachments.length) {
-    const budget = checkAttachmentBudget(
-      data.attachments.map((a) => a.size_bytes),
-      { hasExternalRecipient: hasExternal }
-    );
+    // OWNERSHIP BEFORE ANYTHING ELSE. A staged key is trusted for nothing
+    // until its owner segment names the caller — the compose form is not
+    // the only thing that can POST this action, and `mail/<uuid>_<name>`
+    // keys are only as secret as the people who have seen them. Inbound
+    // attachments (no owner segment) and anyone else's staged uploads are
+    // refused here, which closes the one cross-tenant read the shared
+    // bucket could otherwise leak.
+    const ownedPrefix = `mail/${profile.id}/`;
+    const foreign = data.attachments.filter((a) => !a.key.startsWith(ownedPrefix));
+    if (foreign.length) {
+      return { error: "One or more attachments were not uploaded by you. Re-attach them and try again." };
+    }
+
+    // TRUE SIZES. The budget was computed from client-supplied numbers;
+    // HEAD each object and re-run against reality before a single byte
+    // leaves for Resend. A missing object fails the send rather than
+    // storing an attachment that 404s forever after.
+    const realSizes: number[] = [];
+    for (const att of data.attachments) {
+      const size = await statObjectSize("mail", att.key);
+      if (size === null) {
+        return { error: `${att.filename}: the upload could not be found. Upload it again.` };
+      }
+      realSizes.push(size);
+    }
+
+    const budget = checkAttachmentBudget(realSizes, { hasExternalRecipient: hasExternal });
     if (!budget.ok) return { error: budget.reason };
 
     for (const att of data.attachments) {
@@ -168,6 +164,11 @@ export async function sendMail(input: unknown): Promise<SendMailResponse> {
         return { error: `${att.filename}: ${result.reason}` };
       }
     }
+
+    // The rows persist the VERIFIED sizes, never the claimed ones.
+    data.attachments.forEach((att, i) => {
+      att.size_bytes = realSizes[i];
+    });
   }
 
   const addressOf = (ids: string[]) =>
@@ -317,7 +318,7 @@ export async function markMailRead(input: unknown): Promise<{ ok: true } | { err
   const auth = await authenticate();
   if (!auth.ok) return auth.error;
 
-  const parsed = parseInput(MarkMailReadSchema, input);
+  const parsed = await parseInput(MarkMailReadSchema, input);
   if (!parsed.ok) return parsed.error;
 
   const supabase = await createClient();

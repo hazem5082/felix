@@ -12,6 +12,7 @@ import {
   Megaphone,
   PieChart,
   TrendingUp,
+  UsersRound,
   ChevronRight,
   Loader2,
   ShieldCheck,
@@ -53,6 +54,11 @@ const PERSONA_CONFIG: Record<
     icon: Car,
     iconColor: "text-orange-800",
     iconBg: "bg-orange-100",
+  },
+  hr: {
+    icon: UsersRound,
+    iconColor: "text-rose-800",
+    iconBg: "bg-rose-100",
   },
   marketing: {
     icon: Megaphone,

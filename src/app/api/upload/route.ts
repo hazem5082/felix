@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   const throttle = await consume(`upload:${profile.id}`, LIMITS.upload);
   if (!throttle.allowed) {
     return NextResponse.json(
-      { error: retryMessage(throttle.retryAfter) },
+      { error: await retryMessage(throttle.retryAfter) },
       { status: 429, headers: { "Retry-After": String(throttle.retryAfter) } }
     );
   }
@@ -66,7 +66,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await createPresignedUpload(folder, fileName, contentType, size);
+    // Mail objects carry their uploader's id in the key (see
+    // createPresignedUpload): sendMail() refuses a staged key whose owner
+    // segment is not the caller, so a learned-or-guessed key from anyone
+    // else — any other tenant on the shared bucket included — cannot be
+    // attached to an outbound message and exfiltrated.
+    const result = await createPresignedUpload(
+      folder,
+      fileName,
+      contentType,
+      size,
+      folder === "mail" ? profile.id : undefined
+    );
     return NextResponse.json(result);
   } catch (err) {
     console.error("[upload] presign failed", { userId: profile.id, folder, err });

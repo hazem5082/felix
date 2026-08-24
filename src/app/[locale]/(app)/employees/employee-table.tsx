@@ -66,12 +66,18 @@ const ROLE_TONE: Record<Role, SemanticTone> = {
   branch_manager: "green",
   accountant: "amber",
   sales_exec: "neutral",
+  // 0047. Amber like the accountant: both are staff functions that
+  // report to the CEO and manage nobody.
+  hr: "amber",
   marketing: "blue",
   investor: "red",
 };
 
-const ROLES: Role[] = ["sales_exec", "marketing", "branch_manager", "accountant", "investor", "ceo"];
-const ORG_WIDE: Role[] = ["ceo", "investor", "marketing"];
+const ROLES: Role[] = ["sales_exec", "marketing", "branch_manager", "accountant", "hr", "investor", "ceo"];
+// Roles with no home branch. HR (0047) joins them: the payroll register
+// is the whole company, and CreateStaffSchema exempts them from the
+// branch requirement for the same reason.
+const ORG_WIDE: Role[] = ["ceo", "investor", "marketing", "hr"];
 
 export function EmployeeTable({ rows, branches }: { rows: EmployeeRow[]; branches: Branch[] }) {
   const t = useTranslations("employees");
