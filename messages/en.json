@@ -1398,7 +1398,9 @@
   },
   "hr": {
     "title": "HR Hub",
-    "subtitle": "Payroll, the bonus scheme and the attendance record, in one place.",
+    "subtitle": "Staff directory, payroll, the bonus scheme and attendance in one place.",
+    "employeesTitle": "Employees",
+    "employeesBody": "Staff directory, employee records and profiles.",
     "payrollTitle": "Payroll",
     "payrollBody": "Wages, contracts and the statutory paperwork for every employee.",
     "payrollSubtitle": "Set what each person is paid and keep their NOSI record complete.",

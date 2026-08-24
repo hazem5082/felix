@@ -138,6 +138,13 @@ $$;
 -- one temp table, and let each section decide what to do with the
 -- placeholders. Duplicating them would be how the two drift.
 -- ============================================================
+-- `on commit drop` clears this at the end of the transaction, which is the
+-- whole story for a normal apply. The explicit drop is for the abnormal
+-- one: running the file twice inside a SINGLE transaction — which is
+-- exactly what a rollback-protected dry run does when it tests
+-- idempotence — otherwise fails on "relation already exists" before
+-- reaching any of the logic that is actually being tested.
+drop table if exists felix_0053_ddl;
 create temp table felix_0053_ddl (name text primary key, body text) on commit drop;
 
 insert into felix_0053_ddl (name, body) values ('tables', $ddl$

@@ -1,6 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
-import { BadgePercent, Banknote, CalendarCheck, ChevronRight } from "lucide-react";
+import { BadgePercent, Banknote, CalendarCheck, ChevronRight, UserCog } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireHr } from "@/lib/auth";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -58,7 +58,15 @@ export default async function HrHubPage({
     <div className="space-y-6">
       <PanelHeader title={t("title")} subtitle={t("subtitle")} />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <HubCard
+          href="/employees"
+          icon={<UserCog size={18} />}
+          title={t("employeesTitle")}
+          body={t("employeesBody")}
+          stat={t("headcount", { count: people.length })}
+          warn={null}
+        />
         <HubCard
           href="/hr/payroll"
           icon={<Banknote size={18} />}

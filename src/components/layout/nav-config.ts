@@ -57,6 +57,10 @@ function leaf(href: string, key: NavKey): NavLeaf {
   return { kind: "leaf", href, key };
 }
 
+const ACCOUNTANT_CHILDREN: NavLeaf[] = [
+  leaf("/fees", "fees"),
+];
+
 /**
  * The HR hub's pages, in the order HR uses them.
  *
@@ -70,6 +74,7 @@ function leaf(href: string, key: NavKey): NavLeaf {
  * rather than loose in the sidebar.
  */
 const HR_CHILDREN: NavLeaf[] = [
+  leaf("/employees", "employees"),
   leaf("/hr/payroll", "hrPayroll"),
   leaf("/hr/bonuses", "hrBonuses"),
   leaf("/attendance", "attendance"),
@@ -82,13 +87,11 @@ export const ALL_NAV: NavEntry[] = [
   leaf("/deals", "deals"),
   leaf("/tasks", "tasks"),
   leaf("/marketing", "marketing"),
-  leaf("/accountant", "accountant"),
-  leaf("/fees", "fees"),
+  { kind: "group", key: "accountant", href: "/accountant", children: ACCOUNTANT_CHILDREN },
   leaf("/network", "network"),
   leaf("/investor", "investor"),
   { kind: "group", key: "hr", href: "/hr", children: HR_CHILDREN },
   leaf("/calendar", "calendar"),
-  leaf("/employees", "employees"),
   leaf("/attendance", "attendance"),
   leaf("/mail", "mail"),
   leaf("/support", "support"),
@@ -98,8 +101,7 @@ export const ALL_NAV: NavEntry[] = [
 // The calendar is the one tab every role carries. Who may *schedule*
 // into it is a separate question, settled in the database by
 // create_meeting() (migration 0006) rather than by this list.
-// Employees is the opposite extreme: CEO-only, and the page +
-// every action behind it re-checks that server-side.
+// Employees is under HR hub (CEO & HR).
 //
 // Attendance (0038) is carried by everyone who can owe or oversee a
 // day: the four staff roles plus marketing. Investors are excluded —
@@ -126,12 +128,11 @@ export const ALL_NAV: NavEntry[] = [
 // competitor, and it is not an investor's or HR's business at all. The
 // page and both of its actions re-check the pair server-side.
 //
-// Note that 'hr' appears in the CEO's list as a GROUP key, and
-// 'attendance' appears in several lists as a leaf. Both can be true at
-// once: navFor() drops the loose attendance tab for anyone who is
-// getting the hub, so nobody sees it twice.
+// Note that 'hr' and 'accountant' appear as GROUP keys, and
+// 'attendance' appears in several lists as a leaf. navFor() drops the loose
+// attendance tab for anyone who is getting the hub, so nobody sees it twice.
 const NAV_BY_ROLE: Record<Role, NavKey[]> = {
-  ceo: ["ceoDashboard", "inventory", "crm", "deals", "tasks", "marketing", "accountant", "fees", "network", "hr", "calendar", "employees", "attendance", "mail", "support", "account"],
+  ceo: ["ceoDashboard", "inventory", "crm", "deals", "tasks", "marketing", "accountant", "network", "hr", "calendar", "attendance", "mail", "support", "account"],
   branch_manager: ["inventory", "crm", "deals", "tasks", "network", "calendar", "attendance", "mail", "support", "account"],
   accountant: ["accountant", "inventory", "deals", "tasks", "calendar", "attendance", "mail", "support", "account"],
   // Sales sees the floor (sticker + optional lowest-offer price only —
@@ -190,7 +191,11 @@ export function navForRole(role: Role): NavEntry[] {
  * triangle, so a group becomes its children inline.
  */
 export function flattenNav(entries: NavEntry[]): NavLeaf[] {
-  return entries.flatMap((e) => (e.kind === "group" ? e.children : [e]));
+  return entries.flatMap((e) => {
+    if (e.kind !== "group") return [e];
+    const hasParentLeaf = e.children.some((c) => c.href === e.href);
+    return hasParentLeaf ? e.children : [leaf(e.href, e.key), ...e.children];
+  });
 }
 
 /** Whether this person may open the HR hub at all. Mirrors is_hr(). */

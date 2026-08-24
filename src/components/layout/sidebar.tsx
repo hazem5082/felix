@@ -54,7 +54,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "hidden shrink-0 flex-col border-e border-[var(--color-border)] bg-[var(--color-surface)] py-4 md:flex",
+        "hidden h-full min-h-0 shrink-0 flex-col border-e border-[var(--color-border)] bg-[var(--color-surface)] py-3 md:flex",
         // No horizontal padding on the <aside> itself: the logo below is
         // meant to span the rail edge to edge, so the inset lives on the
         // nav rows instead.
@@ -64,19 +64,24 @@ export function Sidebar({
         ready && "transition-[width] duration-200 ease-out"
       )}
     >
-      {/* Centered logo, sized to 1/2 width to reduce height by another 1/4 */}
-      <div className="mb-3 flex items-center justify-center">
+      {/* Centered logo with clean bounded height */}
+      <div className="mb-2 shrink-0 flex items-center justify-center px-4">
         <Image
           src="/brand/felix-logo.png"
           alt="FELIX"
-          width={677}
-          height={369}
-          className="h-auto w-1/2"
+          width={420}
+          height={140}
+          className="h-7 w-auto max-w-[110px] object-contain"
           priority
         />
       </div>
 
-      <nav className={cn("flex flex-col gap-1", collapsed ? "px-2" : "px-4")}>
+      <nav
+        className={cn(
+          "flex flex-1 min-h-0 flex-col gap-0.5 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]",
+          collapsed ? "px-2" : "px-3"
+        )}
+      >
         {items.map((entry) =>
           entry.kind === "group" ? (
             <NavGroupRow
@@ -99,24 +104,26 @@ export function Sidebar({
         )}
       </nav>
 
-      <button
-        type="button"
-        onClick={toggle}
-        title={collapsed ? common("expandNav") : common("collapseNav")}
-        aria-label={collapsed ? common("expandNav") : common("collapseNav")}
-        aria-expanded={!collapsed}
-        className={cn(
-          "mt-auto flex cursor-pointer items-center rounded-md py-2.5 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--color-text)]",
-          collapsed ? "mx-2 justify-center" : "mx-4 gap-3 px-3.5"
-        )}
-      >
-        {collapsed ? (
-          <PanelLeftOpen size={17} className="shrink-0 rtl:-scale-x-100" />
-        ) : (
-          <PanelLeftClose size={17} className="shrink-0 rtl:-scale-x-100" />
-        )}
-        {!collapsed && <span className="truncate">{common("collapseNav")}</span>}
-      </button>
+      <div className={cn("shrink-0 pt-1 border-t border-[var(--color-border)]/40 mt-1", collapsed ? "px-2" : "px-3")}>
+        <button
+          type="button"
+          onClick={toggle}
+          title={collapsed ? common("expandNav") : common("collapseNav")}
+          aria-label={collapsed ? common("expandNav") : common("collapseNav")}
+          aria-expanded={!collapsed}
+          className={cn(
+            "flex w-full cursor-pointer items-center rounded-md py-1.5 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--color-text)]",
+            collapsed ? "justify-center px-0" : "gap-2.5 px-3"
+          )}
+        >
+          {collapsed ? (
+            <PanelLeftOpen size={15} className="shrink-0 rtl:-scale-x-100" />
+          ) : (
+            <PanelLeftClose size={15} className="shrink-0 rtl:-scale-x-100" />
+          )}
+          {!collapsed && <span className="truncate">{common("collapseNav")}</span>}
+        </button>
+      </div>
     </aside>
   );
 }
@@ -148,24 +155,23 @@ function NavRow({
       title={collapsed ? label : undefined}
       aria-label={collapsed ? label : undefined}
       className={cn(
-        "relative flex items-center rounded-md py-2.5 text-sm font-medium transition-colors duration-150",
-        collapsed ? "justify-center px-0" : "gap-3 px-3.5",
-        // Nested rows sit in from the parent and read a shade quieter,
-        // so the hub's heading stays the thing the eye lands on.
-        !collapsed && nested && "ms-3 py-2 text-[13px]",
+        "relative flex items-center rounded-md text-[13px] font-medium transition-colors duration-150",
+        collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-3 py-1.5",
+        // Nested rows sit in from the parent and read a shade quieter
+        !collapsed && nested && "py-1 text-xs text-[var(--color-text-muted)]",
         active
-          ? "text-[var(--color-accent)]"
+          ? "text-[var(--color-accent)] font-semibold"
           : "text-[var(--color-text-muted)] hover:bg-black/[0.03] hover:text-[var(--color-text)]"
       )}
     >
       {active && (
         <motion.span
-          layoutId="sidebar-active"
+          layoutId={nested ? undefined : "sidebar-active"}
           className="absolute inset-0 rounded-md bg-[var(--color-accent-dim)]"
           transition={{ type: "spring", stiffness: 380, damping: 30 }}
         />
       )}
-      <Icon size={nested && !collapsed ? 15 : 17} className="relative z-10 shrink-0" />
+      <Icon size={nested && !collapsed ? 14 : 16} className="relative z-10 shrink-0" />
       {!collapsed && <span className="relative z-10 truncate tracking-wide">{label}</span>}
     </Link>
   );
@@ -221,21 +227,21 @@ function NavGroupRow({
     <div>
       <div
         className={cn(
-          "relative flex items-center rounded-md text-sm font-medium transition-colors duration-150",
+          "relative flex items-center rounded-md text-[13px] font-medium transition-colors duration-150",
           insideGroup
-            ? "text-[var(--color-accent)]"
+            ? "text-[var(--color-accent)] font-semibold"
             : "text-[var(--color-text-muted)] hover:bg-black/[0.03] hover:text-[var(--color-text)]"
         )}
       >
-        {isActive(pathname, entry.href) && (
+        {pathname === entry.href && (
           <motion.span
             layoutId="sidebar-active"
             className="absolute inset-0 rounded-md bg-[var(--color-accent-dim)]"
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
           />
         )}
-        <Link href={entry.href} className="relative z-10 flex flex-1 items-center gap-3 px-3.5 py-2.5">
-          <Icon size={17} className="shrink-0" />
+        <Link href={entry.href} className="relative z-10 flex flex-1 items-center gap-2.5 px-3 py-1.5">
+          <Icon size={16} className="shrink-0" />
           <span className="truncate tracking-wide">{label}</span>
         </Link>
         <button
@@ -243,17 +249,17 @@ function NavGroupRow({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-label={label}
-          className="relative z-10 cursor-pointer rounded-md p-2 hover:bg-black/[0.04]"
+          className="relative z-10 cursor-pointer rounded-md p-1.5 me-1 text-[var(--color-text-muted)] hover:bg-black/[0.04] hover:text-[var(--color-text)]"
         >
           <ChevronDown
-            size={14}
+            size={13}
             className={cn("transition-transform duration-150", open && "rotate-180")}
           />
         </button>
       </div>
 
       {open && (
-        <div className="mt-0.5 flex flex-col gap-0.5">
+        <div className="mt-0.5 flex flex-col gap-0.5 ps-2 border-s border-[var(--color-border)]/70 ms-3.5 my-0.5">
           {entry.children.map((child) => (
             <NavRow
               key={child.href}

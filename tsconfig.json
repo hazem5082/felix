@@ -33,13 +33,14 @@
     "**/*.ts",
     "**/*.tsx",
     ".next-fees/types/**/*.ts",
+    ".next-hr-build/types/**/*.ts",
     ".next-hr/types/**/*.ts",
     ".next-network/types/**/*.ts",
     ".next-tasks/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-hr-build/types/**/*.ts"
+    ".next-network2/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

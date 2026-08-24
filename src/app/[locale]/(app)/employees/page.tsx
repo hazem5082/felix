@@ -1,7 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireRole } from "@/lib/auth";
+import { requireHr } from "@/lib/auth";
 import { PanelHeader } from "@/components/ui/panel";
 import { acceptsBranchGrants } from "@/lib/branch-authority";
 import type { Branch, BranchGrant, Profile } from "@/lib/supabase/types";
@@ -14,9 +14,7 @@ export default async function EmployeesPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  // The page guard matches the action guard: everything below is
-  // CEO-only, and RLS scopes every row to the CEO's own showroom.
-  const me = await requireRole(locale, ["ceo"]);
+  const me = await requireHr(locale);
   const t = await getTranslations("employees");
 
   const supabase = await createClient();
@@ -92,7 +90,7 @@ export default async function EmployeesPage({
       <PanelHeader
         title={t("title")}
         subtitle={t("subtitle")}
-        action={<EmployeeFormDialog branches={(branches as Branch[]) ?? []} />}
+        action={me.role === "ceo" ? <EmployeeFormDialog branches={(branches as Branch[]) ?? []} /> : undefined}
       />
       <EmployeeTable rows={rows} branches={(branches as Branch[]) ?? []} />
     </div>

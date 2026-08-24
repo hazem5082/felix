@@ -255,15 +255,15 @@ export function DemoSwitcher({
   }
 
   return (
-    <div className="shrink-0 border-b border-[var(--color-accent-amber)]/25 bg-[var(--color-accent-amber-dim)]/80 backdrop-blur-md">
-      <div className="flex items-center gap-2.5 px-3 py-1.5 md:px-5">
+    <div className="shrink-0 max-h-11 border-b border-[var(--color-accent-amber)]/25 bg-[var(--color-accent-amber-dim)]/80 backdrop-blur-md">
+      <div className="flex h-9 items-center gap-2.5 px-3 md:px-5">
         <span className="hidden shrink-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-accent-amber)] sm:flex">
           <FlaskConical size={13} aria-hidden />
           {t("badge")}
         </span>
         {/* The scroll container, not the page: a six-chip row is wider
             than a phone, and the shell itself must never scroll sideways. */}
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {buttons}
         </div>
         {error ? (
@@ -277,7 +277,7 @@ export function DemoSwitcher({
         )}
       </div>
       {error && (
-        <p role="alert" className="px-3 pb-1.5 text-xs text-[var(--color-accent-red)] md:hidden">
+        <p role="alert" className="px-3 pb-1 text-xs text-[var(--color-accent-red)] md:hidden">
           {error}
         </p>
       )}

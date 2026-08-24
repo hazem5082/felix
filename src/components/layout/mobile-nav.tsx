@@ -39,7 +39,7 @@ export function MobileNav({
   );
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 flex h-14 items-center overflow-x-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden">
       {items.map((item) => {
         const Icon = navIcon(item.key);
         const active = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -49,11 +49,11 @@ export function MobileNav({
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-w-[4.5rem] flex-1 flex-col items-center gap-1 px-1 py-2.5 text-[10px] font-medium transition-colors",
-              active ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)]"
+              "flex min-w-[4.25rem] flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1 text-[10px] font-medium transition-colors",
+              active ? "text-[var(--color-accent)] font-semibold" : "text-[var(--color-text-muted)]"
             )}
           >
-            <Icon size={18} />
+            <Icon size={16} />
             <span className="w-full truncate text-center leading-tight">{t(item.key)}</span>
           </Link>
         );

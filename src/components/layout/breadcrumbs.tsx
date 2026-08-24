@@ -17,15 +17,16 @@ export function Breadcrumbs() {
   const pathname = usePathname();
 
   const segments = pathname.split("/").filter(Boolean);
-  if (segments.length === 0) return null;
-
-  const section = ALL_NAV.find((item) => item.href === `/${segments[0]}`);
+  const allEntries = ALL_NAV.flatMap((item) =>
+    item.kind === "group" ? [item, ...item.children] : [item]
+  );
+  const section = allEntries.find((item) => item.href === `/${segments[0]}`);
   const hasDetail = segments.length > 1;
 
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 text-xs text-[var(--color-text-muted)]"
+      className="flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 text-xs text-[var(--color-text-muted)] whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {section ? (
         hasDetail ? (
