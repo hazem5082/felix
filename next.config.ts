@@ -19,6 +19,12 @@ const r2Origin = (() => {
   }
 })();
 
+// Where storage bytes come from. createSignedDownloadUrl() signs against
+// the S3 endpoint, while unsigned public assets are served from
+// R2_PUBLIC_URL's r2.dev (or custom) domain, so both belong anywhere the
+// browser reaches for a stored file.
+const r2Sources = [r2Origin, "https://*.r2.cloudflarestorage.com"].filter(Boolean);
+
 // The browser talks directly to Supabase (auth + PostgREST + realtime), to R2
 // for presigned uploads, and to the NHTSA vPIC API for the make/model picker.
 // Everything else is same-origin, so the policy can stay tight.
@@ -26,8 +32,7 @@ const connectSrc = [
   "'self'",
   supabaseOrigin,
   supabaseOrigin.replace(/^https:/, "wss:"),
-  r2Origin,
-  "https://*.r2.cloudflarestorage.com",
+  ...r2Sources,
   "https://vpic.nhtsa.dot.gov",
 ]
   .filter(Boolean)
@@ -46,6 +51,17 @@ const csp = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   `connect-src ${connectSrc}`,
+  // Mail attachment previews point an <iframe> (PDF) or <video> at the
+  // same-origin /api/mail/attachment/[id]?preview=1, which 302s to a
+  // 60-second signed R2 URL — and CSP re-checks the policy against a
+  // redirect's destination, so a same-origin src is not enough on its
+  // own. With neither directive set both fell back to default-src
+  // 'self', and Chrome painted its own "This content is blocked" page
+  // inside the preview dialog: no console error, no network failure the
+  // app could see, nothing to fall back to Download from. The geofence
+  // map frame (google.com/maps/embed) was blocked the same way.
+  `frame-src ${["'self'", ...r2Sources, "https://www.google.com"].join(" ")}`,
+  `media-src ${["'self'", "blob:", ...r2Sources].join(" ")}`,
   "frame-ancestors 'none'",
   "form-action 'self'",
   "base-uri 'self'",
