@@ -487,13 +487,25 @@ async function createUser(key, dbRole, fullName, branchId) {
  * the photographs existed gets them backfilled, but only into columns that are
  * still empty. Overwriting unconditionally would delete the photos anyone
  * demonstrating the intake form had uploaded through the app, which is the one
- * thing a re-seed must not do.
+ * thing a re-seed must not do. The sticker price is backfilled on the same
+ * terms, for the same reason.
+ *
+ * WHY THESE CARS CARRY A STICKER AT ALL. They used to go in with a cost and
+ * nothing else, so every one of them read "Not priced yet" on any screen that
+ * quotes a buyer — and since these four are the only seeded cars with
+ * photographs, they are exactly the rows the FELIX Network surfaces to another
+ * showroom. A whole demo network whose price column is empty demonstrates the
+ * empty state, not the feature. Pricing is at the markup t_felix's own BMW
+ * already carried when a human priced it by hand: asking ≈ cost + 16%, floor
+ * ≈ cost + 6%. 0028's CHECK requires floor <= asking.
  */
 async function insertVehicle(branchId, createdBy, key, year, make, model, trim, purchasePrice) {
   const gallery = PHOTOS[key] ?? { photos: [], inspection_photos: [] };
+  const asking = Math.round((purchasePrice * 1.16) / 100) * 100;
+  const floor = Math.round((purchasePrice * 1.06) / 100) * 100;
   const { data: existing } = await tenantDb
     .from("vehicles")
-    .select("id, photos, inspection_photos")
+    .select("id, photos, inspection_photos, asking_price, min_price")
     .eq("vin", vin(key))
     .maybeSingle();
 
@@ -502,6 +514,12 @@ async function insertVehicle(branchId, createdBy, key, year, make, model, trim, 
     if (!existing.photos?.length && gallery.photos.length) backfill.photos = gallery.photos;
     if (!existing.inspection_photos?.length && gallery.inspection_photos.length)
       backfill.inspection_photos = gallery.inspection_photos;
+    // Only when nobody has priced it — a price set through the app, or by
+    // demo-showcase.mjs's price-cut story, is a demonstration in progress.
+    if (existing.asking_price == null && existing.min_price == null) {
+      backfill.asking_price = asking;
+      backfill.min_price = floor;
+    }
 
     if (Object.keys(backfill).length) {
       const { error } = await tenantDb.from("vehicles").update(backfill).eq("id", existing.id);
@@ -521,6 +539,8 @@ async function insertVehicle(branchId, createdBy, key, year, make, model, trim, 
       model,
       trim,
       purchase_price: purchasePrice,
+      asking_price: asking,
+      min_price: floor,
       photos: gallery.photos,
       inspection_photos: gallery.inspection_photos,
       created_by: createdBy,

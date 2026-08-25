@@ -4,8 +4,10 @@ import {
   coarseFilter,
   compareMatches,
   isSearchable,
+  MAX_PHOTOS,
   normalise,
   parseQuery,
+  sanitisePhotos,
   scoreVehicle,
   vehicleHaystack,
   yearIn,
@@ -294,3 +296,54 @@ describe("buildWantedList", () => {
   });
 });
 
+describe("sanitisePhotos", () => {
+  const url = (n: number) => `https://pub-abc.r2.dev/vehicles/car-${n}.jpg`;
+
+  it("keeps http and https URLs in the order the showroom arranged them", () => {
+    const given = [url(1), "http://cdn.example.com/a.jpg", url(2)];
+    expect(sanitisePhotos(given)).toEqual(given);
+  });
+
+  it("drops anything that is not an http(s) address", () => {
+    expect(
+      sanitisePhotos([
+        "javascript:alert(1)",
+        "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+        "/vehicles/local.jpg",
+        "  ",
+        url(1),
+      ])
+    ).toEqual([url(1)]);
+  });
+
+  it("is not fooled by leading whitespace or a mixed-case scheme", () => {
+    expect(sanitisePhotos(["  HTTPS://cdn.example.com/a.jpg  "])).toEqual([
+      "HTTPS://cdn.example.com/a.jpg",
+    ]);
+    expect(sanitisePhotos(["  javascript:alert(1)"])).toEqual([]);
+  });
+
+  it("caps the gallery so one row cannot decide the response size", () => {
+    const many = Array.from({ length: MAX_PHOTOS + 5 }, (_, i) => url(i));
+    expect(sanitisePhotos(many)).toHaveLength(MAX_PHOTOS);
+    expect(sanitisePhotos(many, 1)).toEqual([url(0)]);
+  });
+
+  it("counts only what it kept against the cap", () => {
+    // A row whose first entries are all rejected must still yield two
+    // photographs, not zero — the cap is on the output, not the input.
+    expect(sanitisePhotos(["bad", "also bad", url(1), url(2), url(3)], 2)).toEqual([
+      url(1),
+      url(2),
+    ]);
+  });
+
+  it("answers with an empty gallery for a column that is absent or the wrong shape", () => {
+    // The retry select in actions.ts omits `photos` entirely for a
+    // showroom whose schema is behind, so undefined is a real case.
+    expect(sanitisePhotos(undefined)).toEqual([]);
+    expect(sanitisePhotos(null)).toEqual([]);
+    expect(sanitisePhotos("https://cdn.example.com/a.jpg")).toEqual([]);
+    expect(sanitisePhotos([null, 42, {}, url(1)])).toEqual([url(1)]);
+  });
+});

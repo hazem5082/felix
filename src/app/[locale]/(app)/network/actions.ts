@@ -10,6 +10,7 @@ import { consume, LIMITS, retryMessage } from "@/lib/rate-limit";
 import {
   NetworkParticipationSchema,
   NetworkSearchSchema,
+  NetworkVehicleSchema,
   parseInput,
   type ActionError,
 } from "@/lib/validation";
@@ -18,11 +19,14 @@ import {
   compareMatches,
   isSearchable,
   parseQuery,
+  sanitisePhotos,
   scoreVehicle,
   type NetworkMatch,
   type NetworkSearchResult,
   type NetworkShowroom,
   type NetworkStatus,
+  type NetworkVehicleDetail,
+  type NetworkVehicleResult,
 } from "@/lib/network";
 
 /**
@@ -69,7 +73,32 @@ const NETWORK_ROLES = ["ceo", "branch_manager"] as const;
 
 /** The columns that may cross a showroom boundary. See NetworkVehicle. */
 const VEHICLE_COLUMNS =
-  "id, year, make, model, trim, color, odometer_km, asking_price, created_at, branches(name, address)";
+  "id, year, make, model, trim, color, odometer_km, asking_price, photos, created_at, branches(name, address)";
+
+/**
+ * The columns ONE opened car may add. See NetworkVehicleDetail — this
+ * widens the description and never the commercials, and every name here
+ * is something the holding showroom already prints on a sticker or in a
+ * listing.
+ *
+ * Written out in full rather than as `VEHICLE_COLUMNS + ", …"`, for the
+ * same reason there is no `select("*")` in this file: the one place a
+ * reader looks to answer "what crosses a showroom boundary" should be a
+ * list of names, not an expression they have to evaluate.
+ */
+const DETAIL_COLUMNS =
+  "id, year, make, model, trim, color, odometer_km, asking_price, photos, created_at, " +
+  "description, body_type, engine_info, drive_type, doors, country_of_origin, features, " +
+  "branches(name, address)";
+
+/**
+ * The same, minus everything added after 0028 — the retry for a
+ * showroom a migration or two behind, matching the reasoning on
+ * VEHICLE_COLUMNS_MINIMAL below. An opened car with half its spec blank
+ * is still worth looking at; a dialog that refuses to open is not.
+ */
+const DETAIL_COLUMNS_MINIMAL =
+  "id, year, make, model, trim, color, asking_price, photos, created_at";
 
 /**
  * The same list minus everything a migration added after 0009, used
@@ -99,8 +128,20 @@ interface RawVehicle {
   color?: string | null;
   odometer_km?: number | null;
   asking_price: number | null;
+  /** `text[]` on the wire, and another tenant's — see sanitisePhotos(). */
+  photos?: unknown;
   created_at: string;
   branches?: { name: string | null; address: string | null } | null;
+}
+
+interface RawVehicleDetail extends RawVehicle {
+  description?: string | null;
+  body_type?: string | null;
+  engine_info?: string | null;
+  drive_type?: string | null;
+  doors?: number | null;
+  country_of_origin?: string | null;
+  features?: unknown;
 }
 
 /**
@@ -340,6 +381,8 @@ export async function searchNetwork(rawQuery: string): Promise<NetworkSearchResu
           color: v.color ?? null,
           odometerKm: v.odometer_km ?? null,
           askingPrice: v.asking_price,
+          // One photograph for the row; the gallery waits for a click.
+          thumbnail: sanitisePhotos(v.photos, 1)[0] ?? null,
           branchName: v.branches?.name ?? null,
           branchAddress: v.branches?.address ?? null,
           createdAt: v.created_at,
@@ -357,6 +400,113 @@ export async function searchNetwork(rawQuery: string): Promise<NetworkSearchResu
     unreachable,
     truncated: matches.length > MAX_MATCHES,
   };
+}
+
+/**
+ * One car on the network, opened.
+ *
+ * `slug` arrives from the browser and is NEVER used to build a schema
+ * name. It is looked up in the registry through the very same
+ * participatingShowrooms() the search uses, and the schema read is the
+ * `schema_name` that lookup returned — so every rule the search
+ * enforces (active licence, opted in, same network side, not the
+ * caller's own showroom) is enforced here by construction rather than
+ * by a second copy of the conditions that could drift from the first.
+ *
+ * Re-checked at open time rather than trusted from the search result:
+ * between the search and the click, the holding showroom may have sold
+ * the car, withdrawn from the network, or had its licence suspended.
+ * A dialog that shows a car as available because a list said so ten
+ * minutes ago is how a manager promises a buyer something that is gone.
+ */
+export async function fetchNetworkVehicle(input: {
+  slug: string;
+  vehicleId: string;
+}): Promise<NetworkVehicleResult> {
+  const parsed = await parseInput(NetworkVehicleSchema, input);
+  if (!parsed.ok) return { error: parsed.error.error };
+
+  const auth = await authorizeActiveTenant([...NETWORK_ROLES]);
+  if (!auth.ok) return { error: auth.error.error };
+
+  const t = await refusals();
+
+  const claim = await getSessionTenant();
+  if (!claim) return { error: t("sessionExpired") };
+
+  const limit = await consume(`network:detail:${auth.profile.id}`, LIMITS.networkDetail);
+  if (!limit.allowed) {
+    return { error: `${t("throttled")} ${await retryMessage(limit.retryAfter)}` };
+  }
+
+  const registry = await participatingShowrooms(claim.slug);
+  if ("error" in registry) return { error: registry.error };
+
+  const tenant = registry.rows.find((r) => r.slug === parsed.data.slug);
+  // Not "no such showroom" — a showroom that has left the network, or
+  // one this caller was never entitled to see, must be indistinguishable
+  // from one that does not exist.
+  if (!tenant) return { error: t("vehicleGone") };
+
+  const client = createAdminClient(tenant.schema_name);
+  const run = (columns: string) =>
+    client
+      .from("vehicles")
+      .select(columns)
+      .eq("id", parsed.data.vehicleId)
+      .eq("status", "in_stock")
+      .maybeSingle();
+
+  let row: RawVehicleDetail | null = null;
+  try {
+    const { data, error } = await run(DETAIL_COLUMNS);
+    if (error) {
+      const retry = await run(DETAIL_COLUMNS_MINIMAL);
+      if (retry.error) {
+        console.error("[network] detail unreadable", { slug: tenant.slug, error: retry.error });
+        return { error: t("unavailable") };
+      }
+      row = (retry.data as unknown as RawVehicleDetail) ?? null;
+    } else {
+      row = (data as unknown as RawVehicleDetail) ?? null;
+    }
+  } catch (err) {
+    console.error("[network] detail threw", { slug: tenant.slug, err });
+    return { error: t("unavailable") };
+  }
+
+  // Sold, reserved, or deleted since the search ran.
+  if (!row) return { error: t("vehicleGone") };
+
+  const photos = sanitisePhotos(row.photos);
+  const vehicle: NetworkVehicleDetail = {
+    id: row.id,
+    year: row.year,
+    make: row.make,
+    model: row.model,
+    trim: row.trim,
+    color: row.color ?? null,
+    odometerKm: row.odometer_km ?? null,
+    askingPrice: row.asking_price,
+    thumbnail: photos[0] ?? null,
+    branchName: row.branches?.name ?? null,
+    branchAddress: row.branches?.address ?? null,
+    createdAt: row.created_at,
+    photos,
+    description: row.description?.trim() || null,
+    bodyType: row.body_type ?? null,
+    engineInfo: row.engine_info ?? null,
+    driveType: row.drive_type ?? null,
+    doors: row.doors ?? null,
+    countryOfOrigin: row.country_of_origin ?? null,
+    // Same shape as photos and the same reason: another tenant's array,
+    // absent entirely on a schema that predates 0025.
+    features: Array.isArray(row.features)
+      ? row.features.filter((f): f is string => typeof f === "string" && f.trim().length > 0)
+      : [],
+  };
+
+  return { vehicle, showroom: await showroomIdentity(tenant) };
 }
 
 /**

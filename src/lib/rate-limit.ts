@@ -75,6 +75,14 @@ export const LIMITS = {
    * unfilled asks clicks a dozen of them and never sees it.
    */
   networkSearch: { limit: 60, windowSeconds: 10 * 60 },
+  /**
+   * Opening one of those results. Looser than the search that produced
+   * it — a manager comparing four candidates for one buyer opens each
+   * of them, and opens the good one twice — but bounded for the same
+   * reason: this is the other endpoint that reads another showroom's
+   * floor.
+   */
+  networkDetail: { limit: 200, windowSeconds: 10 * 60 },
 } as const;
 
 /**

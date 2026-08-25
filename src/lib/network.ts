@@ -305,10 +305,19 @@ export interface NetworkShowroom {
  *   * vin, plate_number, engine_number — the car's identity papers.
  *     Nothing about sourcing needs them, and 0021 put them there for the
  *     traffic authority, not for browsing.
- *   * photos — they live behind signed R2 URLs scoped to the owning
- *     showroom (lib/r2.ts). Minting cross-tenant signed URLs is a real
- *     decision, not a side effect of a search screen.
+ *   * inspection_photos — the intake condition report (0015), which is
+ *     the buying showroom's own assessment of what is wrong with the
+ *     car. `photos` below is the sale gallery and crosses; the condition
+ *     report is working paper and does not.
  *   * anything about a customer, a deal or an equity split.
+ *
+ * PHOTOS DO CROSS, and an earlier version of this comment said they
+ * could not, on the belief that they sit behind per-showroom signed R2
+ * URLs. They do not: lib/r2.ts treats `vehicles` as a public folder, so
+ * `vehicles.photos` already holds absolute URLs on a bucket domain that
+ * serves them to anyone holding the link — the same URLs the showroom's
+ * own listings publish. Passing one to another FELIX showroom discloses
+ * nothing that the car's advert does not.
  */
 export interface NetworkVehicle {
   id: string;
@@ -320,12 +329,56 @@ export interface NetworkVehicle {
   odometerKm: number | null;
   /** The sticker. Null when the holding showroom has not priced it yet. */
   askingPrice: number | null;
+  /**
+   * The first sale photograph, for the results row. One, not the
+   * gallery: a search can return sixty cars and the list is a list.
+   * The rest arrive with NetworkVehicleDetail when a row is opened.
+   */
+  thumbnail: string | null;
   /** Where it physically is, so a manager knows the drive. */
   branchName: string | null;
   branchAddress: string | null;
   /** How long it has been on that floor — the other half of "will they deal". */
   createdAt: string;
 }
+
+/**
+ * One car, opened.
+ *
+ * The same privacy contract as NetworkVehicle — this widens the
+ * DESCRIPTION, never the commercials. Everything added here is what the
+ * holding showroom already prints on a windscreen sticker or publishes
+ * in a listing: the gallery, the spec the VIN decode filled in (0040),
+ * the amenities list CPA 115/2021 requires on that sticker (0025), and
+ * the showroom's own sale copy.
+ *
+ * Fetched by its own action rather than carried in every search result:
+ * sixty rows × a gallery × a features array is a page payload nobody
+ * asked for, and re-fetching means the licence, the opt-in and the
+ * car's in-stock status are all re-checked at the moment the manager
+ * actually looks.
+ */
+export interface NetworkVehicleDetail extends NetworkVehicle {
+  /** The sale gallery, in the order the holding showroom arranged it. */
+  photos: string[];
+  /** The showroom's own sale copy (0015). */
+  description: string | null;
+  // VIN-decoded spec (0040). All nullable — decode coverage varies by
+  // market and nothing backfilled the stock that predates it.
+  bodyType: string | null;
+  engineInfo: string | null;
+  driveType: string | null;
+  doors: number | null;
+  /** Sticker field (0025). */
+  countryOfOrigin: string | null;
+  /** The amenities list (0025). Never null; the column defaults to '{}'. */
+  features: string[];
+}
+
+/** What opening a row returns: the car, and who to ring about it. */
+export type NetworkVehicleResult =
+  | { vehicle: NetworkVehicleDetail; showroom: NetworkShowroom }
+  | { error: string };
 
 export interface NetworkMatch {
   score: number;
@@ -377,6 +430,45 @@ export interface NetworkStatus {
    * the flag rather than being guessed at by the component.
    */
   reason?: string;
+}
+
+// ── Photographs ─────────────────────────────────────────────
+
+/** More gallery than this and the dialog is a scroll, not a look. */
+export const MAX_PHOTOS = 8;
+
+/**
+ * The photo URLs that may be rendered, from another showroom's column.
+ *
+ * `vehicles.photos` is written by that showroom's own staff through
+ * /api/upload, so on the happy path every entry is an absolute R2 URL
+ * this deployment minted. It is still the one field in the whole
+ * contract whose VALUE crosses a tenant boundary and goes straight into
+ * the DOM, so it is filtered rather than trusted:
+ *
+ *   * http/https only. A `javascript:` URL in an `<img src>` does
+ *     nothing in any current browser, but the same string in a hand
+ *     rewritten as an <a href> later would, and the check costs a line.
+ *     `data:` is excluded too — a legitimate gallery entry is never one,
+ *     and it is the shape that carries a payload rather than an address.
+ *   * Capped, so a row with four hundred photos cannot decide how big
+ *     another showroom's response is.
+ *
+ * Not a null check dressed up: the column is `not null default '{}'`,
+ * but a schema one migration behind can answer without it at all, which
+ * is exactly the case candidateVehicles() retries for.
+ */
+export function sanitisePhotos(raw: unknown, max = MAX_PHOTOS): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const url = entry.trim();
+    if (!/^https?:\/\//i.test(url)) continue;
+    out.push(url);
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 /** Columns the coarse filter searches. Matches vehicleHaystack(). */

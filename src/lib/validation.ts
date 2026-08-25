@@ -1668,6 +1668,21 @@ export const NetworkParticipationSchema = z.object({
   enabled: z.boolean(),
 });
 
+/**
+ * One car on the network, opened from a search result.
+ *
+ * `slug` is bounded to the shape migration 0008 can mint — lowercase
+ * letters, digits and hyphens — but the shape is NOT what makes it
+ * safe. fetchNetworkVehicle() never builds a schema name out of this
+ * string; it looks the slug up in the registry and reads the
+ * `schema_name` that lookup returns. This is a size and character bound
+ * on a value from the browser, nothing more.
+ */
+export const NetworkVehicleSchema = z.object({
+  slug: z.string().trim().min(1).max(63).regex(/^[a-z0-9-]+$/),
+  vehicleId: Uuid,
+});
+
 // ── List controls ───────────────────────────────────────────
 
 export const PAGE_SIZE = 25;
